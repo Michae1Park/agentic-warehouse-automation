@@ -14,11 +14,13 @@ Running checklist for the Agentic Warehouse Automation demo.
 
 ## Step 1 — Skeleton
 
-- [ ] Docker Compose (postgres, backend, frontend)
-- [ ] Postgres schema: products, locations, inventory, orders, order_lines, robots, tasks, task_steps, events, exceptions
-- [ ] Seed data (SKUs, shelf locations, sample orders incl. #1042)
-- [ ] FastAPI service with REST endpoints + WebSocket event stream
-- [ ] React dashboard shell (orders, inventory, robot status, exceptions, chat, sim panel)
+- [x] Docker Compose (postgres, backend, frontend)
+- [x] Postgres schema: products, locations, inventory, orders, order_lines, robots, tasks, task_steps, events, exceptions
+- [x] Seed data (SKUs, shelf locations, sample orders incl. #1042)
+- [x] FastAPI service with REST endpoints + WebSocket event stream
+- [x] React dashboard shell (orders, inventory, robot status, exceptions, chat, sim panel)
+- [x] Live sync verified: DB write → trigger → NOTIFY → WebSocket → dashboard refetch
+- Note: backend exposed on host port 8010 (8000 is taken on this machine), override with `BACKEND_PORT`
 
 ## Step 2 — Agent loop
 
