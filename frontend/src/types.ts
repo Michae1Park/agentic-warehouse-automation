@@ -27,6 +27,7 @@ export type Robot = {
   status: string;
   x: string;
   y: string;
+  theta: string;
   battery_pct: string;
   tote: string[];
   current_task_id: number | null;
@@ -40,4 +41,29 @@ export type WarehouseException = {
   message: string;
   status: string;
   created_at: string;
+};
+
+export type Location = {
+  id: string;
+  kind: "storage" | "dispatch" | "charging" | "staging";
+  aisle: string | null;
+  bay: number | null;
+  level: number | null;
+  x: string;
+  y: string;
+  stock: { sku: string; quantity: number }[];
+};
+
+export type TaskStep = {
+  seq: number;
+  action: string;
+  args: Record<string, unknown>;
+  status: "pending" | "running" | "succeeded" | "failed" | "skipped";
+};
+
+export type Task = {
+  id: number;
+  order_id: number | null;
+  status: string;
+  steps: TaskStep[];
 };
