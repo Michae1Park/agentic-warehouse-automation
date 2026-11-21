@@ -181,7 +181,7 @@ class TaskExecutor:
         detail = {"ground_truth": observation.counts}
         if settings.perception_mode != "vlm" or not observation.image_jpeg:
             return observation.counts, detail
-        vision = await perception.identify_products(observation.image_jpeg)
+        vision = await perception.identify_products(observation.image_jpeg, location_id)
         detail.update(vlm=vision["counts"], vlm_latency_ms=vision["latency_ms"],
                       vlm_presence_correct=set(vision["counts"]) == set(observation.counts))
         return vision["counts"], detail
@@ -224,6 +224,13 @@ class TaskExecutor:
     async def _do_count(self, task: dict, step: dict) -> dict:
         location_id = step["args"]["location_id"]
         counts, detail = await self._perceive(location_id)
+        if "vlm" in detail:
+            counts, unexpected = await warehouse.presence_counts(location_id, counts)
+            for sku in unexpected:
+                await warehouse.raise_exception(
+                    "unexpected_item", f"cycle count at {location_id}: saw {sku}, which is not recorded there",
+                    task_id=task["id"],
+                )
         adjustments = await warehouse.record_count(task["id"], location_id, counts)
         for adj in adjustments:
             await warehouse.raise_exception(

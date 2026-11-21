@@ -458,3 +458,10 @@ async def record_stow(task_id: int, robot_id: str, sku: str, location_id: str) -
             "INSERT INTO inventory_transactions (sku, location_id, delta, reason, task_id) VALUES (%s, %s, 1, 'stow', %s)",
             (sku, location_id, task_id),
         )
+
+
+async def presence_counts(location_id: str, seen: dict[str, int]) -> tuple[dict[str, int], list[str]]:
+    rows = await fetch_all("SELECT sku, quantity FROM inventory WHERE location_id = %s AND quantity > 0", location_id)
+    recorded = {r["sku"]: r["quantity"] for r in rows}
+    counts = {sku: qty for sku, qty in recorded.items() if sku in seen}
+    return counts, sorted(set(seen) - set(recorded))

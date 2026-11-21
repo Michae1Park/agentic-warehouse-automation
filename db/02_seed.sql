@@ -7,10 +7,10 @@ INSERT INTO products (sku, name, category, weight_kg, size_cm, color) VALUES
     ('SKU-2002', 'LED Desk Lamp',         'home',        0.90, '{30,15,15}', 'green'),
     ('SKU-2003', 'Cotton Towel Pack',     'home',        0.80, '{30,25,10}', 'orange'),
     ('SKU-3001', 'Protein Bar Box',       'grocery',     0.70, '{20,15,8}',  'purple'),
-    ('SKU-3002', 'Green Tea Tin',         'grocery',     0.30, '{10,10,15}', 'teal'),
-    ('SKU-4001', 'Yoga Block',            'sports',      0.40, '{23,15,8}',  'pink'),
+    ('SKU-3002', 'Green Tea Tin',         'grocery',     0.30, '{10,10,15}', 'cyan'),
+    ('SKU-4001', 'Yoga Block',            'sports',      0.40, '{23,15,8}',  'magenta'),
     ('SKU-4002', 'Resistance Band Kit',   'sports',      0.50, '{20,15,6}',  'gray'),
-    ('SKU-4003', 'Water Bottle',          'sports',      0.35, '{25,8,8}',   'navy');
+    ('SKU-4003', 'Water Bottle',          'sports',      0.35, '{25,8,8}',   'brown');
 
 INSERT INTO locations (id, kind, aisle, bay, level, x, y, z)
 SELECT format('%s-%s-%s', a.aisle, lpad(b.bay::text, 2, '0'), l.level),

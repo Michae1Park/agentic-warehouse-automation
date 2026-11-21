@@ -10,16 +10,31 @@ from .db import fetch_all
 
 client = AsyncOpenAI(base_url=settings.llm_base_url, api_key="unused")
 
-PROMPT = """You are the vision system of a warehouse picking robot. The image shows one shelf bin.
-Each product is a box with a distinct solid color:
+PROMPT = """You are the vision system of a warehouse picking robot. The image shows shelf bin {location_id}: \
+the shelf section in the center of the image, between the two blue posts.
+
+Product catalog (each product is a solid-colored box):
 {catalog}
-Identify which products are present in the bin and count the boxes of each.
-Reply with JSON only, mapping SKU to box count, e.g. {{"SKU-1001": 3}}. Use {{}} if the bin is empty."""
+
+The warehouse management system expects this bin to contain: {expected}.
+The record may be wrong. Report only what you actually see in this bin, ignoring anything outside it. An empty bin shows only the bare wooden shelf board.
+
+Count the boxes of each product in the bin. Reply with JSON only, mapping SKU to box count, \
+e.g. {{"SKU-1001": 3}}. Reply {{}} if the bin is empty."""
 
 
 async def _catalog() -> str:
     rows = await fetch_all("SELECT sku, name, color FROM products ORDER BY sku")
-    return "\n".join(f"- {r['color']} box = {r['sku']} ({r['name']})" for r in rows)
+    return "\n".join(f"- {r['color']}: {r['sku']} ({r['name']})" for r in rows)
+
+
+async def _expected(location_id: str) -> str:
+    rows = await fetch_all(
+        "SELECT i.sku, p.color, i.quantity FROM inventory i JOIN products p ON p.sku = i.sku "
+        "WHERE i.location_id = %s AND i.quantity > 0",
+        location_id,
+    )
+    return ", ".join(f"{r['quantity']} x {r['sku']} ({r['color']})" for r in rows) or "nothing (empty bin)"
 
 
 def _parse(text: str) -> dict[str, int]:
@@ -33,14 +48,14 @@ def _parse(text: str) -> dict[str, int]:
     return {str(k): int(v) for k, v in data.items() if str(k).startswith("SKU-") and int(v) > 0}
 
 
-async def identify_products(image_jpeg: bytes) -> dict:
+async def identify_products(image_jpeg: bytes, location_id: str) -> dict:
     started = time.perf_counter()
-    image_url = "data:image/jpeg;base64," + base64.b64encode(image_jpeg).decode()
+    prompt = PROMPT.format(location_id=location_id, catalog=await _catalog(), expected=await _expected(location_id))
     response = await client.chat.completions.create(
         model=settings.llm_model,
         messages=[{"role": "user", "content": [
-            {"type": "image_url", "image_url": {"url": image_url}},
-            {"type": "text", "text": PROMPT.format(catalog=await _catalog())},
+            {"type": "image_url", "image_url": {"url": "data:image/jpeg;base64," + base64.b64encode(image_jpeg).decode()}},
+            {"type": "text", "text": prompt},
         ]}],
         temperature=0.0,
         max_tokens=200,

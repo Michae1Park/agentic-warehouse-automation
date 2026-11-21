@@ -11,7 +11,7 @@ from .events import hub
 from .executor import TaskExecutor
 from .robot.isaac import IsaacRobot
 from .robot.mock import MockRobot
-from .routers import agent, exceptions, inventory, kpis, locations, orders, products, robots, sim, tasks
+from .routers import agent, exceptions, inventory, kpis, locations, orders, perception, products, robots, sim, tasks
 
 
 @asynccontextmanager
@@ -33,7 +33,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="Warehouse Operations API", lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=settings.cors_origins, allow_methods=["*"], allow_headers=["*"])
 
-for router in (agent.router, kpis.router, sim.router, locations.router, products.router, orders.router, inventory.router, robots.router, tasks.router, exceptions.router):
+for router in (agent.router, kpis.router, sim.router, locations.router, products.router, perception.router, orders.router, inventory.router, robots.router, tasks.router, exceptions.router):
     app.include_router(router, prefix="/api")
 
 

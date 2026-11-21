@@ -48,15 +48,17 @@ SHELF_BOARD = 0.04
 BIN_LENGTH = 1.3
 APPROACH_OFFSET = 1.0
 IK_ATTEMPTS = 8
+SCAN_STANDOFF = 0.8
 CORRIDOR_Y = -0.6
 TOTE_OFFSET = np.array([-0.3, 0.0, 0.46])
 FRONT_GRASP = euler_angles_to_quat(np.array([0.0, math.pi / 2, 0.0]))
 STREAM_EVERY = 3
+INSPECT_RES = (896, 384)
 
 COLORS = {
-    "red": (0.85, 0.12, 0.12), "blue": (0.15, 0.35, 0.9), "black": (0.08, 0.08, 0.08), "white": (0.92, 0.92, 0.92),
-    "yellow": (0.95, 0.82, 0.1), "green": (0.15, 0.7, 0.25), "orange": (0.95, 0.5, 0.1), "purple": (0.5, 0.2, 0.7),
-    "teal": (0.1, 0.6, 0.6), "pink": (0.95, 0.45, 0.65), "gray": (0.5, 0.5, 0.5), "navy": (0.08, 0.12, 0.4),
+    "red": (0.7, 0.0, 0.0), "blue": (0.0, 0.15, 0.85), "black": (0.03, 0.03, 0.03), "white": (0.9, 0.9, 0.9),
+    "yellow": (0.95, 0.88, 0.05), "green": (0.0, 0.5, 0.05), "orange": (1.0, 0.28, 0.0), "purple": (0.22, 0.0, 0.5),
+    "cyan": (0.0, 0.75, 0.8), "magenta": (1.0, 0.0, 0.45), "gray": (0.62, 0.64, 0.68), "brown": (0.35, 0.18, 0.05),
 }
 
 
@@ -108,7 +110,7 @@ class Warehouse:
         light = UsdLux.DomeLight.Define(self.stage, "/World/DomeLight")
         light.CreateIntensityAttr(900)
         sun = UsdLux.DistantLight.Define(self.stage, "/World/Sun")
-        sun.CreateIntensityAttr(2500)
+        sun.CreateIntensityAttr(1600)
         UsdGeom.Xformable(sun).AddRotateXYZOp().Set(Gf.Vec3f(-55, 0, 35))
 
         aisles: dict[str, list[dict]] = {}
@@ -193,12 +195,14 @@ class Warehouse:
         chase = UsdGeom.Camera.Define(self.stage, "/World/ChaseCam")
         chase.CreateFocalLengthAttr(16.0)
         inspect = UsdGeom.Camera.Define(self.stage, "/World/InspectCam")
-        inspect.CreateFocalLengthAttr(14.0)
+        inspect.CreateFocalLengthAttr(11.0)
+        inspect.CreateHorizontalApertureAttr(20.955)
+        inspect.CreateVerticalApertureAttr(20.955 * INSPECT_RES[1] / INSPECT_RES[0])
         self.view = "overview"
         self.products_rp = {
             "overview": rep.create.render_product("/World/OverviewCam", (args.width, args.height)),
             "chase": rep.create.render_product("/World/ChaseCam", (args.width, args.height)),
-            "inspect": rep.create.render_product("/World/InspectCam", (640, 480)),
+            "inspect": rep.create.render_product("/World/InspectCam", INSPECT_RES),
         }
         self.annotators = {}
         for name, rp in self.products_rp.items():
@@ -392,16 +396,23 @@ class Commands:
         joints = self.w.solve_ik(position)
         yield from self.move_arm(joints, steps)
 
-    def inspect(self, location_id: str):
+    def inspect(self, location_id: str, distance: float = 1.3, height: float = 0.25, focal: float = 16.0):
         location = self.w.locations[location_id]
         x, y, z = float(location["x"]), float(location["y"]), float(location["z"])
-        set_camera_view(eye=np.array([x - 1.2, y, z + 0.55]), target=np.array([x, y, z + 0.02]),
+        approach = self.w.approach_pose(location_id)
+        at_bin = np.linalg.norm(self.w.base_target[:2] - approach[:2]) < 0.3
+        if at_bin:
+            yield from self.drive_to(approach - np.array([SCAN_STANDOFF, 0.0, 0.0]))
+        UsdGeom.Camera(self.w.stage.GetPrimAtPath("/World/InspectCam")).GetFocalLengthAttr().Set(focal)
+        set_camera_view(eye=np.array([x - distance, y, z + height]), target=np.array([x, y, z + 0.06]),
                         camera_prim_path="/World/InspectCam")
         for _ in range(8):
             yield
         frame = self.w.annotators["inspect"].get_data()
         buffer = io.BytesIO()
         Image.fromarray(frame[..., :3]).save(buffer, format="JPEG", quality=85)
+        if at_bin:
+            yield from self.drive_to(approach)
         counts = {}
         for box in self.w.boxes_at(location_id):
             counts[box.sku] = counts.get(box.sku, 0) + 1
