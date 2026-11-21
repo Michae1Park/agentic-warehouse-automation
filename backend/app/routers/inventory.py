@@ -31,3 +31,4 @@ async def stock_by_location(sku: str | None = None):
 @router.get("/transactions")
 async def transactions(limit: int = 50):
     return await fetch_all("SELECT * FROM inventory_transactions ORDER BY id DESC LIMIT %s", limit)
+

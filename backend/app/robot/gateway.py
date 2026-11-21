@@ -19,6 +19,7 @@ class Pose:
 class Observation:
     location_id: str
     counts: dict[str, int]
+    image_jpeg: bytes | None = None
 
     @property
     def skus(self) -> list[str]:

@@ -1,7 +1,7 @@
 import random
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
 from ..config import settings
@@ -35,7 +35,7 @@ def _generate_orders(rng: random.Random, count: int, skus: list[str]) -> list[tu
 
 
 @router.post("/reset")
-async def reset(request: ResetRequest):
+async def reset(request: ResetRequest, http_request: Request):
     busy = await fetch_one("SELECT id FROM tasks WHERE status IN ('queued', 'running') LIMIT 1")
     if busy:
         raise HTTPException(409, f"task {busy['id']} is still active")
@@ -62,6 +62,9 @@ async def reset(request: ResetRequest):
     settings.route_optimization = request.route_optimization
     settings.sim_time_scale = request.time_scale
     missing = await world.load(request.seed, request.faults)
+    for robot in http_request.app.state.robots.values():
+        if hasattr(robot, "reset"):
+            await robot.reset(missing)
     return {"status": "reset", "missing_stock": missing}
 
 

@@ -16,6 +16,9 @@ class Settings(BaseSettings):
     recovery_enabled: bool = True
     route_optimization: bool = True
     seed_sql_path: str = "/srv/db/02_seed.sql"
+    robot_backend: str = "mock"
+    perception_mode: str = "vlm"
+    isaac_url: str = "http://localhost:8020"
 
 
 settings = Settings()

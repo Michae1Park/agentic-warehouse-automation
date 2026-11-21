@@ -15,7 +15,7 @@ INSERT INTO products (sku, name, category, weight_kg, size_cm, color) VALUES
 INSERT INTO locations (id, kind, aisle, bay, level, x, y, z)
 SELECT format('%s-%s-%s', a.aisle, lpad(b.bay::text, 2, '0'), l.level),
        'storage', a.aisle, b.bay, l.level,
-       a.x, (b.bay * 1.5)::numeric, (0.4 + (l.level - 1) * 0.5)::numeric
+       a.x, (b.bay * 1.5)::numeric, (0.3 + (l.level - 1) * 0.45)::numeric
 FROM (VALUES ('A', 2.0), ('B', 5.0), ('C', 8.0)) AS a(aisle, x)
 CROSS JOIN generate_series(1, 4) AS b(bay)
 CROSS JOIN generate_series(1, 2) AS l(level);

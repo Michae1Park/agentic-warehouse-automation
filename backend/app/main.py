@@ -9,16 +9,20 @@ from .config import settings
 from .db import pool
 from .events import hub
 from .executor import TaskExecutor
+from .robot.isaac import IsaacRobot
 from .robot.mock import MockRobot
-from .routers import agent, exceptions, inventory, kpis, locations, orders, robots, sim, tasks
+from .routers import agent, exceptions, inventory, kpis, locations, orders, products, robots, sim, tasks
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await pool.open()
     workers = [asyncio.create_task(hub.listen())]
+    gateways = app.state.robots = {}
     for robot_id in settings.robot_ids:
-        executor = TaskExecutor(MockRobot(robot_id), on_task_finished=notify_task_finished)
+        robot = IsaacRobot(robot_id) if settings.robot_backend == "isaac" else MockRobot(robot_id)
+        gateways[robot_id] = robot
+        executor = TaskExecutor(robot, on_task_finished=notify_task_finished)
         workers.append(asyncio.create_task(executor.run_forever()))
     yield
     for worker in workers:
@@ -29,7 +33,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="Warehouse Operations API", lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=settings.cors_origins, allow_methods=["*"], allow_headers=["*"])
 
-for router in (agent.router, kpis.router, sim.router, locations.router, orders.router, inventory.router, robots.router, tasks.router, exceptions.router):
+for router in (agent.router, kpis.router, sim.router, locations.router, products.router, orders.router, inventory.router, robots.router, tasks.router, exceptions.router):
     app.include_router(router, prefix="/api")
 
 
