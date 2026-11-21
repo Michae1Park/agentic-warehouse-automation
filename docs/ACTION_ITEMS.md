@@ -9,7 +9,7 @@ Running checklist for the Agentic Warehouse Automation demo.
 - [x] ROS2 Jazzy installed
 - [x] Python 3.12, Node 24
 - [ ] Isaac Sim (pull `nvcr.io/nvidia/isaac-sim` container, requires NGC login)
-- [ ] vLLM serving Qwen3-30B-A3B (AWQ) + Qwen2.5-VL-7B
+- [x] vLLM serving Qwen3.5-9B (FP8, ~14.5GB incl. KV cache) — single multimodal model for agent + vision
 - [ ] Measure GPU memory budget with sim + LLM + VLM + VLA
 
 ## Step 1 — Skeleton
@@ -24,11 +24,13 @@ Running checklist for the Agentic Warehouse Automation demo.
 
 ## Step 2 — Agent loop
 
-- [ ] Tool definitions (get_order, find_stock, reserve, plan_route, dispatch, inspect, pick, place, verify, update_inventory, raise_exception)
-- [ ] LLM tool-calling agent (OpenAI-compatible client → vLLM)
-- [ ] Persistent task state machine + executor
-- [ ] Mock robot gateway
-- [ ] Order #1042 fulfilled end-to-end against mock
+- [x] Tool definitions (list_orders, get_order, find_stock, get_robot_status, plan_fulfillment, dispatch_task, get_task_status, cancel_task, list_exceptions, report_exception)
+- [x] LLM tool-calling agent (OpenAI-compatible client → vLLM), conversation + latency persisted in Postgres
+- [x] Persistent task state machine + executor (per-robot queue, resumes running tasks after restart)
+- [x] Mock robot gateway behind `RobotGateway` protocol
+- [x] Order #1042 fulfilled end-to-end against mock (12/12 steps, inventory + order updated, agent auto-reports)
+- [x] Stock shortage (#1044) → agent refuses to dispatch, logs exception, proposes options
+- [x] Chat panel with tool-call trace and live system events
 
 ## Step 3 — Isaac warehouse scene + navigation
 
