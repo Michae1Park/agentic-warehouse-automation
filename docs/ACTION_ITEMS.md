@@ -8,7 +8,7 @@ Running checklist for the Agentic Warehouse Automation demo.
 - [x] Docker + Compose + NVIDIA runtime
 - [x] ROS2 Jazzy installed
 - [x] Python 3.12, Node 24
-- [ ] Isaac Sim (pull `nvcr.io/nvidia/isaac-sim` container, requires NGC login)
+- [x] Isaac Sim 5.1.0 container pulled (public, no NGC login needed)
 - [x] vLLM serving Qwen3.5-9B (FP8, ~14.5GB incl. KV cache) — single multimodal model for agent + vision
 - [ ] Measure GPU memory budget with sim + LLM + VLM + VLA
 
@@ -59,10 +59,18 @@ Running checklist for the Agentic Warehouse Automation demo.
 
 ## Step 7 — Failures and evaluation
 
-- [ ] Failure injection config (missing item, wrong item, blocked aisle, grasp failure)
-- [ ] Recovery strategies
-- [ ] Scripted baseline pipeline
-- [ ] KPI harness + results table
+- [x] Failure injection: physical world model diverges from system of record (missing stock, grasp failure, blocked path), seeded
+- [x] Recovery policies: regrasp, path replan, cycle-count + reroute to alternate bin; unrecoverable → agent escalation
+- [x] Scripted baseline (no LLM, no route optimization, no recovery) + scripted-with-recovery ablation
+- [ ] KPI harness + results table (harness done: `eval/run_eval.py`; final full run pending)
+
+## Additional business workflows
+
+- [x] Inventory inspection (cycle count task, corrects system of record)
+- [x] Item relocation between bins
+- [x] Stock replenishment from receiving (STAGING-1)
+- [x] Agent chains replenish → wait → fulfill for a short order (#1044)
+- [x] Live 2D floor map with active route overlay (fallback view next to Isaac stream)
 
 ## Step 8 — Polish
 
