@@ -57,7 +57,7 @@ async def _allocate(conn: AsyncConnection, sku: str, needed: int) -> tuple[list[
         """
         SELECT i.id, i.location_id, i.quantity - i.reserved AS available, l.x, l.y
         FROM inventory i JOIN locations l ON l.id = i.location_id
-        WHERE i.sku = %s AND i.quantity > i.reserved
+        WHERE i.sku = %s AND i.quantity > i.reserved AND l.kind = 'storage'
         ORDER BY available DESC
         FOR UPDATE OF i
         """,
@@ -193,7 +193,7 @@ async def cancel_task(task_id: int) -> dict:
     return {"task_id": task_id, "status": "cancelled"}
 
 
-async def record_pick(task_id: int, step_id: int, robot_id: str, inventory_id: int, order_id: int) -> None:
+async def record_pick(task_id: int, step_id: int, robot_id: str, inventory_id: int, order_id: int | None) -> None:
     async with pool.connection() as conn, conn.transaction():
         cur = await conn.execute(
             """
@@ -207,10 +207,11 @@ async def record_pick(task_id: int, step_id: int, robot_id: str, inventory_id: i
             "INSERT INTO inventory_transactions (sku, location_id, delta, reason, task_id) VALUES (%s, %s, -1, 'pick', %s)",
             (item["sku"], item["location_id"], task_id),
         )
-        await conn.execute(
-            "UPDATE order_lines SET picked_qty = picked_qty + 1 WHERE order_id = %s AND sku = %s",
-            (order_id, item["sku"]),
-        )
+        if order_id:
+            await conn.execute(
+                "UPDATE order_lines SET picked_qty = picked_qty + 1 WHERE order_id = %s AND sku = %s",
+                (order_id, item["sku"]),
+            )
         await conn.execute(
             "UPDATE robots SET tote = tote || %s, updated_at = now() WHERE id = %s",
             (Jsonb([item["sku"]]), robot_id),
@@ -315,3 +316,145 @@ async def reroute_missing_stock(task_id: int, failed_step_id: int) -> list[str] 
                 (task_id, pick["seq"] + offset, action, Jsonb(args)),
             )
     return [a["location_id"] for a in allocations]
+
+
+async def _create_task(
+    conn: AsyncConnection, kind: str, instruction: str, robot_id: str, conversation_id: str | None,
+    plan: dict, steps: list[tuple[str, dict]], order_id: int | None = None,
+) -> int:
+    cur = await conn.execute(
+        """
+        INSERT INTO tasks (kind, order_id, robot_id, instruction, conversation_id, plan)
+        VALUES (%s, %s, %s, %s, %s, %s) RETURNING id
+        """,
+        (kind, order_id, robot_id, instruction, conversation_id, Jsonb(plan)),
+    )
+    task_id = (await cur.fetchone())["id"]
+    for seq, (action, args) in enumerate(steps, start=1):
+        await conn.execute(
+            "INSERT INTO task_steps (task_id, seq, action, args) VALUES (%s, %s, %s, %s)",
+            (task_id, seq, action, Jsonb(args)),
+        )
+    return task_id
+
+
+async def _robot_position(conn: AsyncConnection, robot_id: str) -> tuple[float, float]:
+    cur = await conn.execute("SELECT x, y FROM robots WHERE id = %s", (robot_id,))
+    robot = await cur.fetchone()
+    if not robot:
+        raise WarehouseError(f"robot {robot_id} does not exist")
+    return float(robot["x"]), float(robot["y"])
+
+
+async def plan_inspection(location_ids: list[str], robot_id: str, conversation_id: str | None) -> dict:
+    async with pool.connection() as conn, conn.transaction():
+        cur = await conn.execute(
+            "SELECT id AS location_id, x, y FROM locations WHERE id = ANY(%s) AND kind IN ('storage', 'staging')",
+            (location_ids,),
+        )
+        found = [{**r, "x": float(r["x"]), "y": float(r["y"])} for r in await cur.fetchall()]
+        unknown = set(location_ids) - {r["location_id"] for r in found}
+        if unknown:
+            raise WarehouseError(f"unknown or non-storage locations: {sorted(unknown)}")
+        stops = _sequence_stops(await _robot_position(conn, robot_id), found)
+        steps = []
+        for stop in stops:
+            steps += [("navigate", {"location_id": stop["location_id"]}), ("count", {"location_id": stop["location_id"]})]
+        route = [s["location_id"] for s in stops]
+        task_id = await _create_task(
+            conn, "inspection", f"cycle count {len(route)} locations", robot_id, conversation_id, {"route": route}, steps
+        )
+    return {"task_id": task_id, "kind": "inspection", "route": route}
+
+
+async def plan_relocation(
+    sku: str, from_location: str, to_location: str, quantity: int, robot_id: str,
+    conversation_id: str | None, kind: str = "relocation",
+) -> dict:
+    if quantity <= 0:
+        raise WarehouseError("quantity must be positive")
+    async with pool.connection() as conn, conn.transaction():
+        cur = await conn.execute(
+            "SELECT * FROM locations WHERE id = %s AND kind IN ('storage', 'staging')", (to_location,)
+        )
+        if not await cur.fetchone():
+            raise WarehouseError(f"{to_location} is not a storage location")
+        cur = await conn.execute(
+            "SELECT id, quantity - reserved AS available FROM inventory WHERE sku = %s AND location_id = %s FOR UPDATE",
+            (sku, from_location),
+        )
+        source = await cur.fetchone()
+        if not source or source["available"] < quantity:
+            available = source["available"] if source else 0
+            raise WarehouseError(f"only {available} unreserved {sku} at {from_location}, requested {quantity}")
+        await conn.execute(
+            "UPDATE inventory SET reserved = reserved + %s, updated_at = now() WHERE id = %s", (quantity, source["id"])
+        )
+        steps = [
+            ("navigate", {"location_id": from_location}),
+            ("inspect", {"location_id": from_location, "sku": sku}),
+            ("pick", {"location_id": from_location, "sku": sku, "quantity": quantity, "inventory_id": source["id"]}),
+            ("navigate", {"location_id": to_location}),
+            ("stow", {"location_id": to_location, "sku": sku, "quantity": quantity}),
+        ]
+        plan = {"sku": sku, "from": from_location, "to": to_location, "quantity": quantity}
+        task_id = await _create_task(
+            conn, kind, f"{kind} {quantity}x {sku} {from_location} -> {to_location}", robot_id, conversation_id, plan, steps
+        )
+    return {"task_id": task_id, "kind": kind, **plan}
+
+
+async def record_count(task_id: int, location_id: str, counts: dict[str, int]) -> list[dict]:
+    adjustments = []
+    async with pool.connection() as conn, conn.transaction():
+        cur = await conn.execute(
+            "SELECT id, sku, quantity, reserved FROM inventory WHERE location_id = %s FOR UPDATE", (location_id,)
+        )
+        recorded = {r["sku"]: r for r in await cur.fetchall()}
+        for sku in set(recorded) | set(counts):
+            counted = counts.get(sku, 0)
+            row = recorded.get(sku)
+            system = row["quantity"] if row else 0
+            if counted == system:
+                continue
+            if row:
+                await conn.execute(
+                    "UPDATE inventory SET quantity = %s, reserved = LEAST(reserved, %s), updated_at = now() WHERE id = %s",
+                    (counted, counted, row["id"]),
+                )
+            else:
+                await conn.execute(
+                    "INSERT INTO inventory (sku, location_id, quantity) VALUES (%s, %s, %s)", (sku, location_id, counted)
+                )
+            await conn.execute(
+                "INSERT INTO inventory_transactions (sku, location_id, delta, reason, task_id) "
+                "VALUES (%s, %s, %s, 'cycle_count', %s)",
+                (sku, location_id, counted - system, task_id),
+            )
+            adjustments.append({"sku": sku, "location_id": location_id, "system": system, "counted": counted})
+    return adjustments
+
+
+async def record_stow(task_id: int, robot_id: str, sku: str, location_id: str) -> None:
+    async with pool.connection() as conn, conn.transaction():
+        await conn.execute(
+            """
+            UPDATE robots SET tote = tote - (
+                SELECT (ordinality - 1)::int FROM jsonb_array_elements_text(tote) WITH ORDINALITY
+                WHERE value = %s LIMIT 1
+            ), updated_at = now()
+            WHERE id = %s
+            """,
+            (sku, robot_id),
+        )
+        await conn.execute(
+            """
+            INSERT INTO inventory (sku, location_id, quantity) VALUES (%s, %s, 1)
+            ON CONFLICT (sku, location_id) DO UPDATE SET quantity = inventory.quantity + 1, updated_at = now()
+            """,
+            (sku, location_id),
+        )
+        await conn.execute(
+            "INSERT INTO inventory_transactions (sku, location_id, delta, reason, task_id) VALUES (%s, %s, 1, 'stow', %s)",
+            (sku, location_id, task_id),
+        )

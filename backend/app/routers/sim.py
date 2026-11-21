@@ -13,7 +13,7 @@ router = APIRouter(prefix="/sim", tags=["simulation"])
 SEED_SQL = Path(settings.seed_sql_path)
 TABLES = (
     "agent_messages, agent_runs, task_faults, inventory_transactions, exceptions, task_steps, "
-    "order_lines, orders, inventory, locations, products, events"
+    "tasks, robots, order_lines, orders, inventory, locations, products, events"
 )
 
 
@@ -41,11 +41,7 @@ async def reset(request: ResetRequest):
         raise HTTPException(409, f"task {busy['id']} is still active")
 
     async with pool.connection() as conn, conn.transaction():
-        await conn.execute("UPDATE robots SET current_task_id = NULL")
-        await conn.execute("DELETE FROM robots")
-        await conn.execute("DELETE FROM tasks")
         await conn.execute(f"TRUNCATE {TABLES} RESTART IDENTITY CASCADE")
-        await conn.execute("ALTER SEQUENCE tasks_id_seq RESTART")
         await conn.execute(SEED_SQL.read_text())
         if request.generated_orders:
             rng = random.Random(request.seed)

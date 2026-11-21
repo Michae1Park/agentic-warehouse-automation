@@ -204,6 +204,39 @@ class TaskExecutor:
             raise StepFailed(err.code, str(err)) from err
         return {"placed": await warehouse.record_place(self.robot.robot_id)}
 
+    async def _do_count(self, task: dict, step: dict) -> dict:
+        location_id = step["args"]["location_id"]
+        observation = await self.robot.inspect(location_id)
+        adjustments = await warehouse.record_count(task["id"], location_id, observation.counts)
+        for adj in adjustments:
+            await warehouse.raise_exception(
+                "inventory_discrepancy",
+                f"cycle count at {location_id}: {adj['sku']} system {adj['system']}, counted {adj['counted']}; corrected",
+                severity="info", task_id=task["id"], status="resolved",
+            )
+        return {"counts": observation.counts, "adjustments": adjustments}
+
+    async def _do_stow(self, task: dict, step: dict) -> dict:
+        args = step["args"]
+        max_attempts = settings.pick_max_attempts if settings.recovery_enabled else 1
+        stowed, failed_attempts = args.get("stowed", 0), 0
+        while stowed < args["quantity"]:
+            try:
+                await self.robot.stow(args["sku"], args["location_id"])
+            except RobotError as err:
+                failed_attempts += 1
+                if failed_attempts >= max_attempts:
+                    raise StepFailed(err.code, str(err)) from err
+                await record_fault(task["id"], step["seq"], err.code, str(err), f"restow (attempt {failed_attempts + 1})")
+                continue
+            await warehouse.record_stow(task["id"], self.robot.robot_id, args["sku"], args["location_id"])
+            stowed += 1
+            await fetch_one(
+                "UPDATE task_steps SET args = jsonb_set(args, '{stowed}', to_jsonb(%s::int)) WHERE id = %s RETURNING id",
+                stowed, step["id"],
+            )
+        return {"stowed": stowed, "failed_attempts": failed_attempts}
+
     async def _do_verify(self, task: dict, step: dict) -> dict:
         mismatches = await warehouse.verify_order(step["args"]["order_id"])
         if mismatches:

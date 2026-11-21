@@ -35,14 +35,17 @@ class PhysicalWorld:
         if not self.loaded:
             await self.load()
 
-    def observe(self, location_id: str) -> list[str]:
-        return [sku for (loc, sku), qty in self.stock.items() if loc == location_id and qty > 0]
+    def observe(self, location_id: str) -> dict[str, int]:
+        return {sku: qty for (loc, sku), qty in self.stock.items() if loc == location_id and qty > 0}
 
     def quantity(self, location_id: str, sku: str) -> int:
         return self.stock.get((location_id, sku), 0)
 
     def take(self, location_id: str, sku: str) -> None:
         self.stock[(location_id, sku)] -= 1
+
+    def add(self, location_id: str, sku: str) -> None:
+        self.stock[(location_id, sku)] = self.stock.get((location_id, sku), 0) + 1
 
     def grasp_fails(self) -> bool:
         return self.rng.random() < self.faults.grasp_failure_rate

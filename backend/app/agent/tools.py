@@ -2,6 +2,9 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any
 
+import asyncio
+import time
+
 from .. import warehouse
 from ..db import fetch_all, fetch_one
 
@@ -30,7 +33,8 @@ def _params(properties: dict | None = None, required: list[str] | None = None) -
 
 
 ORDER_ID = {"type": "integer", "description": "Order number, e.g. 1042"}
-TASK_ID = {"type": "integer", "description": "Task id returned by plan_fulfillment"}
+LOCATION = {"type": "string", "description": "Location id, e.g. A-01-1 or STAGING-1"}
+TASK_ID = {"type": "integer", "description": "Task id returned by a planning tool"}
 
 
 async def list_orders(ctx: ToolContext, status: str | None = None):
@@ -64,7 +68,7 @@ async def dispatch_task(ctx: ToolContext, task_id: int):
 
 
 async def get_task_status(ctx: ToolContext, task_id: int):
-    task = await fetch_one("SELECT id, order_id, status, error, plan FROM tasks WHERE id = %s", task_id)
+    task = await fetch_one("SELECT id, kind, order_id, status, error, plan FROM tasks WHERE id = %s", task_id)
     if not task:
         return {"error": f"task {task_id} not found"}
     task["steps"] = await fetch_all(
@@ -75,8 +79,64 @@ async def get_task_status(ctx: ToolContext, task_id: int):
     return task
 
 
+async def wait_for_task(ctx: ToolContext, task_id: int, timeout_s: int = 300):
+    deadline = time.monotonic() + min(timeout_s, 600)
+    while time.monotonic() < deadline:
+        task = await fetch_one("SELECT id, kind, status, error FROM tasks WHERE id = %s", task_id)
+        if not task:
+            return {"error": f"task {task_id} not found"}
+        if task["status"] == "planned":
+            return {"error": f"task {task_id} has not been dispatched; call dispatch_task first"}
+        if task["status"] in ("succeeded", "failed", "cancelled"):
+            return task
+        await asyncio.sleep(0.5)
+    return {"id": task_id, "status": "still_running", "note": "timed out waiting"}
+
+
 async def cancel_task(ctx: ToolContext, task_id: int):
     return await warehouse.cancel_task(task_id)
+
+
+async def get_location(ctx: ToolContext, location_id: str):
+    location = await fetch_one("SELECT id, kind, aisle, bay, level FROM locations WHERE id = %s", location_id)
+    if not location:
+        return {"error": f"location {location_id} not found"}
+    location["stock"] = await fetch_all(
+        "SELECT sku, quantity, reserved FROM inventory WHERE location_id = %s AND quantity > 0", location_id
+    )
+    return location
+
+
+async def find_empty_bins(ctx: ToolContext, aisle: str | None = None):
+    return await fetch_all(
+        """
+        SELECT l.id FROM locations l
+        WHERE l.kind = 'storage' AND (%s::text IS NULL OR l.aisle = %s)
+          AND NOT EXISTS (SELECT 1 FROM inventory i WHERE i.location_id = l.id AND i.quantity > 0)
+        ORDER BY l.id
+        """,
+        aisle, aisle,
+    )
+
+
+async def inspect_inventory(ctx: ToolContext, location_ids: list[str] | None = None, aisle: str | None = None):
+    if not location_ids:
+        rows = await fetch_all(
+            "SELECT id FROM locations WHERE kind = 'storage' AND (%s::text IS NULL OR aisle = %s) ORDER BY id",
+            aisle, aisle,
+        )
+        location_ids = [r["id"] for r in rows]
+    return await warehouse.plan_inspection(location_ids, ctx.robot_id, ctx.conversation_id)
+
+
+async def relocate_stock(ctx: ToolContext, sku: str, from_location: str, to_location: str, quantity: int):
+    return await warehouse.plan_relocation(sku, from_location, to_location, quantity, ctx.robot_id, ctx.conversation_id)
+
+
+async def replenish_stock(ctx: ToolContext, sku: str, to_location: str, quantity: int, from_location: str = "STAGING-1"):
+    return await warehouse.plan_relocation(
+        sku, from_location, to_location, quantity, ctx.robot_id, ctx.conversation_id, kind="replenishment"
+    )
 
 
 async def list_exceptions(ctx: ToolContext, status: str | None = "open"):
@@ -108,10 +168,33 @@ TOOLS = [
              "type": "string", "description": "Dispatch area, e.g. DISPATCH-1. Defaults to the order's assigned area."}},
              ["order_id"]),
          plan_fulfillment),
+    Tool("get_location", "Get a location's contents.",
+         _params({"location_id": LOCATION}, ["location_id"]), get_location),
+    Tool("find_empty_bins", "List empty storage bins, optionally within one aisle (A, B or C).",
+         _params({"aisle": {"type": "string"}}), find_empty_bins),
+    Tool("inspect_inventory",
+         "Plan a cycle-count task: the robot visits locations, counts stock visually and corrects the system of record. "
+         "Give explicit location_ids or an aisle; with neither, all storage bins are counted.",
+         _params({"location_ids": {"type": "array", "items": {"type": "string"}}, "aisle": {"type": "string"}}),
+         inspect_inventory),
+    Tool("relocate_stock", "Plan a task moving units of a SKU from one storage location to another.",
+         _params({"sku": {"type": "string"}, "from_location": LOCATION, "to_location": LOCATION,
+                  "quantity": {"type": "integer"}}, ["sku", "from_location", "to_location", "quantity"]),
+         relocate_stock),
+    Tool("replenish_stock",
+         "Plan a replenishment task moving received stock from the staging/receiving area to a storage bin.",
+         _params({"sku": {"type": "string"}, "to_location": LOCATION, "quantity": {"type": "integer"},
+                  "from_location": {"type": "string", "description": "Defaults to STAGING-1 (receiving)"}},
+                 ["sku", "to_location", "quantity"]),
+         replenish_stock),
     Tool("dispatch_task", "Send a planned task to the robot for execution. Returns immediately; the robot works asynchronously.",
          _params({"task_id": TASK_ID}, ["task_id"]), dispatch_task),
     Tool("get_task_status", "Get a task's status and per-step progress.",
          _params({"task_id": TASK_ID}, ["task_id"]), get_task_status),
+    Tool("wait_for_task",
+         "Block until a dispatched task finishes, then return its final status. Use only when a following step "
+         "depends on that task's outcome (e.g. fulfill after replenishment).",
+         _params({"task_id": TASK_ID, "timeout_s": {"type": "integer"}}, ["task_id"]), wait_for_task),
     Tool("cancel_task", "Cancel a planned or queued task and release its inventory reservations.",
          _params({"task_id": TASK_ID}, ["task_id"]), cancel_task),
     Tool("list_exceptions", "List operational exceptions.",

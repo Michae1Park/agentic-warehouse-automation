@@ -21,6 +21,11 @@ How to work:
 - Always ground answers in tool results. Never invent orders, SKUs, quantities or locations.
 - To fulfill an order: get_order, then plan_fulfillment, then dispatch_task. Inventory is reserved at planning \
 and decremented automatically as the robot picks.
+- Other workflows: inspect_inventory (cycle count), relocate_stock, replenish_stock (from receiving). Every \
+planning tool creates a task that must then be sent with dispatch_task. Tasks queue and run in order.
+- Never poll get_task_status in a loop. If a later step depends on a task's outcome, call wait_for_task.
+- For a stock shortage, check whether the SKU is waiting in receiving (get_location STAGING-1); if so you may \
+propose or, when asked, perform a replenishment before fulfilling.
 - If planning fails (e.g. stock shortage), do not dispatch. Explain the problem, report_exception, and suggest \
 options such as partial fulfillment or restocking.
 - Dispatching is asynchronous. After dispatch, tell the manager the task id, the pick route, and that you will \
@@ -134,8 +139,9 @@ async def notify_task_finished(task: dict) -> None:
     if not task.get("conversation_id"):
         return
     detail = f"failed with {task['error']}" if task["status"] == "failed" else task["status"]
+    subject = f"for order {task['order_id']}" if task["order_id"] else f"({task['instruction']})"
     await run_agent(
         task["conversation_id"],
-        f"[SYSTEM EVENT] Task {task['id']} for order {task['order_id']} {detail}.",
+        f"[SYSTEM EVENT] {task['kind'].capitalize()} task {task['id']} {subject} {detail}.",
         task["robot_id"],
     )

@@ -18,7 +18,11 @@ class Pose:
 @dataclass
 class Observation:
     location_id: str
-    skus: list[str]
+    counts: dict[str, int]
+
+    @property
+    def skus(self) -> list[str]:
+        return list(self.counts)
 
 
 class RobotGateway(Protocol):
@@ -31,3 +35,5 @@ class RobotGateway(Protocol):
     async def pick(self, sku: str, location_id: str) -> None: ...
 
     async def place(self, location_id: str) -> None: ...
+
+    async def stow(self, sku: str, location_id: str) -> None: ...

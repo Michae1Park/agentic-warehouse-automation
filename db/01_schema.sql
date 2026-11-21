@@ -73,6 +73,7 @@ CREATE TABLE tasks (
     id              SERIAL PRIMARY KEY,
     order_id        INT REFERENCES orders(id),
     robot_id        TEXT REFERENCES robots(id),
+    kind            TEXT NOT NULL DEFAULT 'fulfillment',
     instruction     TEXT NOT NULL,
     conversation_id TEXT,
     error           TEXT,
