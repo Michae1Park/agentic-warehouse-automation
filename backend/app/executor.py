@@ -201,18 +201,23 @@ class TaskExecutor:
         picked = args.get("picked", 0)
         max_attempts = settings.pick_max_attempts if settings.recovery_enabled else 1
         failed_attempts = 0
+        policies: list[str] = []
         while picked < args["quantity"]:
             try:
-                await self.robot.pick(args["sku"], args["location_id"])
+                outcome = await self.robot.pick(args["sku"], args["location_id"]) or {}
             except RobotError as err:
                 failed_attempts += 1
                 if err.code == "item_not_found" or failed_attempts >= max_attempts:
                     raise StepFailed(err.code, str(err)) from err
                 await record_fault(task["id"], step["seq"], err.code, str(err), f"regrasp (attempt {failed_attempts + 1})")
                 continue
+            if outcome.get("policy_used") == "scripted_fallback":
+                await record_fault(task["id"], step["seq"], "vla_grasp_missed",
+                                   f"VLA grasp of {args['sku']} missed", "fell back to scripted grasp")
+            policies.append(outcome.get("policy_used", "scripted"))
             await warehouse.record_pick(task["id"], step["id"], self.robot.robot_id, args["inventory_id"], task["order_id"])
             picked += 1
-        return {"picked": picked, "failed_attempts": failed_attempts}
+        return {"picked": picked, "failed_attempts": failed_attempts, "grasp_policies": policies}
 
     async def _do_place(self, task: dict, step: dict) -> dict:
         try:

@@ -59,11 +59,14 @@ class IsaacRobot:
         self.last_image = base64.b64decode(result["image_jpeg_b64"])
         return Observation(location_id, result["counts"], self.last_image)
 
-    async def pick(self, sku: str, location_id: str) -> None:
+    async def pick(self, sku: str, location_id: str) -> dict:
         await world.ensure_loaded()
         fail = world.quantity(location_id, sku) > 0 and world.grasp_fails()
-        await self._with_pose_sync("pick", {"sku": sku, "location_id": location_id, "fail": fail})
+        result = await self._with_pose_sync(
+            "pick", {"sku": sku, "location_id": location_id, "fail": fail, "policy": settings.grasp_policy}
+        )
         world.take(location_id, sku)
+        return result
 
     async def place(self, location_id: str) -> None:
         await self._with_pose_sync("place", {"location_id": location_id})

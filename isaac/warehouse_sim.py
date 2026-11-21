@@ -15,6 +15,10 @@ parser.add_argument("--api", default="http://localhost:8010")
 parser.add_argument("--port", type=int, default=8020)
 parser.add_argument("--width", type=int, default=1280)
 parser.add_argument("--height", type=int, default=720)
+parser.add_argument("--collect", type=int, default=0, help="record N scripted grasp demonstrations and exit")
+parser.add_argument("--out", default="/workspace/vla/data/raw")
+parser.add_argument("--seed", type=int, default=0)
+parser.add_argument("--policy-url", default="http://localhost:8030")
 args, _ = parser.parse_known_args()
 
 from isaacsim import SimulationApp
@@ -54,6 +58,12 @@ TOTE_OFFSET = np.array([-0.3, 0.0, 0.46])
 FRONT_GRASP = euler_angles_to_quat(np.array([0.0, math.pi / 2, 0.0]))
 STREAM_EVERY = 3
 INSPECT_RES = (896, 384)
+POLICY_RES = (256, 256)
+CONTROL_EVERY = 6
+FINGERTIP_OFFSET = np.array([0.0, 0.0, 0.1034])
+GRASP_TOLERANCE = 0.05
+VLA_MAX_STEPS = 120
+VLA_EXECUTE_ACTIONS = 5
 
 COLORS = {
     "red": (0.7, 0.0, 0.0), "blue": (0.0, 0.15, 0.85), "black": (0.03, 0.03, 0.03), "white": (0.9, 0.9, 0.9),
@@ -88,7 +98,8 @@ class Box:
 
 
 class Warehouse:
-    def __init__(self):
+    def __init__(self, streaming: bool = True):
+        self.streaming = streaming
         self.world = World(stage_units_in_meters=1.0, physics_dt=PHYSICS_DT, rendering_dt=PHYSICS_DT)
         self.stage = get_current_stage()
         self.locations = {l["id"]: l for l in api_get("/api/locations")}
@@ -188,7 +199,43 @@ class Warehouse:
         self.arm_target = self.arm_home.copy()
         self.finger_target = 0.04
 
+    def _build_policy_cameras(self) -> None:
+        camera = UsdGeom.Camera.Define(self.stage, "/World/HeadCam")
+        camera.CreateFocalLengthAttr(10.0)
+        camera.CreateHorizontalApertureAttr(20.955)
+        camera.CreateVerticalApertureAttr(20.955)
+        self.update_policy_cameras()
+        for name, path in (("head", "/World/HeadCam"),):
+            annotator = rep.AnnotatorRegistry.get_annotator("rgb")
+            annotator.attach([rep.create.render_product(path, POLICY_RES)])
+            self.annotators[name] = annotator
+
+    def policy_observation(self) -> dict:
+        positions = self.robot.get_joint_positions()
+        state = np.concatenate([positions[self.arm_idx], [positions[self.finger_idx].mean()]]).astype(np.float32)
+        return {
+            "head": self.annotators["head"].get_data()[..., :3].copy(),
+            "state": state,
+            "action": np.concatenate([self.arm_target, [self.finger_target]]).astype(np.float32),
+        }
+
+    def update_policy_cameras(self) -> None:
+        x, y, theta = self.base_pose()
+        forward = np.array([math.cos(theta), math.sin(theta), 0.0])
+        base = np.array([x, y, 0.0])
+        set_camera_view(eye=base + forward * 0.1 + np.array([0, 0, 1.25]),
+                        target=base + forward * 0.95 + np.array([0, 0, 0.45]), camera_prim_path="/World/HeadCam")
+
+    def fingertip(self) -> np.ndarray:
+        position, orientation = self.hand.get_world_pose()
+        return position + quat_to_rot_matrix(orientation) @ FINGERTIP_OFFSET
+
     def _build_cameras(self) -> None:
+        self.annotators = {}
+        self._build_policy_cameras()
+        if not self.streaming:
+            self.view = "head"
+            return
         overview = UsdGeom.Camera.Define(self.stage, "/World/OverviewCam")
         overview.CreateFocalLengthAttr(18.0)
         set_camera_view(eye=np.array([-4.0, -7.5, 9.5]), target=np.array([6.0, 3.0, 0.0]), camera_prim_path="/World/OverviewCam")
@@ -204,7 +251,6 @@ class Warehouse:
             "chase": rep.create.render_product("/World/ChaseCam", (args.width, args.height)),
             "inspect": rep.create.render_product("/World/InspectCam", INSPECT_RES),
         }
-        self.annotators = {}
         for name, rp in self.products_rp.items():
             annotator = rep.AnnotatorRegistry.get_annotator("rgb")
             annotator.attach([rp])
@@ -418,17 +464,64 @@ class Commands:
             counts[box.sku] = counts.get(box.sku, 0) + 1
         return {"location_id": location_id, "counts": counts, "image_jpeg_b64": base64.b64encode(buffer.getvalue()).decode()}
 
-    def pick(self, sku: str, location_id: str, fail: bool = False):
+    def target_box(self, sku: str, location_id: str) -> Box:
         candidates = [b for b in self.w.boxes_at(location_id) if b.sku == sku]
         if not candidates:
             raise SimError("item_not_found", f"no {sku} at {location_id}")
         base = self.w.base_pose()
-        box = min(candidates, key=lambda b: np.linalg.norm(b.prim.get_world_pose()[0][:2] - base[:2]))
+        return min(candidates, key=lambda b: np.linalg.norm(b.prim.get_world_pose()[0][:2] - base[:2]))
+
+    def grasp_scripted(self, box: Box):
         position, _ = box.prim.get_world_pose()
         yield from self.gripper(0.04)
         yield from self.reach(position + np.array([-0.16, 0, 0.02]))
         yield from self.reach(position + np.array([-0.02, 0, 0.0]), 50)
         yield from self.gripper(0.0)
+        return True
+
+    def grasp_vla(self, box: Box, instruction: str):
+        position, _ = box.prim.get_world_pose()
+        self.w.finger_target = 0.04
+        for step in range(VLA_MAX_STEPS):
+            obs = self.w.policy_observation()
+            body = json.dumps({
+                "instruction": instruction, "state": obs["state"].tolist(),
+                "head_jpeg_b64": encode_jpeg(obs["head"]),
+            }).encode()
+            request = urllib.request.Request(args.policy_url + "/act", data=body, headers={"content-type": "application/json"})
+            with urllib.request.urlopen(request, timeout=30) as response:
+                actions = np.array(json.loads(response.read())["actions"], dtype=float)
+            for action in actions[:VLA_EXECUTE_ACTIONS]:
+                start_arm, start_finger = self.w.arm_target.copy(), self.w.finger_target
+                for i in range(1, CONTROL_EVERY + 1):
+                    t = i / CONTROL_EVERY
+                    self.w.arm_target = start_arm + (action[:7] - start_arm) * t
+                    self.w.finger_target = float(np.clip(start_finger + (action[7] - start_finger) * t, 0.0, 0.04))
+                    yield
+                if self.w.finger_target < 0.015:
+                    for _ in range(15):
+                        yield
+                    return bool(np.linalg.norm(self.w.fingertip() - position) < GRASP_TOLERANCE)
+        return False
+
+    def pick(self, sku: str, location_id: str, fail: bool = False, policy: str = "scripted"):
+        box = self.target_box(sku, location_id)
+        position, _ = box.prim.get_world_pose()
+        used = "scripted"
+        vla_success = None
+        if policy in ("vla", "vla_with_fallback"):
+            color = self.w.colors.get(sku, "")
+            vla_success = yield from self.grasp_vla(box, f"pick up the {color} box")
+            used = "vla"
+            if not vla_success:
+                yield from self.gripper(0.04)
+                yield from self.move_arm(self.w.arm_home, 50)
+                if policy == "vla":
+                    raise SimError("grasp_failed", f"VLA grasp of {sku} at {location_id} missed")
+                used = "scripted_fallback"
+                yield from self.grasp_scripted(box)
+        else:
+            yield from self.grasp_scripted(box)
         self.w.grab(box)
         box.location_id = None
         yield from self.reach(position + np.array([-0.06, 0, 0.04]), 30)
@@ -447,7 +540,7 @@ class Commands:
         self.w.tote.append(box)
         yield from self.gripper(0.04)
         self.w.repack(location_id)
-        return {"picked": sku, "tote": [b.sku for b in self.w.tote]}
+        return {"picked": sku, "tote": [b.sku for b in self.w.tote], "policy_used": used, "vla_success": vla_success}
 
     def place(self, location_id: str):
         location = self.w.locations[location_id]
@@ -539,6 +632,7 @@ class Server:
             self.w.apply_targets()
             self.w.update_attachments()
             self.w.update_chase_camera()
+            self.w.update_policy_cameras()
             self.w.world.step(render=True)
             step += 1
             if step % STREAM_EVERY == 0:
@@ -576,6 +670,86 @@ class Server:
                 self.w.view = payload["view"]
             return {"view": self.w.view}
         raise ValueError(name)
+
+
+def encode_jpeg(frame: np.ndarray, quality: int = 90) -> str:
+    buffer = io.BytesIO()
+    Image.fromarray(frame).save(buffer, format="JPEG", quality=quality)
+    return base64.b64encode(buffer.getvalue()).decode()
+
+
+def teleport_base(warehouse: Warehouse, pose: np.ndarray) -> None:
+    positions = warehouse.robot.get_joint_positions()
+    positions[warehouse.base_idx] = pose
+    positions[warehouse.arm_idx] = warehouse.arm_home
+    positions[warehouse.finger_idx] = 0.04
+    warehouse.robot.set_joint_positions(positions)
+    warehouse.base_target = pose.copy()
+    warehouse.arm_target = warehouse.arm_home.copy()
+    warehouse.finger_target = 0.04
+
+
+def step(warehouse: Warehouse) -> None:
+    warehouse.apply_targets()
+    warehouse.update_attachments()
+    warehouse.update_policy_cameras()
+    warehouse.world.step(render=True)
+
+
+def collect_demos(warehouse: Warehouse, episodes: int) -> None:
+    from pathlib import Path
+
+    rng = np.random.default_rng(args.seed)
+    out = Path(args.out)
+    out.mkdir(parents=True, exist_ok=True)
+    commands = Commands(warehouse)
+    stocked = sorted({(b.location_id, b.sku) for b in warehouse.boxes if b.location_id
+                      and warehouse.locations[b.location_id]["kind"] == "storage"})
+    log = open(out / "collect_log.jsonl", "a")
+    saved = 0
+    attempt = 0
+    while saved < episodes and attempt < episodes * 3:
+        attempt += 1
+        location_id, sku = stocked[rng.integers(len(stocked))]
+        jitter = np.array([rng.uniform(-0.06, 0.06), rng.uniform(-0.25, 0.25), rng.uniform(-0.08, 0.08)])
+        teleport_base(warehouse, warehouse.approach_pose(location_id) + jitter)
+        for _ in range(20):
+            step(warehouse)
+        box = commands.target_box(sku, location_id)
+        frames = {"head": [], "state": [], "action": []}
+        generator = commands.grasp_scripted(box)
+        ticks = 0
+        try:
+            while True:
+                next(generator)
+                step(warehouse)
+                ticks += 1
+                if ticks % CONTROL_EVERY == 0:
+                    for key, value in warehouse.policy_observation().items():
+                        frames[key].append(value)
+        except StopIteration:
+            pass
+        except SimError as err:
+            log.write(json.dumps({"attempt": attempt, "skipped": str(err)}) + "\n")
+            continue
+        for _ in range(3 * CONTROL_EVERY):
+            step(warehouse)
+            if _ % CONTROL_EVERY == 0:
+                for key, value in warehouse.policy_observation().items():
+                    frames[key].append(value)
+        success = bool(np.linalg.norm(warehouse.fingertip() - box.prim.get_world_pose()[0]) < GRASP_TOLERANCE)
+        if not success:
+            log.write(json.dumps({"attempt": attempt, "skipped": "scripted grasp missed"}) + "\n")
+            continue
+        instruction = f"pick up the {warehouse.colors.get(sku, '')} box"
+        np.savez_compressed(
+            out / f"episode_{saved:04d}.npz", instruction=instruction,
+            **{key: np.stack(value) for key, value in frames.items()},
+        )
+        log.write(json.dumps({"episode": saved, "location_id": location_id, "sku": sku,
+                              "frames": len(frames["state"]), "instruction": instruction}) + "\n")
+        log.flush()
+        saved += 1
 
 
 def make_handler(server: Server):
@@ -635,8 +809,12 @@ def make_handler(server: Server):
 
 
 def main() -> None:
-    warehouse = Warehouse()
+    warehouse = Warehouse(streaming=not args.collect)
     warehouse.reset_inventory([])
+    if args.collect:
+        collect_demos(warehouse, args.collect)
+        app.close()
+        return
     server = Server(warehouse)
     http = ThreadingHTTPServer(("0.0.0.0", args.port), make_handler(server))
     threading.Thread(target=http.serve_forever, daemon=True).start()

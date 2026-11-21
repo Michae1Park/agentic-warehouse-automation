@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     seed_sql_path: str = "/srv/db/02_seed.sql"
     robot_backend: str = "mock"
     perception_mode: str = "vlm"
+    grasp_policy: str = "scripted"
     isaac_url: str = "http://localhost:8020"
 
 
