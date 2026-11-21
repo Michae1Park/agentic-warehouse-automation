@@ -128,6 +128,25 @@ _Filled in by `eval/run_eval.py` and `eval/vlm_eval.py`; see `eval/results/`._
 
 ---
 
+## Limitations (what is simplified)
+
+This is a portfolio demo, so the simplifications are stated plainly:
+
+- **Grasp physics.** Boxes are visual objects. A grasp succeeds when the fingertips close within 5 cm of the target
+  box, and the box is then attached to the hand. Arm motion is physically simulated; contact-rich grasping is not.
+- **Carton-flow shelving.** After each pick the remaining boxes slide forward, as in a gravity-flow rack, so the next
+  unit is always reachable from the aisle.
+- **Navigation.** A corridor waypoint planner inside the simulator drives the holonomic base. ROS2 / Nav2 and MoveIt2
+  are not integrated. The `RobotGateway` interface is where they would plug in.
+- **VLM counting.** From a single front-facing camera the VLM reliably identifies products and detects empty or wrong
+  bins, but it cannot count boxes hidden behind the front row. Cycle counts therefore use VLM presence (zero-out
+  missing SKUs, flag unexpected ones) rather than VLM quantities.
+- **Faults are injected**, with seeded probabilities, into a physical world model that is separate from the database.
+- **The VLA** is SmolVLA fine-tuned on 200 scripted demonstrations of the reach-and-grasp segment only. Lifting,
+  stowing and placing remain scripted.
+
+---
+
 ## Running it
 
 Requirements: NVIDIA GPU (tested on an L40S 48GB), Docker with the NVIDIA runtime, and the Qwen3.5-9B weights in

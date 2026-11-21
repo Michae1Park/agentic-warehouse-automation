@@ -19,6 +19,7 @@ parser.add_argument("--collect", type=int, default=0, help="record N scripted gr
 parser.add_argument("--out", default="/workspace/vla/data/raw")
 parser.add_argument("--seed", type=int, default=0)
 parser.add_argument("--policy-url", default="http://localhost:8030")
+parser.add_argument("--eval-grasp", type=int, default=0, help="compare scripted vs VLA grasps on N randomized trials")
 args, _ = parser.parse_known_args()
 
 from isaacsim import SimulationApp
@@ -752,6 +753,60 @@ def collect_demos(warehouse: Warehouse, episodes: int) -> None:
         saved += 1
 
 
+def run_trial(warehouse: Warehouse, commands: "Commands", pose: np.ndarray, box: Box, policy: str) -> dict:
+    teleport_base(warehouse, pose)
+    for _ in range(20):
+        step(warehouse)
+    generator = commands.grasp_vla(box, f"pick up the {warehouse.colors.get(box.sku, '')} box") if policy == "vla" \
+        else commands.grasp_scripted(box)
+    ticks, result = 0, False
+    try:
+        while True:
+            next(generator)
+            step(warehouse)
+            ticks += 1
+    except StopIteration as stop:
+        result = stop.value
+    except SimError:
+        result = False
+    if policy == "scripted":
+        for _ in range(15):
+            step(warehouse)
+        result = bool(np.linalg.norm(warehouse.fingertip() - box.prim.get_world_pose()[0]) < GRASP_TOLERANCE)
+    return {"success": bool(result), "sim_seconds": ticks * PHYSICS_DT}
+
+
+def eval_grasps(warehouse: Warehouse, trials: int) -> None:
+    from pathlib import Path
+
+    rng = np.random.default_rng(args.seed)
+    commands = Commands(warehouse)
+    stocked = sorted({(b.location_id, b.sku) for b in warehouse.boxes if b.location_id
+                      and warehouse.locations[b.location_id]["kind"] == "storage"})
+    rows = []
+    for trial in range(trials):
+        location_id, sku = stocked[rng.integers(len(stocked))]
+        jitter = np.array([rng.uniform(-0.06, 0.06), rng.uniform(-0.25, 0.25), rng.uniform(-0.08, 0.08)])
+        pose = warehouse.approach_pose(location_id) + jitter
+        box = commands.target_box(sku, location_id)
+        row = {"trial": trial, "location_id": location_id, "sku": sku}
+        for policy in ("scripted", "vla"):
+            row[policy] = run_trial(warehouse, commands, pose, box, policy)
+        rows.append(row)
+        print(json.dumps(row), flush=True)
+    summary = {
+        "trials": trials,
+        "scripted_success": sum(r["scripted"]["success"] for r in rows) / trials,
+        "vla_success": sum(r["vla"]["success"] for r in rows) / trials,
+        "vla_or_fallback_success": sum(r["vla"]["success"] or r["scripted"]["success"] for r in rows) / trials,
+        "scripted_mean_s": float(np.mean([r["scripted"]["sim_seconds"] for r in rows])),
+        "vla_mean_s": float(np.mean([r["vla"]["sim_seconds"] for r in rows])),
+    }
+    out = Path(args.out)
+    out.mkdir(parents=True, exist_ok=True)
+    (out / "grasp_eval.json").write_text(json.dumps({"summary": summary, "trials": rows}, indent=2))
+
+
 def make_handler(server: Server):
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *_):
@@ -809,10 +864,14 @@ def make_handler(server: Server):
 
 
 def main() -> None:
-    warehouse = Warehouse(streaming=not args.collect)
+    warehouse = Warehouse(streaming=not (args.collect or args.eval_grasp))
     warehouse.reset_inventory([])
     if args.collect:
         collect_demos(warehouse, args.collect)
+        app.close()
+        return
+    if args.eval_grasp:
+        eval_grasps(warehouse, args.eval_grasp)
         app.close()
         return
     server = Server(warehouse)
