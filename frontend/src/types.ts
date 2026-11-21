@@ -28,7 +28,7 @@ export type Robot = {
   x: string;
   y: string;
   battery_pct: string;
-  holding_sku: string | null;
+  tote: string[];
   current_task_id: number | null;
 };
 

@@ -22,8 +22,8 @@ export default function RobotPanel() {
             </dd>
             <dt>Battery</dt>
             <dd className="mono">{Number(robot.battery_pct).toFixed(0)}%</dd>
-            <dt>Holding</dt>
-            <dd className="mono">{robot.holding_sku ?? "—"}</dd>
+            <dt>Tote</dt>
+            <dd className="mono">{robot.tote.length ? robot.tote.join(", ") : "—"}</dd>
             <dt>Task</dt>
             <dd className="mono">{robot.current_task_id ?? "—"}</dd>
           </dl>

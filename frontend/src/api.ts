@@ -19,7 +19,9 @@ connectEvents();
 
 export function onEvent(listener: Listener) {
   listeners.add(listener);
-  return () => listeners.delete(listener);
+  return () => {
+    listeners.delete(listener);
+  };
 }
 
 export function useLive<T>(path: string, entities: string[]): T | undefined {
