@@ -12,6 +12,10 @@ class Settings(BaseSettings):
     sim_time_scale: float = 1.0
     mock_robot_speed: float = 1.2
     pick_max_attempts: int = 3
+    nav_max_attempts: int = 3
+    recovery_enabled: bool = True
+    route_optimization: bool = True
+    seed_sql_path: str = "/srv/db/02_seed.sql"
 
 
 settings = Settings()

@@ -4,6 +4,7 @@ from typing import Any
 from psycopg import AsyncConnection
 from psycopg.types.json import Jsonb
 
+from .config import settings
 from .db import fetch_all, fetch_one, pool
 
 
@@ -116,7 +117,8 @@ async def plan_fulfillment(
                 (alloc["quantity"], alloc["inventory_id"]),
             )
 
-        stops = _sequence_stops((float(robot["x"]), float(robot["y"])), allocations)
+        start = (float(robot["x"]), float(robot["y"]))
+        stops = _sequence_stops(start, allocations) if settings.route_optimization else allocations
         steps = []
         for stop in stops:
             steps += [
@@ -164,7 +166,8 @@ async def dispatch_task(task_id: int) -> dict:
 
 async def release_reservations(conn: AsyncConnection, task_id: int) -> None:
     cur = await conn.execute(
-        "SELECT args FROM task_steps WHERE task_id = %s AND action = 'pick' AND status <> 'succeeded'", (task_id,)
+        "SELECT args FROM task_steps WHERE task_id = %s AND action = 'pick' AND status IN ('pending', 'running', 'failed')",
+        (task_id,),
     )
     for step in await cur.fetchall():
         args = step["args"]
@@ -235,9 +238,80 @@ async def verify_order(order_id: int) -> list[dict]:
 
 
 async def raise_exception(
-    type_: str, message: str, severity: str = "warning", task_id: int | None = None, order_id: int | None = None
+    type_: str, message: str, severity: str = "warning", task_id: int | None = None, order_id: int | None = None,
+    status: str = "open",
 ) -> dict:
     return await fetch_one(
-        "INSERT INTO exceptions (type, message, severity, task_id, order_id) VALUES (%s, %s, %s, %s, %s) RETURNING *",
-        type_, message, severity, task_id, order_id,
+        """
+        INSERT INTO exceptions (type, message, severity, task_id, order_id, status, resolution, resolved_at)
+        VALUES (%s, %s, %s, %s, %s, %s, CASE WHEN %s = 'resolved' THEN 'auto-recovered' END,
+                CASE WHEN %s = 'resolved' THEN now() END)
+        RETURNING *
+        """,
+        type_, message, severity, task_id, order_id, status, status, status,
     )
+
+
+async def _cycle_count_to_zero(conn: AsyncConnection, inventory_id: int, task_id: int) -> None:
+    cur = await conn.execute(
+        "SELECT sku, location_id, quantity FROM inventory WHERE id = %s FOR UPDATE", (inventory_id,)
+    )
+    row = await cur.fetchone()
+    if row["quantity"] == 0:
+        return
+    await conn.execute(
+        "UPDATE inventory SET quantity = 0, reserved = 0, updated_at = now() WHERE id = %s", (inventory_id,)
+    )
+    await conn.execute(
+        "INSERT INTO inventory_transactions (sku, location_id, delta, reason, task_id) "
+        "VALUES (%s, %s, %s, 'cycle_count', %s)",
+        (row["sku"], row["location_id"], -row["quantity"], task_id),
+    )
+
+
+async def reroute_missing_stock(task_id: int, failed_step_id: int) -> list[str] | None:
+    async with pool.connection() as conn, conn.transaction():
+        cur = await conn.execute("SELECT * FROM task_steps WHERE id = %s", (failed_step_id,))
+        failed = await cur.fetchone()
+        cur = await conn.execute(
+            """
+            SELECT * FROM task_steps
+            WHERE task_id = %s AND action = 'pick' AND seq >= %s
+              AND args->>'location_id' = %s AND args->>'sku' = %s
+            ORDER BY seq LIMIT 1
+            """,
+            (task_id, failed["seq"], failed["args"]["location_id"], failed["args"]["sku"]),
+        )
+        pick = await cur.fetchone()
+        await _cycle_count_to_zero(conn, pick["args"]["inventory_id"], task_id)
+        await conn.execute("UPDATE task_steps SET status = 'skipped' WHERE id = %s", (pick["id"],))
+
+    remaining = pick["args"]["quantity"] - pick["args"].get("picked", 0)
+    async with pool.connection() as conn, conn.transaction():
+        allocations, short = await _allocate(conn, pick["args"]["sku"], remaining)
+        if short:
+            return None
+        for alloc in allocations:
+            await conn.execute(
+                "UPDATE inventory SET reserved = reserved + %s, updated_at = now() WHERE id = %s",
+                (alloc["quantity"], alloc["inventory_id"]),
+            )
+        new_steps = []
+        for alloc in allocations:
+            new_steps += [
+                ("navigate", {"location_id": alloc["location_id"]}),
+                ("inspect", {"location_id": alloc["location_id"], "sku": alloc["sku"]}),
+                ("pick", {"location_id": alloc["location_id"], "sku": alloc["sku"], "quantity": alloc["quantity"],
+                          "inventory_id": alloc["inventory_id"]}),
+            ]
+        shift = len(new_steps)
+        await conn.execute(
+            "UPDATE task_steps SET seq = -(seq + %s) WHERE task_id = %s AND seq > %s", (shift, task_id, pick["seq"])
+        )
+        await conn.execute("UPDATE task_steps SET seq = -seq WHERE task_id = %s AND seq < 0", (task_id,))
+        for offset, (action, args) in enumerate(new_steps, start=1):
+            await conn.execute(
+                "INSERT INTO task_steps (task_id, seq, action, args) VALUES (%s, %s, %s, %s)",
+                (task_id, pick["seq"] + offset, action, Jsonb(args)),
+            )
+    return [a["location_id"] for a in allocations]

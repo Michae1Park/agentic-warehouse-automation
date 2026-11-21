@@ -52,6 +52,8 @@ services:
       DATABASE_URL: postgresql://warehouse:warehouse@postgres:5432/warehouse
       LLM_BASE_URL: http://llm:8000/v1
       LLM_MODEL: qwen3.5-9b
+    volumes:
+      - ./db:/srv/db:ro
     ports:
       - "${BACKEND_PORT:-8010}:8000"
     depends_on:

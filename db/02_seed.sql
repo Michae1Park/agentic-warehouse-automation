@@ -39,7 +39,13 @@ INSERT INTO inventory (sku, location_id, quantity) VALUES
     ('SKU-3002', 'C-02-1', 2),
     ('SKU-4001', 'C-03-1', 9),
     ('SKU-4002', 'B-04-1', 7),
-    ('SKU-4003', 'A-04-2', 14);
+    ('SKU-4003', 'A-04-2', 14),
+    ('SKU-1001', 'B-01-2', 6),
+    ('SKU-1003', 'C-02-2', 4),
+    ('SKU-2001', 'A-02-2', 5),
+    ('SKU-3001', 'B-02-2', 10),
+    ('SKU-4001', 'A-03-2', 6),
+    ('SKU-4003', 'C-03-2', 8);
 
 INSERT INTO orders (id, customer, priority, dispatch_location) VALUES
     (1040, 'Northwind Retail',  3, 'DISPATCH-1'),

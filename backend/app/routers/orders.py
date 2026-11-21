@@ -1,5 +1,7 @@
 from fastapi import APIRouter, HTTPException
 
+from .. import warehouse
+from ..config import settings
 from ..db import fetch_all, fetch_one
 
 router = APIRouter(prefix="/orders", tags=["orders"])
@@ -33,3 +35,14 @@ async def get_order(order_id: int):
         order_id,
     )
     return order
+
+
+@router.post("/{order_id}/fulfill")
+async def fulfill_order(order_id: int):
+    try:
+        plan = await warehouse.plan_fulfillment(order_id, settings.robot_ids[0], None, None)
+        await warehouse.dispatch_task(plan["task_id"])
+    except warehouse.WarehouseError as err:
+        await warehouse.raise_exception("planning_failed", str(err), order_id=order_id)
+        raise HTTPException(409, str(err)) from err
+    return plan

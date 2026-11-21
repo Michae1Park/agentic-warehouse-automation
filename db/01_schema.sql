@@ -122,6 +122,17 @@ CREATE TABLE exceptions (
     resolved_at TIMESTAMPTZ
 );
 
+CREATE TABLE task_faults (
+    id          SERIAL PRIMARY KEY,
+    task_id     INT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+    step_seq    INT NOT NULL,
+    code        TEXT NOT NULL,
+    detail      TEXT,
+    recovered   BOOLEAN NOT NULL DEFAULT false,
+    recovery    TEXT,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 CREATE TABLE agent_messages (
     id              BIGSERIAL PRIMARY KEY,
     conversation_id TEXT NOT NULL,
