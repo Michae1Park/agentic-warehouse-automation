@@ -4,7 +4,7 @@ from collections.abc import Awaitable, Callable
 
 from psycopg.types.json import Jsonb
 
-from . import warehouse
+from . import perception, warehouse
 from .config import settings
 from .db import fetch_one, pool
 from .robot.gateway import RobotError, RobotGateway
@@ -118,7 +118,10 @@ class TaskExecutor:
             step["id"],
         )
         try:
-            result = await getattr(self, f"_do_{step['action']}")(task, step)
+            try:
+                result = await getattr(self, f"_do_{step['action']}")(task, step)
+            except RobotError as err:
+                raise StepFailed(err.code, str(err)) from err
         except StepFailed as failure:
             await fetch_one(
                 "UPDATE task_steps SET status = 'failed', finished_at = now(), result = %s WHERE id = %s RETURNING id",
@@ -158,10 +161,14 @@ class TaskExecutor:
 
     async def _do_navigate(self, task: dict, step: dict) -> dict:
         location = await self._location(step["args"]["location_id"])
+        navigate_to = getattr(self.robot, "navigate_to", None)
         max_attempts = settings.nav_max_attempts if settings.recovery_enabled else 1
         for attempt in range(1, max_attempts + 1):
             try:
-                pose = await self.robot.navigate(float(location["x"]), float(location["y"]))
+                if navigate_to:
+                    pose = await navigate_to(location["id"])
+                else:
+                    pose = await self.robot.navigate(float(location["x"]), float(location["y"]))
                 return {"x": pose.x, "y": pose.y, "attempts": attempt}
             except RobotError as err:
                 if attempt == max_attempts:
@@ -169,15 +176,25 @@ class TaskExecutor:
                 await record_fault(task["id"], step["seq"], err.code, str(err), f"replanned path (attempt {attempt + 1})")
         raise AssertionError("unreachable")
 
+    async def _perceive(self, location_id: str) -> tuple[dict[str, int], dict]:
+        observation = await self.robot.inspect(location_id)
+        detail = {"ground_truth": observation.counts}
+        if settings.perception_mode != "vlm" or not observation.image_jpeg:
+            return observation.counts, detail
+        vision = await perception.identify_products(observation.image_jpeg)
+        detail.update(vlm=vision["counts"], vlm_latency_ms=vision["latency_ms"],
+                      vlm_presence_correct=set(vision["counts"]) == set(observation.counts))
+        return vision["counts"], detail
+
     async def _do_inspect(self, task: dict, step: dict) -> dict:
         args = step["args"]
-        observation = await self.robot.inspect(args["location_id"])
-        if args["sku"] not in observation.skus:
+        counts, detail = await self._perceive(args["location_id"])
+        if args["sku"] not in counts:
             raise StepFailed(
                 "item_not_found",
-                f"expected {args['sku']} at {args['location_id']}, observed {observation.skus or 'nothing'}",
+                f"expected {args['sku']} at {args['location_id']}, observed {list(counts) or 'nothing'}",
             )
-        return {"observed": observation.skus}
+        return {"observed": list(counts), **detail}
 
     async def _do_pick(self, task: dict, step: dict) -> dict:
         args = step["args"]
@@ -206,15 +223,15 @@ class TaskExecutor:
 
     async def _do_count(self, task: dict, step: dict) -> dict:
         location_id = step["args"]["location_id"]
-        observation = await self.robot.inspect(location_id)
-        adjustments = await warehouse.record_count(task["id"], location_id, observation.counts)
+        counts, detail = await self._perceive(location_id)
+        adjustments = await warehouse.record_count(task["id"], location_id, counts)
         for adj in adjustments:
             await warehouse.raise_exception(
                 "inventory_discrepancy",
                 f"cycle count at {location_id}: {adj['sku']} system {adj['system']}, counted {adj['counted']}; corrected",
                 severity="info", task_id=task["id"], status="resolved",
             )
-        return {"counts": observation.counts, "adjustments": adjustments}
+        return {"counts": counts, "adjustments": adjustments, **detail}
 
     async def _do_stow(self, task: dict, step: dict) -> dict:
         args = step["args"]
