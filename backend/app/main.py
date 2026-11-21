@@ -4,25 +4,32 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
+from .agent.loop import notify_task_finished
 from .config import settings
 from .db import pool
 from .events import hub
-from .routers import exceptions, inventory, orders, robots, tasks
+from .executor import TaskExecutor
+from .robot.mock import MockRobot
+from .routers import agent, exceptions, inventory, orders, robots, tasks
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await pool.open()
-    listener = asyncio.create_task(hub.listen())
+    workers = [asyncio.create_task(hub.listen())]
+    for robot_id in settings.robot_ids:
+        executor = TaskExecutor(MockRobot(robot_id), on_task_finished=notify_task_finished)
+        workers.append(asyncio.create_task(executor.run_forever()))
     yield
-    listener.cancel()
+    for worker in workers:
+        worker.cancel()
     await pool.close()
 
 
 app = FastAPI(title="Warehouse Operations API", lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=settings.cors_origins, allow_methods=["*"], allow_headers=["*"])
 
-for router in (orders.router, inventory.router, robots.router, tasks.router, exceptions.router):
+for router in (agent.router, orders.router, inventory.router, robots.router, tasks.router, exceptions.router):
     app.include_router(router, prefix="/api")
 
 

@@ -1,7 +1,7 @@
 CREATE TYPE location_kind AS ENUM ('storage', 'dispatch', 'charging', 'staging');
 CREATE TYPE order_status AS ENUM ('pending', 'in_progress', 'completed', 'failed', 'cancelled');
 CREATE TYPE robot_status AS ENUM ('idle', 'busy', 'error', 'charging', 'offline');
-CREATE TYPE task_status AS ENUM ('planned', 'running', 'succeeded', 'failed', 'cancelled');
+CREATE TYPE task_status AS ENUM ('planned', 'queued', 'running', 'succeeded', 'failed', 'cancelled');
 CREATE TYPE step_status AS ENUM ('pending', 'running', 'succeeded', 'failed', 'skipped');
 CREATE TYPE exception_status AS ENUM ('open', 'resolved', 'escalated');
 
@@ -64,7 +64,7 @@ CREATE TABLE robots (
     y               NUMERIC(6, 2) NOT NULL DEFAULT 0,
     theta           NUMERIC(6, 3) NOT NULL DEFAULT 0,
     battery_pct     NUMERIC(5, 1) NOT NULL DEFAULT 100,
-    holding_sku     TEXT REFERENCES products(sku),
+    tote            JSONB NOT NULL DEFAULT '[]',
     current_task_id INT,
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -74,6 +74,8 @@ CREATE TABLE tasks (
     order_id        INT REFERENCES orders(id),
     robot_id        TEXT REFERENCES robots(id),
     instruction     TEXT NOT NULL,
+    conversation_id TEXT,
+    error           TEXT,
     status          task_status NOT NULL DEFAULT 'planned',
     plan            JSONB,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -120,6 +122,29 @@ CREATE TABLE exceptions (
     resolved_at TIMESTAMPTZ
 );
 
+CREATE TABLE agent_messages (
+    id              BIGSERIAL PRIMARY KEY,
+    conversation_id TEXT NOT NULL,
+    message         JSONB NOT NULL,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX agent_messages_conversation ON agent_messages (conversation_id, id);
+
+CREATE TABLE agent_runs (
+    id                  SERIAL PRIMARY KEY,
+    conversation_id     TEXT NOT NULL,
+    user_message        TEXT NOT NULL,
+    reply               TEXT,
+    llm_calls           INT NOT NULL DEFAULT 0,
+    tool_calls          INT NOT NULL DEFAULT 0,
+    llm_ms              INT NOT NULL DEFAULT 0,
+    tool_ms             INT NOT NULL DEFAULT 0,
+    prompt_tokens       INT NOT NULL DEFAULT 0,
+    completion_tokens   INT NOT NULL DEFAULT 0,
+    started_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+    finished_at         TIMESTAMPTZ
+);
+
 CREATE TABLE events (
     id          BIGSERIAL PRIMARY KEY,
     entity      TEXT NOT NULL,
@@ -153,6 +178,8 @@ CREATE TRIGGER tasks_changes AFTER INSERT OR UPDATE OR DELETE ON tasks
     FOR EACH ROW EXECUTE FUNCTION record_change('id');
 CREATE TRIGGER task_steps_changes AFTER INSERT OR UPDATE OR DELETE ON task_steps
     FOR EACH ROW EXECUTE FUNCTION record_change('task_id');
+CREATE TRIGGER agent_messages_changes AFTER INSERT ON agent_messages
+    FOR EACH ROW EXECUTE FUNCTION record_change('conversation_id');
 CREATE TRIGGER exceptions_changes AFTER INSERT OR UPDATE OR DELETE ON exceptions
     FOR EACH ROW EXECUTE FUNCTION record_change('id');
 
