@@ -34,28 +34,31 @@ Running checklist for the Agentic Warehouse Automation demo.
 
 ## Step 3 — Isaac warehouse scene + navigation
 
-- [ ] Warehouse scene: shelves, SKU boxes, dispatch zone
-- [ ] Mobile manipulator asset
-- [ ] ROS2 bridge + Nav2
-- [ ] Robot gateway swaps mock → Isaac
-- [ ] WebRTC stream embedded in dashboard
+- [x] Warehouse scene generated from the DB layout: shelves, one box per stocked unit, dispatch/staging pallets
+- [x] Ridgeback-Franka mobile manipulator (fixed missing world anchor on the asset's articulation root)
+- [ ] ROS2 bridge + Nav2 (navigation is a corridor waypoint planner inside the sim; transport is HTTP behind `RobotGateway`)
+- [x] Robot gateway swaps mock → Isaac (`ROBOT_BACKEND=isaac`, compose `isaac` profile)
+- [x] Live stream embedded in dashboard (MJPEG; overview / chase / inspection cameras)
+- [x] Order #1042 fulfilled end-to-end in Isaac via the agent
 
 ## Step 4 — Pick and place (MoveIt2 baseline)
 
-- [ ] MoveIt2 config for the arm
-- [ ] Scripted grasp/place
-- [ ] Order #1042 fulfilled end-to-end in sim
+- [ ] MoveIt2 config for the arm (used Isaac Lula IK instead; MoveIt2 not integrated)
+- [x] Scripted front grasp/place with IK retries (baseline + fallback)
+- [x] Order #1042 fulfilled end-to-end in sim
 
 ## Step 5 — VLM perception
 
-- [ ] Shelf inspection / SKU identification
-- [ ] Post-pick and post-place verification
+- [x] Shelf inspection / SKU identification with Qwen3.5-9B (same model as the agent), WMS-conditioned prompt
+- [x] Scan-standoff inspection camera; VLM benchmark: 100% / 96% / 96% presence accuracy over 3 seeds, all record discrepancies detected
+- [ ] Post-pick and post-place verification (pick verification uses grasp check, not VLM)
 
 ## Step 6 — VLA
 
-- [ ] Generate scripted demos in LeRobot format
-- [ ] Fine-tune pretrained VLA (GR00T N1.5 / SmolVLA)
-- [ ] VLA as primary picker, MoveIt2 fallback
+- [x] Generate scripted demos in LeRobot format (200 episodes / 7,600 frames, head camera + joint state)
+- [ ] Fine-tune pretrained VLA (SmolVLA base, 8k steps) — training in progress
+- [x] VLA as primary picker with scripted fallback (`grasp_policy=vla_with_fallback`), misses logged as recovered faults
+- [ ] Grasp eval: scripted vs VLA on held-out randomized poses
 
 ## Step 7 — Failures and evaluation
 
