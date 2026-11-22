@@ -97,6 +97,7 @@ TOTE_X = 12.12
 TOTE_SCALE = np.array([1.8, 1.8, 1.2])
 TOTE_SIZE = np.array([0.198, 0.296, 0.146]) * TOTE_SCALE
 TOTE_SPEED = 0.6
+TOTE_INDEX_S = 2.0
 DISPATCH_STANDOFF = 0.6
 DISPATCH_BACKOFF = 0.6
 TOTE_AUDIT_FOCAL = 22.0
@@ -113,6 +114,7 @@ COLORS = {
     "yellow": (0.95, 0.88, 0.05), "green": (0.0, 0.5, 0.05), "orange": (1.0, 0.28, 0.0), "purple": (0.22, 0.0, 0.5),
     "cyan": (0.0, 0.75, 0.8), "magenta": (1.0, 0.0, 0.45), "gray": (0.62, 0.64, 0.68), "brown": (0.35, 0.18, 0.05),
 }
+LABEL_COLORS = {**COLORS, "brown": (0.16, 0.07, 0.02), "orange": (0.85, 0.16, 0.0), "gray": (0.33, 0.34, 0.37)}
 
 
 def api_get(path: str):
@@ -371,7 +373,7 @@ class Warehouse:
             add_reference_to_stage(f"{self.assets_root}/Isaac/Props/Conveyors/ConveyorBelt_A08.usd", f"/World/Conveyor/segment_{i}")
             self._place_prop(f"/World/Conveyor/segment_{i}", (CONVEYOR_X, CONVEYOR_START_Y + i * CONVEYOR_SEGMENT, 0), -90, (1, 1, 1))
         end_y = CONVEYOR_START_Y + CONVEYOR_SEGMENTS * CONVEYOR_SEGMENT
-        outbound = (CONVEYOR_X, end_y + 0.75, 0.0)
+        outbound = (CONVEYOR_X + 1.3, end_y - 0.6, 0.0)
         self._add_prop("SM_PaletteA_01", "/World/Outbound/pallet", outbound, 0, (1, 1, 1))
         for i, (dx, dy, dz, asset) in enumerate([(-0.3, -0.25, 0, "SM_CardBoxB_01"), (0.25, -0.25, 0, "SM_CardBoxA_01"),
                                                   (-0.3, 0.25, 0, "SM_CardBoxC_01"), (0.25, 0.25, 0, "SM_CardBoxB_01"),
@@ -381,6 +383,7 @@ class Warehouse:
         self.dispatch_totes: dict[str, str] = {}
         self.shipping: list[tuple[str, list[Box]]] = []
         self.tote_counter = 0
+        self.pending_totes: dict[str, float] = {}
         self.tote_material = self._material("ToteGrey", (0.3, 0.31, 0.33), 0.6)
         for location in self.locations.values():
             if location["kind"] == "dispatch":
@@ -405,7 +408,7 @@ class Warehouse:
         self.shipping.append((path, boxes))
         self.dispatch_totes[location_id] = self._spawn_tote(float(self.locations[location_id]["y"]))
         self._hide(self.dispatch_totes[location_id])
-        self.pending_tote = (location_id, 0.0)
+        self.pending_totes[location_id] = 0.0
 
     def update_conveyor(self) -> None:
         step = TOTE_SPEED * PHYSICS_DT
@@ -425,13 +428,15 @@ class Warehouse:
             for box, _ in boxes:
                 self.stage.RemovePrim(box.path)
                 self.boxes.remove(box)
-        if getattr(self, "pending_tote", None):
-            location_id, waited = self.pending_tote
-            if waited > 2.0:
-                UsdGeom.Imageable(self.stage.GetPrimAtPath(self.dispatch_totes[location_id])).MakeVisible()
-                self.pending_tote = None
+        for location_id, waited in list(self.pending_totes.items()):
+            if waited > TOTE_INDEX_S:
+                self.show_tote(location_id)
             else:
-                self.pending_tote = (location_id, waited + PHYSICS_DT)
+                self.pending_totes[location_id] = waited + PHYSICS_DT
+
+    def show_tote(self, location_id: str) -> None:
+        self.pending_totes.pop(location_id, None)
+        UsdGeom.Imageable(self.stage.GetPrimAtPath(self.dispatch_totes[location_id])).MakeVisible()
 
     def _build_robot(self) -> None:
         root = get_assets_root_path()
@@ -624,7 +629,8 @@ class Warehouse:
 
     def spawn_box(self, sku: str, location_id: str, position: np.ndarray) -> Box:
         self.box_counter += 1
-        rgb = COLORS.get(self.colors.get(sku, "gray"), (0.5, 0.5, 0.5))
+        color = self.colors.get(sku, "gray")
+        rgb = (LABEL_COLORS if args.graphics == "high" else COLORS).get(color, (0.5, 0.5, 0.5))
         path = f"/World/Boxes/box_{self.box_counter}"
         if args.graphics == "high":
             prim = self._cardboard_box(path, position, rgb)
@@ -681,6 +687,8 @@ class Warehouse:
         for path, _ in self.shipping:
             self.stage.RemovePrim(path)
         self.shipping = []
+        for location_id in list(self.pending_totes):
+            self.show_tote(location_id)
         self.boxes, self.tote, self.held = [], [], None
         skip = {(m["location_id"], m["sku"]) for m in missing}
         by_location: dict[str, list[tuple[str, int]]] = {}
@@ -918,6 +926,7 @@ class Commands:
         location = self.w.locations[location_id]
         dispatch = location["kind"] == "dispatch"
         if dispatch:
+            self.w.show_tote(location_id)
             drop = np.array([TOTE_X, float(location["y"]), ROLLER_TOP + TOTE_SIZE[2] + 0.05])
             yield from self.reach_any(drop, 80, RELEASE_POSES)
         else:

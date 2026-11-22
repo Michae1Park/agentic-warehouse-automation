@@ -34,6 +34,7 @@ def _params(properties: dict | None = None, required: list[str] | None = None) -
 
 ORDER_ID = {"type": "integer", "description": "Order number, e.g. 1042"}
 LOCATION = {"type": "string", "description": "Location id, e.g. A-01-1 or STAGING-1"}
+PRODUCT = {"type": "string", "description": "SKU (e.g. SKU-1001) or product name"}
 TASK_ID = {"type": "integer", "description": "Task id returned by a planning tool"}
 
 
@@ -50,7 +51,10 @@ async def get_order(ctx: ToolContext, order_id: int):
 
 
 async def find_stock(ctx: ToolContext, sku: str):
-    return {"sku": sku, "locations": await warehouse.find_stock(sku)}
+    product = await warehouse.resolve_product(sku)
+    if "error" in product:
+        return product
+    return {**product, "locations": await warehouse.find_stock(product["sku"])}
 
 
 async def get_robot_status(ctx: ToolContext):
@@ -130,12 +134,20 @@ async def inspect_inventory(ctx: ToolContext, location_ids: list[str] | None = N
 
 
 async def relocate_stock(ctx: ToolContext, sku: str, from_location: str, to_location: str, quantity: int):
-    return await warehouse.plan_relocation(sku, from_location, to_location, quantity, ctx.robot_id, ctx.conversation_id)
+    product = await warehouse.resolve_product(sku)
+    if "error" in product:
+        return product
+    return await warehouse.plan_relocation(
+        product["sku"], from_location, to_location, quantity, ctx.robot_id, ctx.conversation_id
+    )
 
 
 async def replenish_stock(ctx: ToolContext, sku: str, to_location: str, quantity: int, from_location: str = "STAGING-1"):
+    product = await warehouse.resolve_product(sku)
+    if "error" in product:
+        return product
     return await warehouse.plan_relocation(
-        sku, from_location, to_location, quantity, ctx.robot_id, ctx.conversation_id, kind="replenishment"
+        product["sku"], from_location, to_location, quantity, ctx.robot_id, ctx.conversation_id, kind="replenishment"
     )
 
 
@@ -157,8 +169,8 @@ TOOLS = [
          list_orders),
     Tool("get_order", "Get an order with its line items (SKU, product name, quantity, picked quantity).",
          _params({"order_id": ORDER_ID}, ["order_id"]), get_order),
-    Tool("find_stock", "Find shelf locations and available quantity for a SKU.",
-         _params({"sku": {"type": "string"}}, ["sku"]), find_stock),
+    Tool("find_stock", "Find shelf locations and available quantity for a product, given its SKU or its name.",
+         _params({"sku": PRODUCT}, ["sku"]), find_stock),
     Tool("get_robot_status", "Get the picking robot's status, position, battery and tote contents.",
          _params(), get_robot_status),
     Tool("plan_fulfillment",
@@ -178,12 +190,12 @@ TOOLS = [
          _params({"location_ids": {"type": "array", "items": {"type": "string"}}, "aisle": {"type": "string"}}),
          inspect_inventory),
     Tool("relocate_stock", "Plan a task moving units of a SKU from one storage location to another.",
-         _params({"sku": {"type": "string"}, "from_location": LOCATION, "to_location": LOCATION,
-                  "quantity": {"type": "integer"}}, ["sku", "from_location", "to_location", "quantity"]),
+         _params({"sku": PRODUCT, "from_location": LOCATION, "to_location": LOCATION, "quantity": {"type": "integer"}},
+                 ["sku", "from_location", "to_location", "quantity"]),
          relocate_stock),
     Tool("replenish_stock",
          "Plan a replenishment task moving received stock from the staging/receiving area to a storage bin.",
-         _params({"sku": {"type": "string"}, "to_location": LOCATION, "quantity": {"type": "integer"},
+         _params({"sku": PRODUCT, "to_location": LOCATION, "quantity": {"type": "integer"},
                   "from_location": {"type": "string", "description": "Defaults to STAGING-1 (receiving)"}},
                  ["sku", "to_location", "quantity"]),
          replenish_stock),

@@ -14,7 +14,8 @@ PROMPT = """You are the vision system of a warehouse picking robot. The image sh
 the shelf section in the center of the image, between the two vertical rack posts.
 
 Product catalog (each product is a box identified by its color: either the whole box is that color, \
-or it is a cardboard box with a label of that color on its front):
+or it is a cardboard box with a label of that color on its front). Plain cardboard is not a label color; brown labels are dark \
+chocolate brown, clearly darker than orange labels):
 {catalog}
 
 The warehouse management system expects this bin to contain: {expected}.
@@ -53,7 +54,8 @@ TOTE_PROMPT = """You are the quality-check camera of an outbound conveyor. The i
 that a robot has just filled for a customer order.
 
 Product catalog (each product is a box identified by its color: either the whole box is that color, \
-or it is a cardboard box with a label of that color):
+or it is a cardboard box with a label of that color). Plain cardboard is not a label color; brown labels are dark \
+chocolate brown, clearly darker than orange labels):
 {catalog}
 
 The order says the tote should contain: {expected}.

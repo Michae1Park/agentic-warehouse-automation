@@ -28,6 +28,20 @@ async def get_order(order_id: int) -> dict | None:
     return order
 
 
+async def resolve_product(query: str) -> dict:
+    text = query.strip()
+    rows = await fetch_all(
+        "SELECT sku, name FROM products WHERE upper(sku) = upper(%s) OR lower(name) = lower(%s)", text, text
+    )
+    if not rows:
+        rows = await fetch_all("SELECT sku, name FROM products WHERE name ILIKE %s ORDER BY sku", f"%{text}%")
+    if len(rows) == 1:
+        return rows[0]
+    if rows:
+        return {"error": f"'{query}' matches several products", "candidates": rows}
+    return {"error": f"no product matches '{query}'"}
+
+
 async def find_stock(sku: str) -> list[dict]:
     return await fetch_all(
         """
