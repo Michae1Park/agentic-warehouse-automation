@@ -18,6 +18,24 @@ GRASP_POLICY=$GRASP_POLICY
 $LLM_SETTINGS
 EOF
 
+ISAAC_VRAM_MB=9000
+VLA_VRAM_MB=2000
+read -r TOTAL_MB USED_MB < <(nvidia-smi --query-gpu=memory.total,memory.used --format=csv,noheader,nounits | tr -d ',')
+ISAAC_PID_MB=$(nvidia-smi --query-compute-apps=process_name,used_memory --format=csv,noheader,nounits | awk -F', ' '/isaac-sim/ {s += $2} END {print s + 0}')
+FREE_MB=$((TOTAL_MB - USED_MB + ISAAC_PID_MB))
+NEED_MB=$ISAAC_VRAM_MB
+[[ "$GRASP_POLICY" != scripted ]] && NEED_MB=$((NEED_MB + VLA_VRAM_MB))
+if ! docker compose ps --status running --services 2>/dev/null | grep -qx llm; then
+  LLM_UTIL=$(grep -oP '^LLM_GPU_UTIL=\K.*' .env || echo 0.75)
+  NEED_MB=$((NEED_MB + $(awk -v u="$LLM_UTIL" -v t="$TOTAL_MB" 'BEGIN {printf "%d", u * t}')))
+fi
+if (( NEED_MB > FREE_MB )); then
+  echo "GPU memory budget exceeded: need ~${NEED_MB} MiB, ${FREE_MB} MiB available." >&2
+  echo "Lower LLM_GPU_UTIL / use a smaller LLM_WEIGHTS in .env, or stop other GPU jobs:" >&2
+  nvidia-smi --query-compute-apps=pid,process_name,used_memory --format=csv,noheader >&2
+  exit 1
+fi
+
 if [[ "$GRASP_POLICY" != scripted ]]; then
   taskset -c "$CPUS" nohup "$VLA_PYTHON" vla/policy_server.py --checkpoint "$CHECKPOINT" > vla/policy_server.log 2>&1 &
 fi
