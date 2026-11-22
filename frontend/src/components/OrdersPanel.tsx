@@ -2,11 +2,16 @@ import { useLive } from "../api";
 import type { Order } from "../types";
 import Panel from "./Panel";
 
-export default function OrdersPanel() {
-  const orders = useLive<Order[]>("/api/orders", ["orders", "order_lines"]) ?? [];
+type Props = { title: string; area: string; statuses: Order["status"][]; empty: string };
+
+export default function OrdersPanel({ title, area, statuses, empty }: Props) {
+  const orders = (useLive<Order[]>("/api/orders", ["orders", "order_lines"]) ?? []).filter((order) =>
+    statuses.includes(order.status),
+  );
 
   return (
-    <Panel title="Orders" area="orders">
+    <Panel title={`${title} (${orders.length})`} area={area}>
+      {orders.length === 0 && <p className="muted">{empty}</p>}
       <table>
         <thead>
           <tr>

@@ -29,15 +29,34 @@ body { margin: 0; background: var(--bg); }
 .kpi-value { font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .kpi-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
 
-.grid {
-  flex: 1; display: grid; gap: 12px; padding: 12px;
-  grid-template-columns: 2fr 1fr 1fr;
-  grid-template-rows: minmax(560px, 68vh) 1fr 1fr;
-  grid-template-areas:
-    "sim sim chat"
-    "orders robots chat"
-    "inventory inventory exceptions";
+.grid { flex: 1; display: grid; gap: 12px; padding: 12px; min-height: 0; }
+.page-operations {
+  grid-template-columns: 2fr 1fr;
+  grid-template-rows: minmax(260px, 1fr) minmax(260px, 1fr) minmax(260px, 1fr);
+  grid-template-areas: "orders robots" "completed exceptions" "inventory inventory";
 }
+.page-agent {
+  height: calc(100vh - 64px);
+  grid-template-columns: 3fr 2fr;
+  grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-areas: "chat preview" "chat robots";
+}
+.page-sim {
+  height: calc(100vh - 64px);
+  grid-template-columns: 5fr 2fr;
+  grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-areas: "sim robots" "sim orders";
+}
+
+.brand { display: flex; align-items: center; gap: 24px; }
+.nav { display: flex; gap: 4px; }
+.nav a {
+  padding: 6px 12px; border-radius: 6px; color: var(--muted); text-decoration: none; font-size: 13px;
+  border: 1px solid transparent;
+}
+.nav a:hover { color: var(--text); }
+.nav a.active { color: var(--text); border-color: var(--accent); background: rgba(79, 140, 255, 0.1); }
+.sim-preview { position: relative; flex: 1; min-height: 0; display: flex; }
 
 .panel {
   background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
@@ -95,12 +114,11 @@ dd { margin: 0; }
 }
 
 @media (max-width: 1100px) {
-  .grid {
-    grid-template-columns: 1fr;
-    grid-template-rows: 320px 420px auto auto auto auto;
-    grid-template-areas: "sim" "chat" "orders" "robots" "inventory" "exceptions";
-  }
-  .topbar { flex-direction: column; align-items: flex-start; gap: 8px; }
+  .grid { height: auto; grid-template-columns: 1fr; grid-auto-rows: minmax(320px, auto); }
+  .page-operations { grid-template-areas: "orders" "robots" "completed" "exceptions" "inventory"; grid-template-rows: none; }
+  .page-agent { grid-template-areas: "chat" "preview" "robots"; grid-template-rows: 70vh 320px auto; }
+  .page-sim { grid-template-areas: "sim" "robots" "orders"; grid-template-rows: 60vh auto auto; }
+  .topbar, .brand { flex-direction: column; align-items: flex-start; gap: 8px; }
 }
 
 .chat-log { display: flex; flex-direction: column; gap: 8px; }
