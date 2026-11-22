@@ -9,7 +9,7 @@ Running checklist for the Agentic Warehouse Automation demo.
 - [x] ROS2 Jazzy installed
 - [x] Python 3.12, Node 24
 - [x] Isaac Sim 5.1.0 container pulled (public, no NGC login needed)
-- [x] vLLM serving Qwen3.5-9B (FP8, ~14.5GB incl. KV cache) — single multimodal model for agent + vision
+- [x] vLLM serving Qwen3.8-27B (FP8, ~34.5GB incl. KV cache) — single multimodal model for agent + vision
 - [ ] Measure GPU memory budget with sim + LLM + VLM + VLA
 
 ## Step 1 — Skeleton
@@ -49,14 +49,14 @@ Running checklist for the Agentic Warehouse Automation demo.
 
 ## Step 5 — VLM perception
 
-- [x] Shelf inspection / SKU identification with Qwen3.5-9B (same model as the agent), WMS-conditioned prompt
+- [x] Shelf inspection / SKU identification with Qwen3.8-27B (same model as the agent), WMS-conditioned prompt
 - [x] Scan-standoff inspection camera; VLM benchmark: 100% / 96% / 96% presence accuracy over 3 seeds, all record discrepancies detected
 - [ ] Post-pick and post-place verification (pick verification uses grasp check, not VLM)
 
 ## Step 6 — VLA
 
-- [x] Generate scripted demos in LeRobot format (200 episodes / 7,600 frames, head camera + joint state)
-- [ ] Fine-tune pretrained VLA (SmolVLA base, 8k steps) — training in progress
+- [x] Generate scripted demos in LeRobot format (end-effector xyz + gripper actions; 196 episodes / 7,448 frames — 4 of 200 lost to a crash-truncated write)
+- [ ] Fine-tune pretrained VLA (SmolVLA base, 8k steps) — retraining on end-effector dataset
 - [x] VLA as primary picker with scripted fallback (`grasp_policy=vla_with_fallback`), misses logged as recovered faults
 - [ ] Grasp eval: scripted vs VLA on held-out randomized poses
 
@@ -65,7 +65,7 @@ Running checklist for the Agentic Warehouse Automation demo.
 - [x] Failure injection: physical world model diverges from system of record (missing stock, grasp failure, blocked path), seeded
 - [x] Recovery policies: regrasp, path replan, cycle-count + reroute to alternate bin; unrecoverable → agent escalation
 - [x] Scripted baseline (no LLM, no route optimization, no recovery) + scripted-with-recovery ablation
-- [ ] KPI harness + results table (harness done: `eval/run_eval.py`; final full run pending)
+- [x] KPI harness + results table (`eval/results/results.md`; agent rows to be re-run with Qwen3.8-27B)
 
 ## Additional business workflows
 

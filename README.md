@@ -61,35 +61,7 @@ The agent calls `dispatch_task` the way a coding agent calls `run_tests`: it sta
 result back, and decides what to do next. Underneath, the work is split into three systems that run at different
 speeds:
 
-```
- ┌──────────────────────── React dashboard ─────────────────────────┐
- │ KPIs · Orders · Inventory · Robot · Exceptions · Chat · Isaac     │
- └────────────────────────────▲─────────────────────────────────────┘
-                              │ REST + WebSocket  (LISTEN/NOTIFY ◀── Postgres, system of record)
- ┌────────────────────────────┴─────────────────────────────────────┐
- │ SYSTEM 2 · Deliberate reasoning                     seconds / turn │
- │ Qwen3.8-27B tool-calling agent                                    │
- │  reads orders & stock · plans · handles shortages · explains      │
- │  tools: get_order · find_stock · plan_fulfillment · dispatch_task │
- │         wait_for_task · report_exception · …                      │
- └───────────────▲─────────────────────────────┬────────────────────┘
-   [SYSTEM EVENT] │ task result / exception     │ dispatch_task(plan)
- ┌───────────────┴─────────────────────────────▼────────────────────┐
- │ SYSTEM 1 · Fast skills & perception                ~100 ms–1 s     │
- │ Task executor (resumable state machine, per-robot queue)          │
- │  skills: navigate · inspect · pick · place · count · verify       │
- │  VLM shelf inspection (same Qwen model, image input)              │
- │  VLA grasp policy (SmolVLA) with scripted fallback                │
- │  recovery: regrasp · replan · cycle-count + reroute               │
- └───────────────▲─────────────────────────────┬────────────────────┘
-   state, camera  │                             │ EE / base targets
- ┌───────────────┴─────────────────────────────▼────────────────────┐
- │ SYSTEM 0 · Control & physics                         60 Hz         │
- │ RobotGateway ─┬─ MockRobot (fast evals)                           │
- │               └─ IsaacRobot → Isaac Sim 5.1, Ridgeback-Franka      │
- │  Lula IK · joint controllers · waypoint base controller · physics │
- └──────────────────────────────────────────────────────────────────┘
-```
+![Architecture](docs/images/architecture.svg)
 
 | System | Role | Analogy to a software agent |
 |---|---|---|
@@ -154,7 +126,8 @@ This is a portfolio demo, so the simplifications are stated plainly:
   bins, but it cannot count boxes hidden behind the front row. Cycle counts therefore use VLM presence (zero-out
   missing SKUs, flag unexpected ones) rather than VLM quantities.
 - **Faults are injected**, with seeded probabilities, into a physical world model that is separate from the database.
-- **The VLA** is SmolVLA fine-tuned on 200 scripted demonstrations of the reach-and-grasp segment only. Lifting,
+- **The VLA** is SmolVLA fine-tuned on 196 scripted demonstrations (7,448 frames, end-effector action space) of the
+  reach-and-grasp segment only. 200 were recorded; 4 were truncated by a machine crash and discarded. Lifting,
   stowing and placing remain scripted.
 
 ---
@@ -172,7 +145,13 @@ open http://localhost:5173
 # Isaac Sim mode
 echo -e "ROBOT_BACKEND=isaac\nSIM_URL=http://localhost:8020" > .env
 docker compose --profile isaac up -d
+
+# Isaac Sim mode with the WebRTC Streaming Client (connect it to this machine's IP)
+echo "ISAAC_ARGS=--livestream" >> .env
+docker compose --profile isaac up -d --force-recreate isaac
 ```
+
+The livestream uses TCP 49100 (signaling) and UDP 47998 (media); open them if the client is on another machine.
 
 Evaluation (mock robot, fast):
 

@@ -1,0 +1,192 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 980" width="1280" height="980" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#475569"/>
+    </marker>
+    <linearGradient id="s2" x1="0" x2="1"><stop offset="0" stop-color="#ede9fe"/><stop offset="1" stop-color="#f5f3ff"/></linearGradient>
+    <linearGradient id="s1" x1="0" x2="1"><stop offset="0" stop-color="#dbeafe"/><stop offset="1" stop-color="#eff6ff"/></linearGradient>
+    <linearGradient id="s0" x1="0" x2="1"><stop offset="0" stop-color="#dcfce7"/><stop offset="1" stop-color="#f0fdf4"/></linearGradient>
+    <style>
+      .title{font-size:26px;font-weight:700;fill:#0f172a}
+      .subtitle{font-size:14px;fill:#475569}
+      .layer{font-size:20px;font-weight:700}
+      .tag{font-size:12px;font-weight:600;fill:#fff}
+      .h{font-size:14px;font-weight:700;fill:#0f172a}
+      .t{font-size:12.5px;fill:#334155}
+      .m{font-size:11.5px;fill:#475569;font-family:'JetBrains Mono',Menlo,Consolas,monospace}
+      .lbl{font-size:12px;fill:#334155;font-weight:600}
+      .kpi{font-size:22px;font-weight:800}
+      .kpil{font-size:11.5px;fill:#334155}
+      .card{fill:#fff;stroke:#cbd5e1;stroke-width:1}
+    </style>
+  </defs>
+
+  <rect width="1280" height="980" fill="#f8fafc"/>
+
+  <text x="40" y="48" class="title">Agentic Warehouse Automation</text>
+  <text x="40" y="72" class="subtitle">A tool-calling LLM agent whose tools are robots: System 2 decides, System 1 executes skills, System 0 moves the hardware</text>
+
+  <!-- UI -->
+  <rect x="40" y="92" width="900" height="64" rx="10" fill="#fff" stroke="#94a3b8"/>
+  <text x="60" y="118" class="h">Operations dashboard · React + Vite</text>
+  <text x="60" y="140" class="t">Manager chat with tool-call trace · live KPIs · orders · inventory · exceptions · Isaac stream (MJPEG / WebRTC) · 2D floor map</text>
+
+  <path d="M490,156 L490,186" stroke="#475569" stroke-width="1.6" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
+  <text x="500" y="176" class="lbl">REST + WebSocket</text>
+
+  <!-- SYSTEM 2 -->
+  <rect x="40" y="190" width="900" height="200" rx="14" fill="url(#s2)" stroke="#7c3aed" stroke-width="2"/>
+  <rect x="40" y="190" width="170" height="30" rx="8" fill="#7c3aed"/>
+  <text x="56" y="210" class="tag">SYSTEM 2 · DELIBERATE</text>
+  <text x="225" y="211" class="layer" fill="#5b21b6">Reasoning agent — decides what to do</text>
+  <text x="922" y="211" class="lbl" text-anchor="end">seconds / turn</text>
+
+  <rect x="60" y="232" width="270" height="140" rx="8" class="card"/>
+  <text x="74" y="254" class="h">Qwen3.8-27B (FP8, vLLM)</text>
+  <text x="74" y="275" class="t">Open-weight, multimodal</text>
+  <text x="74" y="293" class="t">Native tool calling</text>
+  <text x="74" y="311" class="t">One model = agent LLM + VLM</text>
+  <text x="74" y="329" class="t">Self-hosted on one L40S</text>
+  <text x="74" y="355" class="m">no agent framework</text>
+
+  <rect x="345" y="232" width="300" height="140" rx="8" class="card"/>
+  <text x="359" y="254" class="h">Typed tools (16) over SQL transactions</text>
+  <text x="359" y="276" class="m">get_order · find_stock</text>
+  <text x="359" y="294" class="m">plan_fulfillment · relocate_stock</text>
+  <text x="359" y="312" class="m">replenish_stock · inspect_inventory</text>
+  <text x="359" y="330" class="m">dispatch_task · wait_for_task</text>
+  <text x="359" y="348" class="m">report_exception · cancel_task …</text>
+
+  <rect x="660" y="232" width="262" height="140" rx="8" class="card"/>
+  <text x="674" y="254" class="h">Business reasoning</text>
+  <text x="674" y="276" class="t">Refuses to dispatch on shortage</text>
+  <text x="674" y="294" class="t">Chains replenish → wait → fulfill</text>
+  <text x="674" y="312" class="t">Reports outcomes unprompted</text>
+  <text x="674" y="330" class="t">on [SYSTEM EVENT] callbacks</text>
+  <text x="674" y="348" class="t">Conversation + latency persisted</text>
+
+  <!-- 2 <-> 1 -->
+  <path d="M380,392 L380,436" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <text x="390" y="420" class="lbl">dispatch_task(plan)  — robot as a tool call</text>
+  <path d="M700,436 L700,392" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <text x="710" y="420" class="lbl">[SYSTEM EVENT] result / exception</text>
+
+  <!-- SYSTEM 1 -->
+  <rect x="40" y="440" width="900" height="230" rx="14" fill="url(#s1)" stroke="#2563eb" stroke-width="2"/>
+  <rect x="40" y="440" width="150" height="30" rx="8" fill="#2563eb"/>
+  <text x="56" y="460" class="tag">SYSTEM 1 · FAST</text>
+  <text x="205" y="461" class="layer" fill="#1e40af">Skills &amp; perception — does it, reliably</text>
+  <text x="922" y="461" class="lbl" text-anchor="end">~100 ms – 1 s</text>
+
+  <rect x="60" y="482" width="270" height="170" rx="8" class="card"/>
+  <text x="74" y="504" class="h">Task executor</text>
+  <text x="74" y="525" class="t">Persistent state machine</text>
+  <text x="74" y="543" class="t">(tasks / task_steps in Postgres)</text>
+  <text x="74" y="561" class="t">Per-robot queue, resumes after restart</text>
+  <text x="74" y="587" class="m">navigate · inspect · pick</text>
+  <text x="74" y="605" class="m">place · stow · count · verify</text>
+
+  <rect x="345" y="482" width="190" height="170" rx="8" class="card"/>
+  <text x="359" y="504" class="h">VLM perception</text>
+  <text x="359" y="525" class="t">Shelf-bin SKU check,</text>
+  <text x="359" y="543" class="t">WMS-conditioned prompt</text>
+  <text x="359" y="561" class="t">Scan-standoff camera</text>
+  <text x="359" y="587" class="t">Detects record vs shelf</text>
+  <text x="359" y="605" class="t">discrepancies</text>
+
+  <rect x="550" y="482" width="180" height="170" rx="8" class="card"/>
+  <text x="564" y="504" class="h">VLA grasping</text>
+  <text x="564" y="525" class="t">SmolVLA fine-tuned on</text>
+  <text x="564" y="543" class="t">196 sim demos (LeRobot)</text>
+  <text x="564" y="561" class="t">End-effector actions</text>
+  <text x="564" y="587" class="t">Scripted IK fallback;</text>
+  <text x="564" y="605" class="t">misses logged as faults</text>
+
+  <rect x="745" y="482" width="177" height="170" rx="8" class="card"/>
+  <text x="759" y="504" class="h">Recovery policies</text>
+  <text x="759" y="525" class="t">Grasp slip → regrasp ×3</text>
+  <text x="759" y="543" class="t">Blocked → replan ×3</text>
+  <text x="759" y="561" class="t">Missing stock →</text>
+  <text x="759" y="579" class="t">cycle-count + reroute</text>
+  <text x="759" y="605" class="t">Else → escalate to</text>
+  <text x="759" y="623" class="t">System 2 with report</text>
+
+  <!-- 1 <-> 0 -->
+  <path d="M380,672 L380,716" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <text x="390" y="700" class="lbl">end-effector / base targets</text>
+  <path d="M700,716 L700,672" stroke="#475569" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <text x="710" y="700" class="lbl">joint state · camera frames</text>
+
+  <!-- SYSTEM 0 -->
+  <rect x="40" y="720" width="900" height="180" rx="14" fill="url(#s0)" stroke="#16a34a" stroke-width="2"/>
+  <rect x="40" y="720" width="170" height="30" rx="8" fill="#16a34a"/>
+  <text x="56" y="740" class="tag">SYSTEM 0 · REFLEX</text>
+  <text x="225" y="741" class="layer" fill="#166534">Control &amp; physics — moves the robot</text>
+  <text x="922" y="741" class="lbl" text-anchor="end">60 Hz</text>
+
+  <rect x="60" y="762" width="270" height="120" rx="8" class="card"/>
+  <text x="74" y="784" class="h">RobotGateway (protocol)</text>
+  <text x="74" y="805" class="t">MockRobot — fast, for evals</text>
+  <text x="74" y="823" class="t">IsaacRobot — HTTP → simulator</text>
+  <text x="74" y="849" class="t">Plug-in point for ROS 2 / Nav2</text>
+  <text x="74" y="867" class="t">and real hardware</text>
+
+  <rect x="345" y="762" width="300" height="120" rx="8" class="card"/>
+  <text x="359" y="784" class="h">Isaac Sim 5.1 · Ridgeback + Franka</text>
+  <text x="359" y="805" class="t">Scene generated from the WMS layout</text>
+  <text x="359" y="823" class="t">24 shelf bins · dispatch &amp; staging pallets</text>
+  <text x="359" y="841" class="t">RTX cameras: overview · chase · inspection</text>
+  <text x="359" y="867" class="t">Seeded fault injection into world model</text>
+
+  <rect x="660" y="762" width="262" height="120" rx="8" class="card"/>
+  <text x="674" y="784" class="h">Low-level control</text>
+  <text x="674" y="805" class="t">Lula IK (arm)</text>
+  <text x="674" y="823" class="t">Joint position controllers</text>
+  <text x="674" y="841" class="t">Corridor waypoint planner</text>
+  <text x="674" y="859" class="t">for the holonomic base</text>
+
+  <!-- System of record column -->
+  <rect x="970" y="92" width="270" height="378" rx="14" fill="#fff7ed" stroke="#ea580c" stroke-width="2"/>
+  <text x="990" y="122" class="layer" fill="#9a3412">System of record</text>
+  <text x="990" y="146" class="h">Postgres (WMS)</text>
+  <text x="990" y="168" class="t">orders · inventory · locations</text>
+  <text x="990" y="186" class="t">tasks · task_steps · events</text>
+  <text x="990" y="204" class="t">exceptions · audit transactions</text>
+  <text x="990" y="234" class="h">Transactional guarantees</text>
+  <text x="990" y="256" class="t">SELECT … FOR UPDATE reservations</text>
+  <text x="990" y="274" class="t">Each pick: stock, reservation,</text>
+  <text x="990" y="292" class="t">order line, tote, audit — 1 txn</text>
+  <text x="990" y="310" class="t">Order closes only after verify</text>
+  <text x="990" y="340" class="h">Live sync</text>
+  <text x="990" y="362" class="t">trigger → LISTEN/NOTIFY →</text>
+  <text x="990" y="380" class="t">WebSocket → dashboard</text>
+  <text x="990" y="410" class="m">FastAPI · Docker Compose</text>
+  <text x="990" y="428" class="m">Every physical step writes back</text>
+  <path d="M970,300 L942,300" stroke="#ea580c" stroke-width="1.6" stroke-dasharray="5 4" marker-end="url(#arrow)"/>
+  <path d="M970,420 L942,520" stroke="#ea580c" stroke-width="1.6" stroke-dasharray="5 4" marker-end="url(#arrow)"/>
+
+  <!-- KPIs -->
+  <rect x="970" y="490" width="270" height="410" rx="14" fill="#fff" stroke="#0f172a" stroke-width="1.5"/>
+  <text x="990" y="520" class="layer" fill="#0f172a">Measured results</text>
+  <text x="990" y="540" class="kpil">72 sim orders · 3 seeds · faults injected</text>
+
+  <text x="990" y="580" class="kpi" fill="#16a34a">75% vs 42%</text>
+  <text x="990" y="598" class="kpil">fulfillment under faults,</text>
+  <text x="990" y="614" class="kpil">agent vs scripted baseline</text>
+
+  <text x="990" y="652" class="kpi" fill="#2563eb">97% vs 77%</text>
+  <text x="990" y="670" class="kpil">inventory accuracy under faults</text>
+
+  <text x="990" y="708" class="kpi" fill="#7c3aed">100%</text>
+  <text x="990" y="726" class="kpil">nominal fulfillment, 0 interventions</text>
+
+  <text x="990" y="764" class="kpi" fill="#ea580c">96–100%</text>
+  <text x="990" y="782" class="kpil">VLM bin-presence accuracy;</text>
+  <text x="990" y="798" class="kpil">all record discrepancies caught</text>
+
+  <text x="990" y="840" class="kpil">Simulation vs own scripted baseline,</text>
+  <text x="990" y="856" class="kpil">not a real warehouse.</text>
+  <text x="990" y="880" class="kpil">Agent row: Qwen3.5-9B run</text>
+
+  <text x="40" y="940" class="subtitle">Python · FastAPI · Postgres · React · vLLM · Isaac Sim · LeRobot / SmolVLA · Docker · single NVIDIA L40S</text>
+</svg>
