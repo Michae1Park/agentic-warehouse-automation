@@ -211,13 +211,25 @@ class Warehouse:
             annotator.attach([rep.create.render_product(path, POLICY_RES)])
             self.annotators[name] = annotator
 
+    def base_rotation(self) -> np.ndarray:
+        theta = self.base_pose()[2]
+        return np.array([[math.cos(theta), -math.sin(theta), 0], [math.sin(theta), math.cos(theta), 0], [0, 0, 1]])
+
+    def to_base_frame(self, point: np.ndarray) -> np.ndarray:
+        x, y, _ = self.base_pose()
+        return self.base_rotation().T @ (point - np.array([x, y, 0.0]))
+
+    def to_world_frame(self, point: np.ndarray) -> np.ndarray:
+        x, y, _ = self.base_pose()
+        return self.base_rotation() @ point + np.array([x, y, 0.0])
+
     def policy_observation(self) -> dict:
-        positions = self.robot.get_joint_positions()
-        state = np.concatenate([positions[self.arm_idx], [positions[self.finger_idx].mean()]]).astype(np.float32)
+        opening = float(self.robot.get_joint_positions()[self.finger_idx].mean())
+        state = np.concatenate([self.to_base_frame(self.fingertip()), [opening]]).astype(np.float32)
         return {
             "head": self.annotators["head"].get_data()[..., :3].copy(),
             "state": state,
-            "action": np.concatenate([self.arm_target, [self.finger_target]]).astype(np.float32),
+            "finger_target": np.float32(self.finger_target),
         }
 
     def update_policy_cameras(self) -> None:
@@ -372,11 +384,17 @@ class Warehouse:
     def solve_ik(self, position: np.ndarray, orientation: np.ndarray = FRONT_GRASP) -> np.ndarray:
         base_position, base_orientation = self.link0.get_world_pose()
         self.ik.set_robot_base_pose(base_position, base_orientation)
-        for _ in range(IK_ATTEMPTS):
-            action, success = self.ik_articulation.compute_inverse_kinematics(position, orientation)
+        seed = self.arm_target.copy()
+        solutions = []
+        for attempt in range(IK_ATTEMPTS):
+            warm_start = seed if attempt == 0 else seed + np.random.normal(0.0, 0.15, size=seed.shape)
+            joints, success = self.ik.compute_inverse_kinematics(
+                "right_gripper", position, orientation, warm_start=warm_start)
             if success:
-                return np.array(action.joint_positions)
-        raise SimError("ik_failed", f"no arm solution for target {np.round(position, 2).tolist()}")
+                solutions.append(np.array(joints))
+        if not solutions:
+            raise SimError("ik_failed", f"no arm solution for target {np.round(position, 2).tolist()}")
+        return min(solutions, key=lambda joints: float(np.linalg.norm(joints - seed)))
 
 
 def wrap_angle(angle: float) -> float:
@@ -483,6 +501,7 @@ class Commands:
     def grasp_vla(self, box: Box, instruction: str):
         position, _ = box.prim.get_world_pose()
         self.w.finger_target = 0.04
+        self.last_vla_miss = None
         for step in range(VLA_MAX_STEPS):
             obs = self.w.policy_observation()
             body = json.dumps({
@@ -494,15 +513,20 @@ class Commands:
                 actions = np.array(json.loads(response.read())["actions"], dtype=float)
             for action in actions[:VLA_EXECUTE_ACTIONS]:
                 start_arm, start_finger = self.w.arm_target.copy(), self.w.finger_target
+                try:
+                    goal_arm = self.w.solve_ik(self.w.to_world_frame(action[:3]))
+                except SimError:
+                    goal_arm = start_arm
                 for i in range(1, CONTROL_EVERY + 1):
                     t = i / CONTROL_EVERY
-                    self.w.arm_target = start_arm + (action[:7] - start_arm) * t
-                    self.w.finger_target = float(np.clip(start_finger + (action[7] - start_finger) * t, 0.0, 0.04))
+                    self.w.arm_target = start_arm + (goal_arm - start_arm) * t
+                    self.w.finger_target = float(np.clip(start_finger + (action[3] - start_finger) * t, 0.0, 0.04))
                     yield
                 if self.w.finger_target < 0.015:
                     for _ in range(15):
                         yield
-                    return bool(np.linalg.norm(self.w.fingertip() - position) < GRASP_TOLERANCE)
+                    self.last_vla_miss = float(np.linalg.norm(self.w.fingertip() - position))
+                    return self.last_vla_miss < GRASP_TOLERANCE
         return False
 
     def pick(self, sku: str, location_id: str, fail: bool = False, policy: str = "scripted"):
@@ -717,7 +741,7 @@ def collect_demos(warehouse: Warehouse, episodes: int) -> None:
         for _ in range(20):
             step(warehouse)
         box = commands.target_box(sku, location_id)
-        frames = {"head": [], "state": [], "action": []}
+        frames = {"head": [], "state": [], "finger_target": []}
         generator = commands.grasp_scripted(box)
         ticks = 0
         try:
@@ -743,9 +767,12 @@ def collect_demos(warehouse: Warehouse, episodes: int) -> None:
             log.write(json.dumps({"attempt": attempt, "skipped": "scripted grasp missed"}) + "\n")
             continue
         instruction = f"pick up the {warehouse.colors.get(sku, '')} box"
+        state = np.stack(frames["state"])
+        next_tip = np.concatenate([state[1:, :3], state[-1:, :3]])
+        action = np.concatenate([next_tip, np.array(frames["finger_target"])[:, None]], axis=1).astype(np.float32)
         np.savez_compressed(
             out / f"episode_{saved:04d}.npz", instruction=instruction,
-            **{key: np.stack(value) for key, value in frames.items()},
+            head=np.stack(frames["head"]), state=state, action=action,
         )
         log.write(json.dumps({"episode": saved, "location_id": location_id, "sku": sku,
                               "frames": len(frames["state"]), "instruction": instruction}) + "\n")
@@ -773,7 +800,9 @@ def run_trial(warehouse: Warehouse, commands: "Commands", pose: np.ndarray, box:
         for _ in range(15):
             step(warehouse)
         result = bool(np.linalg.norm(warehouse.fingertip() - box.prim.get_world_pose()[0]) < GRASP_TOLERANCE)
-    return {"success": bool(result), "sim_seconds": ticks * PHYSICS_DT}
+    miss = getattr(commands, "last_vla_miss", None) if policy == "vla" else \
+        float(np.linalg.norm(warehouse.fingertip() - box.prim.get_world_pose()[0]))
+    return {"success": bool(result), "sim_seconds": ticks * PHYSICS_DT, "miss_m": miss}
 
 
 def eval_grasps(warehouse: Warehouse, trials: int) -> None:

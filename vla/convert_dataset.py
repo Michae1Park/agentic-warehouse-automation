@@ -5,7 +5,7 @@ from pathlib import Path
 import numpy as np
 from lerobot.datasets.lerobot_dataset import LeRobotDataset
 
-JOINTS = [f"panda_joint{i}" for i in range(1, 8)] + ["gripper"]
+JOINTS = ["tip_x", "tip_y", "tip_z", "gripper"]
 
 
 def main() -> None:
