@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-export const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:8010";
+export const API_URL = import.meta.env.VITE_API_URL || window.location.origin;
 
 export type WarehouseEvent = { id: number; entity: string; entity_id: string; op: string; created_at: string };
 
