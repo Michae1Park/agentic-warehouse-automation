@@ -258,6 +258,10 @@ class Warehouse:
         overview = UsdGeom.Camera.Define(self.stage, "/World/OverviewCam")
         overview.CreateFocalLengthAttr(18.0)
         set_camera_view(eye=np.array([-4.0, -7.5, 9.5]), target=np.array([6.0, 3.0, 0.0]), camera_prim_path="/World/OverviewCam")
+        if args.livestream:
+            from omni.kit.viewport.utility import get_active_viewport
+
+            get_active_viewport().camera_path = "/World/OverviewCam"
         chase = UsdGeom.Camera.Define(self.stage, "/World/ChaseCam")
         chase.CreateFocalLengthAttr(16.0)
         inspect = UsdGeom.Camera.Define(self.stage, "/World/InspectCam")
