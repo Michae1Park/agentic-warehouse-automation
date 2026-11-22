@@ -88,11 +88,11 @@ Running checklist for the Agentic Warehouse Automation demo.
 
 ## Step 9 — Reliability (Isaac soak test)
 
-- [x] Soak harness `eval/soak_eval.py`: every scoped workflow through the agent chat in Isaac, faults on, 3 seeds
+- [x] Soak harness `eval/soak_eval.py`: every scoped workflow through the agent chat in Isaac, 3 seeds (2 faulty). Run 1: 21 requests, 0 stuck, 0 sim crashes, 0 HTTP errors; 16 tasks succeeded, 6 failed (5 correct fault handling, 1 VLM label error); 2 requests hit the agent step limit; tote audit false alarms 3/10 (`eval/results/soak/`)
 - [x] Fix: replacement totes could stay hidden when two dispatch spots released within 2s
-- [ ] Deploy and verify: agent tools resolve product names (agent hit its step limit on "Move 2 units of Wireless Mouse …")
-- [ ] Deploy and verify: darker brown labels + prompt hint (tote audit read brown as orange)
-- [ ] Known: VLM read a grey-labelled bin as a non-existent SKU-4004 (low-contrast label); superseded by the YCB pivot
+- [x] Agent tools resolve product names (agent had hit its step limit on "Move 2 units of Wireless Mouse …"); verified: relocation queued on the first try
+- [x] Label colors tuned for the high-graphics lighting (brown, orange) + prompt hint; verified brown/orange totes pass. Grey still reads as white (open, superseded by the YCB pivot)
+- [ ] Known: grey labels read as white or as a non-existent SKU (low contrast under bright lighting); superseded by the YCB pivot
 - [ ] Re-run soak after fixes; cold-start `scripts/demo.sh`; one `--graphics basic` launch
 
 ## Step 10 — YCB pivot: language-conditioned grasping
