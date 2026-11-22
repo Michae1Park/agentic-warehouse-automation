@@ -4,7 +4,8 @@
 
 A warehouse manager types *"Prepare order #1042 and move it to the dispatch area."* An LLM agent reads the order
 from the system of record (Postgres), reserves inventory, plans a pick route and dispatches a mobile manipulator in
-Isaac Sim. The robot uses a VLM to check each shelf bin, then picks, carries and places the items at dispatch.
+Isaac Sim. The robot uses a VLM to check each shelf bin, then picks and carries the items to an outbound conveyor,
+where a VLM audit checks the tote against the order before it ships.
 Every physical step writes back to the database. The dashboard, chat and live simulation stay in sync because they
 all read from that one system of record.
 
@@ -26,7 +27,7 @@ The demo covers six operational workflows end to end:
 
 | Workflow | Example request | What happens |
 |---|---|---|
-| Order preparation | "Prepare order #1042 and move it to dispatch" | reserve → route → pick → dispatch → verify → close order |
+| Order preparation | "Prepare order #1042 and move it to dispatch" | reserve → route → pick → drop into outbound tote → VLM tote audit → release to conveyor → close order |
 | Package retrieval | (same flow, single line orders) | |
 | Inventory inspection | "Cycle count aisle B" | robot counts bins with the VLM and corrects the WMS |
 | Stock replenishment | "Replenish green tea from receiving" | staging → shelf, inventory moved transactionally |
@@ -45,7 +46,7 @@ updating the record and raising the exception, closes that loop. A robot that on
 |---|---|---|
 | Reasoning + tool calling | **Qwen3.8-27B** (FP8, vLLM) | Open weights, strong native tool calling, and multimodal, so one ~29GB model serves as both agent LLM and VLM on a single L40S alongside Isaac Sim |
 | Vision | Same Qwen3.8-27B, image input | Shelf-bin SKU identification and counting. Scored against simulator ground truth (see Results) |
-| Simulation | **Isaac Sim 5.1** (container) | Physically simulated Ridgeback + Franka mobile manipulator, RTX rendering for the VLM camera |
+| Simulation | **Isaac Sim 5.1** (container) | Physically simulated Ridgeback + Franka mobile manipulator, RTX rendering for the VLM camera. `--graphics high` builds the scene from Isaac's warehouse assets (pallet racking, cartons, roller conveyor) |
 | Arm motion | Lula IK (Isaac motion generation) | Reliable scripted front grasps. Also serves as the baseline the VLA is compared against |
 | Agent | Plain tool-calling loop, no framework | One agent with typed tools and persistent state. A deterministic executor does the physical work |
 | System of record | **Postgres** + FastAPI | Transactions for reservations and picks. `LISTEN/NOTIFY` triggers stream every change to the UI |
@@ -82,6 +83,8 @@ Through typed tools that wrap SQL transactions, never free-form SQL:
 - **Each pick** decrements `inventory`, releases the reservation, increments `order_lines.picked_qty`, adds the item to
   the robot's tote and appends an `inventory_transactions` audit row, all in one transaction.
 - **Cycle counts** write `cycle_count` adjustments with the observed delta.
+- **The outbound tote is audited** before it is released down the conveyor: the VLM compares the tote contents with
+  the order and raises a `tote_mismatch` exception (pack-station QA) on any difference.
 - **The order closes** only after a `verify` step confirms every line is fully picked and placed.
 
 ## 6. What happens when something fails?
@@ -108,7 +111,51 @@ baseline, not a real warehouse.**
 
 ## Results
 
-_Filled in by `eval/run_eval.py` and `eval/vlm_eval.py`; see `eval/results/`._
+All numbers are simulated and compared against our own scripted baseline, not a real warehouse.
+
+### Fulfillment KPIs (`eval/run_eval.py`)
+
+Seeds 1, 2, 3 · 8 generated orders per run · mock robot at 20× time scale · agent = Qwen3.8-27B.
+Fault profile `faulty`: grasp failure 15%, blocked path 10%, missing stock 20%.
+
+| Mode | Faults | Orders | Fulfillment | Interventions / order | Avg execution (sim) | Inventory accuracy | Recovery success | Agent turn latency |
+|---|---|---|---|---|---|---|---|---|
+| Scripted baseline | nominal | 24 | 92% | 0.08 | 30.0s | 100% | — | — |
+| Scripted baseline | faulty | 24 | 42% | 0.58 | 24.0s | 77% | 0% (12) | — |
+| Scripted + recovery | nominal | 24 | 92% | 0.08 | 29.4s | 100% | — | — |
+| Scripted + recovery | faulty | 24 | 71% | 0.29 | 30.9s | 91% | 74% (19) | — |
+| **Agent** | nominal | 24 | **100%** | **0.00** | 33.3s | 100% | — | 11.9s |
+| **Agent** | faulty | 24 | **75%** | **0.25** | 32.4s | 94% | 71% (21) | 12.9s |
+
+### Shelf-bin perception (`eval/vlm_eval.py`)
+
+24 bins per seed, 25% of bins with a wrong WMS record, high-graphics scene, Qwen3.8-27B.
+
+| Seed | Presence accuracy | Exact count | Wrong records detected | Latency |
+|---|---|---|---|---|
+| 7 | 100% | 75% | 8 / 8 | 1.2s |
+| 11 | 96% | 67% | 4 / 4 | 1.3s |
+| 23 | 96% | 75% | 6 / 6 | 1.3s |
+
+Exact counts are limited by boxes hidden behind the front row, so cycle counts use presence (see Limitations).
+
+### Grasping: scripted vs VLA (`--eval-grasp`)
+
+50 randomized held-out trials (`eval/results/grasp/`).
+
+| Policy | Success | Mean time (sim) |
+|---|---|---|
+| Scripted (Lula IK) | 70% | 3.4s |
+| SmolVLA | 16% | 9.0s |
+| SmolVLA + scripted fallback | 72% | — |
+
+The VLA does not beat the scripted grasp yet. It runs as the primary picker only behind the scripted fallback.
+
+### Outbound tote audit
+
+Isaac, high-graphics scene, Qwen3.8-27B. Six generated orders (1–4 units each): **6 / 6** audits correct with exact
+counts, 1.6–3.1s per audit. Mis-packed totes (the order claims different SKUs than the tote holds): the VLM reports
+the actual contents in **2 / 2** cases instead of echoing the order, so the mismatch is raised.
 
 ---
 
@@ -126,9 +173,14 @@ This is a portfolio demo, so the simplifications are stated plainly:
   bins, but it cannot count boxes hidden behind the front row. Cycle counts therefore use VLM presence (zero-out
   missing SKUs, flag unexpected ones) rather than VLM quantities.
 - **Faults are injected**, with seeded probabilities, into a physical world model that is separate from the database.
-- **The VLA** is SmolVLA fine-tuned on 196 scripted demonstrations (7,448 frames, end-effector action space) of the
-  reach-and-grasp segment only. 200 were recorded; 4 were truncated by a machine crash and discarded. Lifting,
-  stowing and placing remain scripted.
+- **The VLA** is SmolVLA fine-tuned (8k steps) on 196 scripted demonstrations (7,448 frames, end-effector action
+  space) of the reach-and-grasp segment only. 200 were recorded; 4 were truncated by a machine crash and discarded.
+  Lifting, stowing and placing remain scripted. It was trained on the basic scene, so data collection and grasp
+  evaluation keep `--graphics basic`.
+- **Conveyor.** Totes are moved kinematically along the roller conveyor and removed at the outbound pallet; there is
+  no packing or shipping workflow behind it. Items are released into the tote at the drop pose rather than dropped
+  with physics.
+- **Background racks** in the high-graphics scene are decoration and are not part of the WMS.
 
 ---
 
@@ -136,6 +188,19 @@ This is a portfolio demo, so the simplifications are stated plainly:
 
 Requirements: NVIDIA GPU (tested on an L40S 48GB), Docker with the NVIDIA runtime, and the Qwen3.8-27B-FP8 weights in
 the Hugging Face cache.
+
+One-command Isaac demo (high graphics, WebRTC, CPU-pinned, GPU budget check):
+
+```bash
+scripts/demo.sh                      # GRASP_POLICY=vla_with_fallback scripts/demo.sh to use the VLA
+```
+
+In the dashboard's Isaac view: drag to orbit, right/shift-drag to pan, scroll to zoom, double-click or
+**reset view** to return to the overview.
+
+GPU memory (L40S, 46GB): Isaac high graphics ~7GB, VLA server ~1.3GB, Qwen3.8-27B at `LLM_GPU_UTIL=0.75` ~34.5GB.
+That fits, but with little headroom; `demo.sh` refuses to start if other GPU jobs would push it over. For
+development, set a lighter model in `.env` (see `.env.example`).
 
 ```bash
 cp .env.example .env                 # ROBOT_BACKEND=mock for fast mode
@@ -147,7 +212,7 @@ echo -e "ROBOT_BACKEND=isaac\nSIM_URL=http://localhost:8020" > .env
 docker compose --profile isaac up -d
 
 # Isaac Sim mode with the WebRTC Streaming Client (connect it to this machine's IP)
-echo "ISAAC_ARGS=--livestream" >> .env
+echo 'ISAAC_ARGS="--livestream --graphics high"' >> .env
 docker compose --profile isaac up -d --force-recreate isaac
 ```
 
@@ -165,7 +230,9 @@ python3 eval/vlm_eval.py            # needs the isaac profile running
 ```
 db/            schema (tables, triggers, views) and seed data
 backend/app/   FastAPI: agent/, executor.py, warehouse.py, perception.py, robot/{mock,isaac}.py, sim/world.py
-isaac/         Isaac Sim warehouse server (scene, robot control, HTTP API, MJPEG stream)
+isaac/         Isaac Sim warehouse server (scene, conveyor, robot control, camera API, MJPEG stream)
+vla/           SmolVLA dataset conversion, training and policy server
+scripts/       demo launcher
 frontend/      React dashboard
 eval/          KPI harness and VLM perception benchmark
 docs/          action items, images
