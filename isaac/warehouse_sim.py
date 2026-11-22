@@ -20,6 +20,7 @@ parser.add_argument("--out", default="/workspace/vla/data/raw")
 parser.add_argument("--seed", type=int, default=0)
 parser.add_argument("--policy-url", default="http://localhost:8030")
 parser.add_argument("--livestream", action="store_true", help="serve the viewport to the Isaac Sim WebRTC Streaming Client")
+parser.add_argument("--graphics", choices=("basic", "high"), default="basic")
 parser.add_argument("--eval-grasp", type=int, default=0, help="compare scripted vs VLA grasps on N randomized trials")
 args, _ = parser.parse_known_args()
 
@@ -31,6 +32,18 @@ if args.livestream:
 
     app.set_setting("/app/window/drawMouse", True)
     enable_extension("omni.kit.livestream.webrtc")
+if args.graphics == "high":
+    for key, value in {
+        "/rtx/rendermode": "RaytracedLighting",
+        "/rtx/post/aa/op": 3,
+        "/rtx/ambientOcclusion/enabled": True,
+        "/rtx/reflections/enabled": True,
+        "/rtx/indirectDiffuse/enabled": True,
+        "/rtx/shadows/enabled": True,
+        "/rtx/post/tonemap/op": 6,
+        "/rtx/post/histogram/enabled": True,
+    }.items():
+        app.set_setting(key, value)
 
 import numpy as np
 import omni.replicator.core as rep
@@ -48,7 +61,7 @@ from isaacsim.robot_motion.motion_generation import (
 )
 from isaacsim.storage.native import get_assets_root_path
 from PIL import Image
-from pxr import Gf, UsdGeom, UsdLux, UsdPhysics
+from pxr import Gf, Sdf, UsdGeom, UsdLux, UsdPhysics, UsdShade
 
 PHYSICS_DT = 1 / 60
 BASE_SPEED = 1.0
@@ -118,6 +131,8 @@ class Warehouse:
         self.tote: list[Box] = []
         self.grasp_failure_next = False
         self._build_environment()
+        if args.graphics == "high":
+            self._build_high_quality_environment()
         self._build_robot()
         self.world.reset()
         self._init_robot()
@@ -171,6 +186,77 @@ class Warehouse:
                     position=np.array([float(location["x"]) + 0.35, float(location["y"]), 0.07]),
                     scale=np.array([0.6, 0.9, 0.14]), color=np.array([0.6, 0.45, 0.28]),
                 )
+
+    def _material(self, name: str, color, roughness: float, metallic: float = 0.0) -> UsdShade.Material:
+        path = f"/World/Looks/{name}"
+        material = UsdShade.Material.Define(self.stage, path)
+        shader = UsdShade.Shader.Define(self.stage, path + "/Shader")
+        shader.CreateIdAttr("UsdPreviewSurface")
+        shader.CreateInput("diffuseColor", Sdf.ValueTypeNames.Color3f).Set(Gf.Vec3f(*color))
+        shader.CreateInput("roughness", Sdf.ValueTypeNames.Float).Set(roughness)
+        shader.CreateInput("metallic", Sdf.ValueTypeNames.Float).Set(metallic)
+        material.CreateSurfaceOutput().ConnectToSource(shader.ConnectableAPI(), "surface")
+        return material
+
+    def _bind(self, root: str, material: UsdShade.Material) -> None:
+        prim = self.stage.GetPrimAtPath(root)
+        if prim.IsValid():
+            for child in [prim, *prim.GetAllChildren()]:
+                UsdShade.MaterialBindingAPI.Apply(child).Bind(material, UsdShade.Tokens.strongerThanDescendants)
+
+    def _build_high_quality_environment(self) -> None:
+        self.stage.GetPrimAtPath("/World/Sun").SetActive(False)
+        self.stage.GetPrimAtPath("/World/DomeLight").GetAttribute("inputs:intensity").Set(250.0)
+        xs = [float(l["x"]) for l in self.locations.values()]
+        ys = [float(l["y"]) for l in self.locations.values()]
+        x0, x1, y0, y1 = min(xs) - 12, max(xs) + 4, min(ys) - 12, max(ys) + 4
+        cx, cy, height = (x0 + x1) / 2, (y0 + y1) / 2, 6.0
+
+        ground = self.stage.GetPrimAtPath("/World/defaultGroundPlane")
+        for prim in ground.GetAllChildren() if ground.IsValid() else []:
+            if prim.IsA(UsdGeom.Imageable) and not prim.HasAPI(UsdPhysics.CollisionAPI):
+                UsdGeom.Imageable(prim).MakeInvisible()
+        floor = VisualCuboid("/World/Building/floor", position=np.array([cx, cy, -0.004]),
+                             scale=np.array([x1 - x0, y1 - y0, 0.01]), color=np.array([0.5, 0.5, 0.5]))
+        self._bind(floor.prim_path, self._material("Concrete", (0.42, 0.42, 0.40), 0.85))
+        wall = self._material("Wall", (0.78, 0.79, 0.80), 0.7)
+        for name, pos, scale in (
+            ("north", (cx, y1, height / 2), (x1 - x0, 0.2, height)),
+            ("east", (x1, cy, height / 2), (0.2, y1 - y0, height)),
+        ):
+            prim = VisualCuboid(f"/World/Building/wall_{name}", position=np.array(pos), scale=np.array(scale),
+                                color=np.array([0.8, 0.8, 0.8]))
+            self._bind(prim.prim_path, wall)
+
+        stripe = self._material("LaneMarking", (0.95, 0.75, 0.1), 0.5)
+        for i, y in enumerate((CORRIDOR_Y - 0.7, CORRIDOR_Y + 0.7)):
+            prim = VisualCuboid(f"/World/Building/lane_{i}", position=np.array([cx, y, 0.002]),
+                                scale=np.array([x1 - x0 - 1, 0.08, 0.004]), color=np.array([0.95, 0.75, 0.1]))
+            self._bind(prim.prim_path, stripe)
+
+        for i, x in enumerate(np.arange(x0 + 2, x1 - 1, 4.0)):
+            for j, y in enumerate(np.arange(y0 + 2, y1 - 1, 4.0)):
+                light = UsdLux.RectLight.Define(self.stage, f"/World/Lamps/lamp_{i}_{j}")
+                light.CreateWidthAttr(1.2)
+                light.CreateHeightAttr(0.3)
+                light.CreateIntensityAttr(15000)
+                light.CreateColorTemperatureAttr(5000)
+                light.CreateEnableColorTemperatureAttr(True)
+                UsdGeom.Xformable(light).AddTranslateOp().Set(Gf.Vec3d(float(x), float(y), height - 0.6))
+
+        shelf_wood = self._material("ShelfBoard", (0.55, 0.42, 0.25), 0.6)
+        rack_steel = self._material("RackSteel", (0.12, 0.28, 0.62), 0.35, 0.7)
+        backing = self._material("Backing", (0.2, 0.22, 0.25), 0.5, 0.3)
+        pallet = self._material("PalletWood", (0.6, 0.45, 0.28), 0.9)
+        for aisle in self.stage.GetPrimAtPath("/World/Shelves").GetChildren():
+            for part in aisle.GetChildren():
+                name = part.GetName()
+                material = shelf_wood if name.startswith("board") else rack_steel if name.startswith("post") else backing
+                self._bind(str(part.GetPath()), material)
+        pallets = self.stage.GetPrimAtPath("/World/Pallets")
+        if pallets.IsValid():
+            for part in pallets.GetChildren():
+                self._bind(str(part.GetPath()), pallet)
 
     def _build_robot(self) -> None:
         root = get_assets_root_path()
