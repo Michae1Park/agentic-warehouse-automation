@@ -43,8 +43,8 @@ updating the record and raising the exception, closes that loop. A robot that on
 
 | Layer | Choice | Why |
 |---|---|---|
-| Reasoning + tool calling | **Qwen3.5-9B** (FP8, vLLM) | Open weights, strong native tool calling, and multimodal, so one ~14GB model serves as both agent LLM and VLM on a single L40S alongside Isaac Sim |
-| Vision | Same Qwen3.5-9B, image input | Shelf-bin SKU identification and counting. Scored against simulator ground truth (see Results) |
+| Reasoning + tool calling | **Qwen3.8-27B** (FP8, vLLM) | Open weights, strong native tool calling, and multimodal, so one ~29GB model serves as both agent LLM and VLM on a single L40S alongside Isaac Sim |
+| Vision | Same Qwen3.8-27B, image input | Shelf-bin SKU identification and counting. Scored against simulator ground truth (see Results) |
 | Simulation | **Isaac Sim 5.1** (container) | Physically simulated Ridgeback + Franka mobile manipulator, RTX rendering for the VLM camera |
 | Arm motion | Lula IK (Isaac motion generation) | Reliable scripted front grasps. Also serves as the baseline the VLA is compared against |
 | Agent | Plain tool-calling loop, no framework | One agent with typed tools and persistent state. A deterministic executor does the physical work |
@@ -56,34 +56,46 @@ and deterministic recovery policies proved more reliable than agents passing mes
 
 ## 4. How does the architecture work?
 
+The design is an ordinary tool-calling AI agent. The difference is that some of its tools happen to be robots.
+The agent calls `dispatch_task` the way a coding agent calls `run_tests`: it states intent, gets a structured
+result back, and decides what to do next. Underneath, the work is split into three systems that run at different
+speeds:
+
 ```
- ┌──────────────── React dashboard ───────────────────┐
- │ KPIs · Orders · Inventory · Robot · Exceptions      │
- │ Agent chat (tool trace)   Isaac stream / floor map  │
- └───────▲──────────────── REST + WebSocket ───────────┘
-         │
- ┌───────┴──────── FastAPI backend ─────────────────────────────────┐
- │  Agent loop ──tools──▶ Warehouse domain layer (SQL transactions)  │
- │      ▲                        │ creates tasks + steps             │
- │      │ [SYSTEM EVENT]         ▼                                   │
- │  Task executor (per robot queue, resumable state machine)         │
- │      │  navigate · inspect · pick · place · stow · count · verify │
- │      ├──▶ Perception (VLM on inspection camera)                   │
- │      └──▶ RobotGateway ─┬─ MockRobot (fast, for evals)            │
- │                         └─ IsaacRobot (HTTP → Isaac Sim)          │
- └──────────▲──────────────────────────────────────────────────┬────┘
-            │ LISTEN/NOTIFY                                    │
-       Postgres (system of record)                     Isaac Sim 5.1
-                                                      Ridgeback-Franka
+ ┌──────────────────────── React dashboard ─────────────────────────┐
+ │ KPIs · Orders · Inventory · Robot · Exceptions · Chat · Isaac     │
+ └────────────────────────────▲─────────────────────────────────────┘
+                              │ REST + WebSocket  (LISTEN/NOTIFY ◀── Postgres, system of record)
+ ┌────────────────────────────┴─────────────────────────────────────┐
+ │ SYSTEM 2 · Deliberate reasoning                     seconds / turn │
+ │ Qwen3.8-27B tool-calling agent                                    │
+ │  reads orders & stock · plans · handles shortages · explains      │
+ │  tools: get_order · find_stock · plan_fulfillment · dispatch_task │
+ │         wait_for_task · report_exception · …                      │
+ └───────────────▲─────────────────────────────┬────────────────────┘
+   [SYSTEM EVENT] │ task result / exception     │ dispatch_task(plan)
+ ┌───────────────┴─────────────────────────────▼────────────────────┐
+ │ SYSTEM 1 · Fast skills & perception                ~100 ms–1 s     │
+ │ Task executor (resumable state machine, per-robot queue)          │
+ │  skills: navigate · inspect · pick · place · count · verify       │
+ │  VLM shelf inspection (same Qwen model, image input)              │
+ │  VLA grasp policy (SmolVLA) with scripted fallback                │
+ │  recovery: regrasp · replan · cycle-count + reroute               │
+ └───────────────▲─────────────────────────────┬────────────────────┘
+   state, camera  │                             │ EE / base targets
+ ┌───────────────┴─────────────────────────────▼────────────────────┐
+ │ SYSTEM 0 · Control & physics                         60 Hz         │
+ │ RobotGateway ─┬─ MockRobot (fast evals)                           │
+ │               └─ IsaacRobot → Isaac Sim 5.1, Ridgeback-Franka      │
+ │  Lula IK · joint controllers · waypoint base controller · physics │
+ └──────────────────────────────────────────────────────────────────┘
 ```
 
-**Separation of concerns.**
-- The **LLM decides what to do**. It reads orders and stock, chooses the workflow, handles ambiguity and shortages,
-  and explains the outcome.
-- The **executor does it, deterministically**. Plans are rows in `tasks` / `task_steps`. Each step's status, attempts
-  and result are persisted, so a backend restart resumes a running task.
-- The **gateway abstracts the robot**. The same executor drives the mock robot used for fast evaluation and the
-  Isaac Sim robot.
+| System | Role | Analogy to a software agent |
+|---|---|---|
+| **System 2** | Decides *what* to do: chooses the workflow, handles ambiguity and shortages, reports outcomes | The LLM in the agent loop |
+| **System 1** | Turns a task into skills and runs them reliably: perception, grasping, recovery. Plans are rows in `tasks` / `task_steps`, so a restart resumes a running task | The tool's implementation |
+| **System 0** | Turns skill targets into motion: IK, joint control, physics | The OS / hardware the tool runs on |
 
 ## 5. How does the agent interact with enterprise systems?
 
@@ -149,7 +161,7 @@ This is a portfolio demo, so the simplifications are stated plainly:
 
 ## Running it
 
-Requirements: NVIDIA GPU (tested on an L40S 48GB), Docker with the NVIDIA runtime, and the Qwen3.5-9B weights in
+Requirements: NVIDIA GPU (tested on an L40S 48GB), Docker with the NVIDIA runtime, and the Qwen3.8-27B-FP8 weights in
 the Hugging Face cache.
 
 ```bash
