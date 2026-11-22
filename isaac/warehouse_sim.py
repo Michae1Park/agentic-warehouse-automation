@@ -84,6 +84,21 @@ RACK_SHELF_SIZE = np.array([4.0, 1.076, 0.37])
 RACK_FRAME_SIZE = np.array([0.126, 1.0, 3.0])
 PALLET_SIZE = np.array([1.213, 1.003, 0.211])
 FLOOR_TILE = 6.0
+DECOR_LEVELS = (0.15, 1.15, 2.15)
+DECOR_BAY = 4.0
+DECOR_CARTONS = {"SM_CardBoxA_01": (0.7, 0.5), "SM_CardBoxB_01": (0.5, 0.5), "SM_CardBoxC_01": (0.5, 0.5),
+                 "SM_CardBoxD_01": (0.38, 0.25)}
+CONVEYOR_X = 12.45
+CONVEYOR_START_Y = 0.6
+CONVEYOR_SEGMENT = 2.719
+CONVEYOR_SEGMENTS = 2
+ROLLER_TOP = 0.769
+TOTE_X = 12.12
+TOTE_SCALE = np.array([1.8, 1.8, 1.2])
+TOTE_SIZE = np.array([0.198, 0.296, 0.146]) * TOTE_SCALE
+TOTE_SPEED = 0.6
+DISPATCH_STANDOFF = 0.6
+RELEASE_POSES = [euler_angles_to_quat(np.array([0.0, pitch, 0.0])) for pitch in (math.pi * 0.95, math.pi * 0.75, math.pi / 2)]
 POLICY_RES = (256, 256)
 CONTROL_EVERY = 6
 FINGERTIP_OFFSET = np.array([0.0, 0.0, 0.1034])
@@ -114,13 +129,15 @@ class Box:
         self.prim = prim
         self.sku = sku
         self.location_id: str | None = None
+        self.position = np.zeros(3)
 
     @property
     def path(self) -> str:
         return self.prim.prim_path
 
     def move(self, position, orientation=None) -> None:
-        self.prim.set_world_pose(np.asarray(position, dtype=float), orientation)
+        self.position = np.asarray(position, dtype=float)
+        self.prim.set_world_pose(self.position, orientation)
 
 
 class Warehouse:
@@ -137,6 +154,7 @@ class Warehouse:
         self.tote: list[Box] = []
         self.grasp_failure_next = False
         self._build_environment()
+        self._build_conveyor()
         if args.graphics == "high":
             self._build_high_quality_environment()
         self._build_robot()
@@ -186,7 +204,7 @@ class Warehouse:
                     position=np.array([float(location["x"]), float(location["y"]), 0.005]),
                     scale=np.array([1.4, 1.2, 0.01]), color=np.array(zone_colors[location["kind"]]),
                 )
-            if location["kind"] in ("dispatch", "staging"):
+            if location["kind"] == "staging":
                 FixedCuboid(
                     f"/World/Pallets/{location['id'].replace('-', '_')}",
                     position=np.array([float(location["x"]) + 0.35, float(location["y"]), 0.07]),
@@ -212,12 +230,18 @@ class Warehouse:
 
     def _add_prop(self, asset: str, path: str, translate, rotate_z: float, scale) -> None:
         add_reference_to_stage(f"{self.assets_root}{WAREHOUSE_PROPS}/{asset}.usd", path)
+        self._place_prop(path, translate, rotate_z, scale)
+
+    def _place_prop(self, path: str, translate, rotate_z: float, scale) -> None:
         prim = self.stage.GetPrimAtPath(path)
         xform = UsdGeom.Xformable(prim)
         xform.ClearXformOpOrder()
-        xform.AddTranslateOp().Set(Gf.Vec3d(*map(float, translate)))
-        xform.AddRotateZOp().Set(float(rotate_z))
-        xform.AddScaleOp().Set(Gf.Vec3f(*map(float, scale)))
+        double = UsdGeom.XformOp.PrecisionDouble
+        precision = {name: double if prim.GetAttribute(f"xformOp:{name}").GetTypeName() in ("double3", "double") else None
+                     for name in ("translate", "rotateZ", "scale")}
+        xform.AddTranslateOp(precision=precision["translate"] or double).Set(tuple(map(float, translate)))
+        xform.AddRotateZOp(precision=precision["rotateZ"] or UsdGeom.XformOp.PrecisionFloat).Set(float(rotate_z))
+        xform.AddScaleOp(precision=precision["scale"] or UsdGeom.XformOp.PrecisionFloat).Set(tuple(map(float, scale)))
         for child in Usd.PrimRange(prim):
             if child.HasAPI(UsdPhysics.CollisionAPI):
                 UsdPhysics.CollisionAPI(child).CreateCollisionEnabledAttr(False)
@@ -259,6 +283,40 @@ class Warehouse:
             self._add_prop("SM_PaletteA_01", f"{part.GetPath()}_prop", center - np.array([0, 0, size[2] / 2]), 90,
                            [size[1] / PALLET_SIZE[0], size[0] / PALLET_SIZE[1], size[2] / PALLET_SIZE[2]])
 
+    def _build_decor_bay(self, name: str, cx: float, cy: float, along_y: bool, rng: np.random.Generator) -> None:
+        rotate = 90 if along_y else 0
+        axis = np.array([0.0, 1.0, 0.0]) if along_y else np.array([1.0, 0.0, 0.0])
+        center = np.array([cx, cy, 0.0])
+        root = f"/World/Decor/{name}"
+        for side in (-1, 1):
+            self._add_prop("SM_RackFrame_03", f"{root}/frame_{side + 1}", center + axis * side * DECOR_BAY / 2, rotate, (1, 1, 1))
+        for level, z in enumerate(DECOR_LEVELS):
+            self._add_prop("SM_RackShelf_01", f"{root}/shelf_{level}", center + np.array([0, 0, z - 0.025]), rotate, (1, 1, 1))
+            if level == 0 and rng.random() < 0.6:
+                for k, offset in enumerate((-1.0, 1.0)):
+                    base = center + axis * offset + np.array([0, 0, z])
+                    self._add_prop("SM_PaletteA_01", f"{root}/pallet_{k}", base, rotate, (0.8, 0.8, 1))
+                    self._add_prop("SM_CardBoxA_01", f"{root}/load_{k}", base + np.array([0, 0, 0.211]), rotate, (1, 1, 1.4))
+                continue
+            along = -DECOR_BAY / 2 + 0.25
+            k = 0
+            while along < DECOR_BAY / 2 - 0.5:
+                asset = rng.choice(list(DECOR_CARTONS))
+                length = DECOR_CARTONS[asset][0]
+                if rng.random() < 0.8:
+                    position = center + axis * (along + length / 2) + np.array([0, 0, z])
+                    self._add_prop(asset, f"{root}/carton_{level}_{k}", position, rotate, (1, 1, 1))
+                    k += 1
+                along += length + rng.uniform(0.05, 0.3)
+
+    def _build_decor(self, x0: float, x1: float, y0: float, y1: float) -> None:
+        rng = np.random.default_rng(7)
+        for i, x in enumerate((-3.5, -6.5, -9.5)):
+            for j, y in enumerate((1.5, 5.5)):
+                self._build_decor_bay(f"west_{i}_{j}", x, y, True, rng)
+        for i, x in enumerate(np.arange(x0 + 3.0, x1 - 6.0, DECOR_BAY)):
+            self._build_decor_bay(f"north_{i}", float(x), y1 - 0.8, False, rng)
+
     def _build_high_quality_environment(self) -> None:
         self.assets_root = get_assets_root_path()
         self.stage.GetPrimAtPath("/World/Sun").SetActive(False)
@@ -299,6 +357,72 @@ class Warehouse:
                 UsdGeom.Xformable(light).AddTranslateOp().Set(Gf.Vec3d(float(x), float(y), height - 0.6))
 
         self._build_props()
+        self._build_decor(x0, x1, y0, y1)
+
+    def _build_conveyor(self) -> None:
+        self.assets_root = get_assets_root_path()
+        for i in range(CONVEYOR_SEGMENTS):
+            add_reference_to_stage(f"{self.assets_root}/Isaac/Props/Conveyors/ConveyorBelt_A08.usd", f"/World/Conveyor/segment_{i}")
+            self._place_prop(f"/World/Conveyor/segment_{i}", (CONVEYOR_X, CONVEYOR_START_Y + i * CONVEYOR_SEGMENT, 0), -90, (1, 1, 1))
+        end_y = CONVEYOR_START_Y + CONVEYOR_SEGMENTS * CONVEYOR_SEGMENT
+        outbound = (CONVEYOR_X, end_y + 0.75, 0.0)
+        self._add_prop("SM_PaletteA_01", "/World/Outbound/pallet", outbound, 0, (1, 1, 1))
+        for i, (dx, dy, dz, asset) in enumerate([(-0.3, -0.25, 0, "SM_CardBoxB_01"), (0.25, -0.25, 0, "SM_CardBoxA_01"),
+                                                  (-0.3, 0.25, 0, "SM_CardBoxC_01"), (0.25, 0.25, 0, "SM_CardBoxB_01"),
+                                                  (-0.3, 0.25, 0.25, "SM_CardBoxD_01")]):
+            self._add_prop(asset, f"/World/Outbound/carton_{i}", (outbound[0] + dx, outbound[1] + dy, 0.211 + dz), 0, (1, 1, 1))
+        self.conveyor_end_y = end_y
+        self.dispatch_totes: dict[str, str] = {}
+        self.shipping: list[tuple[str, list[Box]]] = []
+        self.tote_counter = 0
+        for location in self.locations.values():
+            if location["kind"] == "dispatch":
+                self.dispatch_totes[location["id"]] = self._spawn_tote(float(location["y"]))
+
+    def _spawn_tote(self, y: float) -> str:
+        self.tote_counter += 1
+        path = f"/World/Totes/tote_{self.tote_counter}"
+        add_reference_to_stage(f"{self.assets_root}/Isaac/Props/KLT_Bin/small_KLT_visual.usd", path)
+        self._place_prop(path, (TOTE_X, y, ROLLER_TOP + TOTE_SIZE[2] / 2), 0, TOTE_SCALE)
+        return path
+
+    def ship_tote(self, location_id: str) -> None:
+        path = self.dispatch_totes[location_id]
+        tote_y = float(self.locations[location_id]["y"])
+        boxes = []
+        for box in [b for b in self.boxes if b.location_id == location_id]:
+            box.location_id = None
+            boxes.append((box, box.position - np.array([TOTE_X, tote_y, 0.0])))
+        self.shipping.append((path, boxes))
+        self.dispatch_totes[location_id] = self._spawn_tote(float(self.locations[location_id]["y"]))
+        self._hide(self.dispatch_totes[location_id])
+        self.pending_tote = (location_id, 0.0)
+
+    def update_conveyor(self) -> None:
+        step = TOTE_SPEED * PHYSICS_DT
+        arrived = []
+        for path, boxes in self.shipping:
+            translate = UsdGeom.Xformable(self.stage.GetPrimAtPath(path)).GetOrderedXformOps()[0]
+            position = translate.Get()
+            y = position[1] + step
+            translate.Set(Gf.Vec3d(position[0], y, position[2]))
+            for box, offset in boxes:
+                box.move(np.array([TOTE_X, y, 0.0]) + offset, np.array([1.0, 0, 0, 0]))
+            if y > self.conveyor_end_y - TOTE_SIZE[1] / 2:
+                arrived.append((path, boxes))
+        for path, boxes in arrived:
+            self.shipping.remove((path, boxes))
+            self.stage.RemovePrim(path)
+            for box, _ in boxes:
+                self.stage.RemovePrim(box.path)
+                self.boxes.remove(box)
+        if getattr(self, "pending_tote", None):
+            location_id, waited = self.pending_tote
+            if waited > 2.0:
+                UsdGeom.Imageable(self.stage.GetPrimAtPath(self.dispatch_totes[location_id])).MakeVisible()
+                self.pending_tote = None
+            else:
+                self.pending_tote = (location_id, waited + PHYSICS_DT)
 
     def _build_robot(self) -> None:
         root = get_assets_root_path()
@@ -426,6 +550,11 @@ class Warehouse:
     def move_camera(self, payload: dict) -> None:
         if payload.get("reset"):
             return self.reset_orbit()
+        if "target" in payload:
+            self.orbit_target = np.array(payload["target"], dtype=float)
+        self.orbit_yaw = math.radians(payload.get("yaw", math.degrees(self.orbit_yaw)))
+        self.orbit_pitch = math.radians(payload.get("pitch", math.degrees(self.orbit_pitch)))
+        self.orbit_distance = float(payload.get("distance", self.orbit_distance))
         dyaw, dpitch = payload.get("orbit", (0.0, 0.0))
         self.orbit_yaw -= float(dyaw)
         self.orbit_pitch += float(dpitch)
@@ -510,7 +639,11 @@ class Warehouse:
     def slot_positions(self, location_id: str, count: int) -> list[np.ndarray]:
         location = self.locations[location_id]
         x, y, z = float(location["x"]), float(location["y"]), float(location["z"])
-        if location["kind"] in ("dispatch", "staging"):
+        if location["kind"] == "dispatch":
+            z = ROLLER_TOP + 0.015 + BOX_SIZE[2] / 2
+            return [np.array([TOTE_X + (i % 2 - 0.5) * 0.13, y + (i // 2 % 4 - 1.5) * 0.125,
+                              z + (i // 8) * BOX_SIZE[2]]) for i in range(count)]
+        if location["kind"] == "staging":
             x, z = x + 0.35, 0.14
             columns, rows, spacing_y = 4, 6, 0.15
             y0 = y - (columns - 1) * spacing_y / 2
@@ -534,6 +667,9 @@ class Warehouse:
     def reset_inventory(self, missing: list[dict]) -> dict:
         for box in self.boxes:
             self.stage.RemovePrim(box.path)
+        for path, _ in self.shipping:
+            self.stage.RemovePrim(path)
+        self.shipping = []
         self.boxes, self.tote, self.held = [], [], None
         skip = {(m["location_id"], m["sku"]) for m in missing}
         by_location: dict[str, list[tuple[str, int]]] = {}
@@ -559,7 +695,9 @@ class Warehouse:
         x, y = float(location["x"]), float(location["y"])
         if location["kind"] == "storage":
             return np.array([x - APPROACH_OFFSET, y, 0.0])
-        if location["kind"] in ("dispatch", "staging"):
+        if location["kind"] == "dispatch":
+            return np.array([x - DISPATCH_STANDOFF, y, 0.0])
+        if location["kind"] == "staging":
             return np.array([x - 0.6, y, 0.0])
         return np.array([x, y, 0.0])
 
@@ -639,9 +777,19 @@ class Commands:
         for _ in range(25):
             yield
 
-    def reach(self, position: np.ndarray, steps: int = 90):
-        joints = self.w.solve_ik(position)
+    def reach(self, position: np.ndarray, steps: int = 90, orientation: np.ndarray = FRONT_GRASP):
+        joints = self.w.solve_ik(position, orientation)
         yield from self.move_arm(joints, steps)
+
+    def reach_any(self, position: np.ndarray, steps: int, orientations: list[np.ndarray]):
+        for orientation in orientations:
+            try:
+                joints = self.w.solve_ik(position, orientation)
+            except SimError:
+                continue
+            yield from self.move_arm(joints, steps)
+            return
+        raise SimError("ik_failed", f"no arm solution for target {np.round(position, 2).tolist()}")
 
     def inspect(self, location_id: str, distance: float = 1.3, height: float = 0.25, focal: float = 16.0):
         location = self.w.locations[location_id]
@@ -751,11 +899,17 @@ class Commands:
 
     def place(self, location_id: str):
         location = self.w.locations[location_id]
-        drop = np.array([float(location["x"]) - 0.05, float(location["y"]), 0.45])
-        yield from self.reach(drop, 80)
+        dispatch = location["kind"] == "dispatch"
+        if dispatch:
+            drop = np.array([TOTE_X, float(location["y"]), ROLLER_TOP + TOTE_SIZE[2] + 0.05])
+            yield from self.reach_any(drop, 80, RELEASE_POSES)
+        else:
+            drop = np.array([float(location["x"]) - 0.05, float(location["y"]), 0.45])
+            yield from self.reach(drop, 80)
         placed = []
         existing = len(self.w.boxes_at(location_id))
         for i, (box, position) in enumerate(zip(list(self.w.tote), self.w.slot_positions(location_id, existing + len(self.w.tote))[existing:])):
+            self.w.tote.remove(box)
             box.move(position + np.array([0, 0, 0.05]), np.array([1.0, 0, 0, 0]))
             box.location_id = location_id
             placed.append(box.sku)
@@ -763,6 +917,8 @@ class Commands:
                 yield
         self.w.tote = []
         yield from self.move_arm(self.w.arm_home, 60)
+        if dispatch:
+            self.w.ship_tote(location_id)
         return {"placed": placed}
 
     def stow(self, sku: str, location_id: str, fail: bool = False):
@@ -838,6 +994,7 @@ class Server:
                     current = None
             self.w.apply_targets()
             self.w.update_attachments()
+            self.w.update_conveyor()
             self.w.update_chase_camera()
             self.w.update_policy_cameras()
             self.w.world.step(render=True)
