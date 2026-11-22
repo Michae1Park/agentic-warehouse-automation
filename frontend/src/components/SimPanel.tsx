@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import FloorMap from "./FloorMap";
 import Panel from "./Panel";
 
@@ -52,7 +52,25 @@ export default function SimPanel() {
     else queueCamera([dx * Math.PI * 1.5, dy * Math.PI * 0.75], [0, 0], 1);
   };
 
-  const onWheel = (e: React.WheelEvent) => queueCamera([0, 0], [0, 0], Math.exp(e.deltaY * 0.0015));
+  const stream = useRef<HTMLImageElement>(null);
+  const zoom = useRef(queueCamera);
+  zoom.current = queueCamera;
+
+  useEffect(() => {
+    const element = stream.current;
+    if (!element) return;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      zoom.current([0, 0], [0, 0], Math.exp(e.deltaY * 0.0015));
+    };
+    element.addEventListener("wheel", onWheel, { passive: false });
+    return () => element.removeEventListener("wheel", onWheel);
+  }, [view]);
+
+  const resetView = () => {
+    setCamera("overview");
+    sendCamera({ reset: true });
+  };
 
   return (
     <Panel title="Live Simulation" area="sim">
@@ -70,28 +88,34 @@ export default function SimPanel() {
                 {name}
               </button>
             ))}
+            <button onClick={resetView} title="Reset the overview camera">
+              reset view
+            </button>
           </span>
         )}
       </div>
       {view === "map" && <FloorMap />}
       {view === "sim" &&
         (SIM_URL ? (
-          <img
-            className="sim-stream interactive"
-            src={`${SIM_URL}/stream.mjpg`}
-            alt="Isaac Sim live stream"
-            title="Drag: orbit · Right/Shift-drag: pan · Wheel: zoom · Double-click: reset"
-            draggable={false}
-            onPointerDown={onPointerDown}
-            onPointerMove={onPointerMove}
-            onPointerUp={() => (drag.current = null)}
-            onWheel={onWheel}
-            onDoubleClick={() => {
-              setCamera("overview");
-              sendCamera({ reset: true });
-            }}
-            onContextMenu={(e) => e.preventDefault()}
-          />
+          <div className="sim-viewport">
+            <img
+              ref={stream}
+              className="sim-stream interactive"
+              src={`${SIM_URL}/stream.mjpg`}
+              alt="Isaac Sim live stream"
+              title="Drag: orbit · Right/Shift-drag: pan · Wheel: zoom · Double-click: reset"
+              draggable={false}
+              onPointerDown={onPointerDown}
+              onPointerMove={onPointerMove}
+              onPointerUp={() => (drag.current = null)}
+              onDoubleClick={resetView}
+              onContextMenu={(e) => e.preventDefault()}
+            />
+            <div className="sim-help">
+              <b>Drag</b> orbit · <b>Right-drag</b> / <b>Shift-drag</b> pan · <b>Scroll</b> zoom ·{" "}
+              <b>Double-click</b> reset
+            </div>
+          </div>
         ) : (
           <div className="sim-placeholder">Isaac Sim not connected (start with the isaac profile and set SIM_URL).</div>
         ))}

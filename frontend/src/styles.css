@@ -32,7 +32,7 @@ body { margin: 0; background: var(--bg); }
 .grid {
   flex: 1; display: grid; gap: 12px; padding: 12px;
   grid-template-columns: 2fr 1fr 1fr;
-  grid-template-rows: 420px 1fr 1fr;
+  grid-template-rows: minmax(560px, 68vh) 1fr 1fr;
   grid-template-areas:
     "sim sim chat"
     "orders robots chat"
@@ -162,3 +162,8 @@ g[transform] { transition: transform 0.25s linear; }
 .steps li.failed .step-dot { background: var(--err); border-color: var(--err); }
 .steps li.skipped { text-decoration: line-through; }
 @keyframes pulse { 50% { opacity: 0.3; } }
+.sim-viewport { position: relative; flex: 1; min-height: 0; display: flex; }
+.sim-help {
+  position: absolute; left: 10px; bottom: 10px; padding: 4px 10px; border-radius: 6px;
+  background: rgba(0, 0, 0, 0.55); color: #e6e6e6; font-size: 11px; pointer-events: none;
+}
