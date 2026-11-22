@@ -61,7 +61,7 @@ from isaacsim.robot_motion.motion_generation import (
 )
 from isaacsim.storage.native import get_assets_root_path
 from PIL import Image
-from pxr import Gf, Sdf, UsdGeom, UsdLux, UsdPhysics, UsdShade
+from pxr import Gf, Sdf, Usd, UsdGeom, UsdLux, UsdPhysics, UsdShade
 
 PHYSICS_DT = 1 / 60
 BASE_SPEED = 1.0
@@ -78,6 +78,12 @@ TOTE_OFFSET = np.array([-0.3, 0.0, 0.46])
 FRONT_GRASP = euler_angles_to_quat(np.array([0.0, math.pi / 2, 0.0]))
 STREAM_EVERY = 3
 INSPECT_RES = (896, 384)
+WAREHOUSE_PROPS = "/Isaac/Environments/Simple_Warehouse/Props"
+CARDBOX_SIZE = np.array([0.38, 0.25, 0.149])
+RACK_SHELF_SIZE = np.array([4.0, 1.076, 0.37])
+RACK_FRAME_SIZE = np.array([0.126, 1.0, 3.0])
+PALLET_SIZE = np.array([1.213, 1.003, 0.211])
+FLOOR_TILE = 6.0
 POLICY_RES = (256, 256)
 CONTROL_EVERY = 6
 FINGERTIP_OFFSET = np.array([0.0, 0.0, 0.1034])
@@ -204,7 +210,57 @@ class Warehouse:
             for child in [prim, *prim.GetAllChildren()]:
                 UsdShade.MaterialBindingAPI.Apply(child).Bind(material, UsdShade.Tokens.strongerThanDescendants)
 
+    def _add_prop(self, asset: str, path: str, translate, rotate_z: float, scale) -> None:
+        add_reference_to_stage(f"{self.assets_root}{WAREHOUSE_PROPS}/{asset}.usd", path)
+        prim = self.stage.GetPrimAtPath(path)
+        xform = UsdGeom.Xformable(prim)
+        xform.ClearXformOpOrder()
+        xform.AddTranslateOp().Set(Gf.Vec3d(*map(float, translate)))
+        xform.AddRotateZOp().Set(float(rotate_z))
+        xform.AddScaleOp().Set(Gf.Vec3f(*map(float, scale)))
+        for child in Usd.PrimRange(prim):
+            if child.HasAPI(UsdPhysics.CollisionAPI):
+                UsdPhysics.CollisionAPI(child).CreateCollisionEnabledAttr(False)
+            if child.HasAPI(UsdPhysics.RigidBodyAPI):
+                UsdPhysics.RigidBodyAPI(child).CreateRigidBodyEnabledAttr(False)
+
+    def _slab(self, path: str, center, size, material: UsdShade.Material) -> None:
+        cube = UsdGeom.Cube.Define(self.stage, path)
+        cube.CreateSizeAttr(1.0)
+        cube.AddTranslateOp().Set(Gf.Vec3d(*map(float, center)))
+        cube.AddScaleOp().Set(Gf.Vec3f(*map(float, size)))
+        UsdShade.MaterialBindingAPI.Apply(cube.GetPrim()).Bind(material)
+
+    def _hide(self, path: str) -> None:
+        UsdGeom.Imageable(self.stage.GetPrimAtPath(path)).MakeInvisible()
+
+    def _build_props(self) -> None:
+        for aisle in self.stage.GetPrimAtPath("/World/Shelves").GetChildren():
+            for part in aisle.GetChildren():
+                name = part.GetName()
+                cube = UsdGeom.Xformable(part)
+                world = cube.ComputeLocalToWorldTransform(Usd.TimeCode.Default())
+                center = np.array(world.ExtractTranslation())
+                size = np.array([world.GetRow3(i).GetLength() for i in range(3)])
+                self._hide(str(part.GetPath()))
+                target = f"{part.GetPath()}_prop"
+                if name.startswith("board"):
+                    self._add_prop("SM_RackShelf_01", target, center + np.array([0, 0, size[2] / 2 - 0.0075]), 90,
+                                   [size[1] / RACK_SHELF_SIZE[0], size[0] / RACK_SHELF_SIZE[1], 0.3])
+                elif name.startswith("post") and name.endswith("_0"):
+                    self._add_prop("SM_RackFrame_03", target, center + np.array([SHELF_DEPTH / 2 - 0.02, 0, -size[2] / 2]), 90,
+                                   [1.0, SHELF_DEPTH / RACK_FRAME_SIZE[1], size[2] / RACK_FRAME_SIZE[2]])
+        pallets = self.stage.GetPrimAtPath("/World/Pallets")
+        for part in pallets.GetChildren() if pallets.IsValid() else []:
+            world = UsdGeom.Xformable(part).ComputeLocalToWorldTransform(Usd.TimeCode.Default())
+            center = np.array(world.ExtractTranslation())
+            size = np.array([world.GetRow3(i).GetLength() for i in range(3)])
+            self._hide(str(part.GetPath()))
+            self._add_prop("SM_PaletteA_01", f"{part.GetPath()}_prop", center - np.array([0, 0, size[2] / 2]), 90,
+                           [size[1] / PALLET_SIZE[0], size[0] / PALLET_SIZE[1], size[2] / PALLET_SIZE[2]])
+
     def _build_high_quality_environment(self) -> None:
+        self.assets_root = get_assets_root_path()
         self.stage.GetPrimAtPath("/World/Sun").SetActive(False)
         self.stage.GetPrimAtPath("/World/DomeLight").GetAttribute("inputs:intensity").Set(250.0)
         xs = [float(l["x"]) for l in self.locations.values()]
@@ -216,23 +272,21 @@ class Warehouse:
         for prim in ground.GetAllChildren() if ground.IsValid() else []:
             if prim.IsA(UsdGeom.Imageable) and not prim.HasAPI(UsdPhysics.CollisionAPI):
                 UsdGeom.Imageable(prim).MakeInvisible()
-        floor = VisualCuboid("/World/Building/floor", position=np.array([cx, cy, -0.004]),
-                             scale=np.array([x1 - x0, y1 - y0, 0.01]), color=np.array([0.5, 0.5, 0.5]))
-        self._bind(floor.prim_path, self._material("Concrete", (0.42, 0.42, 0.40), 0.85))
+        self._slab("/World/Building/floor", (cx, cy, -0.005), (x1 - x0, y1 - y0, 0.01),
+                   self._material("Concrete", (0.42, 0.42, 0.40), 0.85))
+        for i, tx in enumerate(np.arange(x0 + FLOOR_TILE / 2, x1 + FLOOR_TILE / 2, FLOOR_TILE)):
+            for j, ty in enumerate(np.arange(y0 + FLOOR_TILE / 2, y1 + FLOOR_TILE / 2, FLOOR_TILE)):
+                self._add_prop("SM_floor02", f"/World/Building/tile_{i}_{j}", (tx, ty, 0.0015), 0, (1, 1, 1))
         wall = self._material("Wall", (0.78, 0.79, 0.80), 0.7)
         for name, pos, scale in (
             ("north", (cx, y1, height / 2), (x1 - x0, 0.2, height)),
             ("east", (x1, cy, height / 2), (0.2, y1 - y0, height)),
         ):
-            prim = VisualCuboid(f"/World/Building/wall_{name}", position=np.array(pos), scale=np.array(scale),
-                                color=np.array([0.8, 0.8, 0.8]))
-            self._bind(prim.prim_path, wall)
+            self._slab(f"/World/Building/wall_{name}", pos, scale, wall)
 
         stripe = self._material("LaneMarking", (0.95, 0.75, 0.1), 0.5)
         for i, y in enumerate((CORRIDOR_Y - 0.7, CORRIDOR_Y + 0.7)):
-            prim = VisualCuboid(f"/World/Building/lane_{i}", position=np.array([cx, y, 0.002]),
-                                scale=np.array([x1 - x0 - 1, 0.08, 0.004]), color=np.array([0.95, 0.75, 0.1]))
-            self._bind(prim.prim_path, stripe)
+            self._slab(f"/World/Building/lane_{i}", (cx, y, 0.002), (x1 - x0 - 1, 0.08, 0.004), stripe)
 
         for i, x in enumerate(np.arange(x0 + 2, x1 - 1, 4.0)):
             for j, y in enumerate(np.arange(y0 + 2, y1 - 1, 4.0)):
@@ -244,19 +298,7 @@ class Warehouse:
                 light.CreateEnableColorTemperatureAttr(True)
                 UsdGeom.Xformable(light).AddTranslateOp().Set(Gf.Vec3d(float(x), float(y), height - 0.6))
 
-        shelf_wood = self._material("ShelfBoard", (0.55, 0.42, 0.25), 0.6)
-        rack_steel = self._material("RackSteel", (0.12, 0.28, 0.62), 0.35, 0.7)
-        backing = self._material("Backing", (0.2, 0.22, 0.25), 0.5, 0.3)
-        pallet = self._material("PalletWood", (0.6, 0.45, 0.28), 0.9)
-        for aisle in self.stage.GetPrimAtPath("/World/Shelves").GetChildren():
-            for part in aisle.GetChildren():
-                name = part.GetName()
-                material = shelf_wood if name.startswith("board") else rack_steel if name.startswith("post") else backing
-                self._bind(str(part.GetPath()), material)
-        pallets = self.stage.GetPrimAtPath("/World/Pallets")
-        if pallets.IsValid():
-            for part in pallets.GetChildren():
-                self._bind(str(part.GetPath()), pallet)
+        self._build_props()
 
     def _build_robot(self) -> None:
         root = get_assets_root_path()
@@ -445,11 +487,25 @@ class Warehouse:
     def spawn_box(self, sku: str, location_id: str, position: np.ndarray) -> Box:
         self.box_counter += 1
         rgb = COLORS.get(self.colors.get(sku, "gray"), (0.5, 0.5, 0.5))
-        prim = VisualCuboid(f"/World/Boxes/box_{self.box_counter}", position=position, scale=BOX_SIZE, color=np.array(rgb))
+        path = f"/World/Boxes/box_{self.box_counter}"
+        if args.graphics == "high":
+            prim = self._cardboard_box(path, position, rgb)
+        else:
+            prim = VisualCuboid(path, position=position, scale=BOX_SIZE, color=np.array(rgb))
         box = Box(prim, sku)
         box.location_id = location_id
         self.boxes.append(box)
         return box
+
+    def _cardboard_box(self, path: str, position: np.ndarray, rgb) -> SingleXFormPrim:
+        UsdGeom.Xform.Define(self.stage, path)
+        self._add_prop("SM_CardBoxD_01", path + "/carton", (0, 0, -BOX_SIZE[2] / 2), 90,
+                       [BOX_SIZE[1] / CARDBOX_SIZE[0], BOX_SIZE[0] / CARDBOX_SIZE[1], BOX_SIZE[2] / CARDBOX_SIZE[2]])
+        VisualCuboid(path + "/label", translation=np.array([-BOX_SIZE[0] / 2 - 0.001, 0, 0]),
+                     scale=np.array([0.002, BOX_SIZE[1] * 0.7, BOX_SIZE[2] * 0.6]), color=np.array(rgb))
+        prim = SingleXFormPrim(path)
+        prim.set_world_pose(position)
+        return prim
 
     def slot_positions(self, location_id: str, count: int) -> list[np.ndarray]:
         location = self.locations[location_id]
