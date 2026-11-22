@@ -220,11 +220,40 @@ class TaskExecutor:
         return {"picked": picked, "failed_attempts": failed_attempts, "grasp_policies": policies}
 
     async def _do_place(self, task: dict, step: dict) -> dict:
+        location_id = step["args"]["location_id"]
         try:
-            await self.robot.place(step["args"]["location_id"])
+            await self.robot.place(location_id)
         except RobotError as err:
             raise StepFailed(err.code, str(err)) from err
-        return {"placed": await warehouse.record_place(self.robot.robot_id)}
+        placed = await warehouse.record_place(self.robot.robot_id)
+        audit = await self._audit_tote(task, location_id, placed)
+        try:
+            await self.robot.release(location_id)
+        except RobotError as err:
+            raise StepFailed(err.code, str(err)) from err
+        return {"placed": placed, **audit}
+
+    async def _audit_tote(self, task: dict, location_id: str, placed: list[str]) -> dict:
+        if settings.perception_mode != "vlm" or not placed:
+            return {}
+        observation = await self.robot.inspect(location_id)
+        if not observation.image_jpeg:
+            return {}
+        expected: dict[str, int] = {}
+        for sku in placed:
+            expected[sku] = expected.get(sku, 0) + 1
+        vision = await perception.verify_tote(observation.image_jpeg, expected)
+        missing = sorted(set(expected) - set(vision["counts"]))
+        unexpected = sorted(set(vision["counts"]) - set(expected))
+        if missing or unexpected:
+            await warehouse.raise_exception(
+                "tote_mismatch",
+                f"outbound tote at {location_id}: missing {missing or 'none'}, unexpected {unexpected or 'none'}; "
+                "diverted to pack-station QA",
+                task_id=task["id"], order_id=task.get("order_id"),
+            )
+        return {"tote_audit": {"expected": expected, "vlm": vision["counts"], "passed": not (missing or unexpected),
+                               "vlm_latency_ms": vision["latency_ms"]}}
 
     async def _do_count(self, task: dict, step: dict) -> dict:
         location_id = step["args"]["location_id"]

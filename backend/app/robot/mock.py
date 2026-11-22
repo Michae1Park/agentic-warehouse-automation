@@ -55,6 +55,9 @@ class MockRobot:
     async def place(self, location_id: str) -> None:
         await self._sleep(2.0)
 
+    async def release(self, location_id: str) -> None:
+        return None
+
     async def stow(self, sku: str, location_id: str) -> None:
         await self._sleep(3.0)
         if world.grasp_fails():

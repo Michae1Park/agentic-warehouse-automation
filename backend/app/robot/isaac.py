@@ -71,6 +71,9 @@ class IsaacRobot:
     async def place(self, location_id: str) -> None:
         await self._with_pose_sync("place", {"location_id": location_id})
 
+    async def release(self, location_id: str) -> None:
+        await self._command("release", {"location_id": location_id})
+
     async def stow(self, sku: str, location_id: str) -> None:
         fail = world.grasp_fails()
         await self._with_pose_sync("stow", {"sku": sku, "location_id": location_id, "fail": fail})

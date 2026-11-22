@@ -98,6 +98,8 @@ TOTE_SCALE = np.array([1.8, 1.8, 1.2])
 TOTE_SIZE = np.array([0.198, 0.296, 0.146]) * TOTE_SCALE
 TOTE_SPEED = 0.6
 DISPATCH_STANDOFF = 0.6
+DISPATCH_BACKOFF = 0.6
+TOTE_AUDIT_FOCAL = 22.0
 RELEASE_POSES = [euler_angles_to_quat(np.array([0.0, pitch, 0.0])) for pitch in (math.pi * 0.95, math.pi * 0.75, math.pi / 2)]
 POLICY_RES = (256, 256)
 CONTROL_EVERY = 6
@@ -259,9 +261,13 @@ class Warehouse:
         UsdGeom.Imageable(self.stage.GetPrimAtPath(path)).MakeInvisible()
 
     def _build_props(self) -> None:
+        backing = self._material("RackBacking", (0.62, 0.64, 0.66), 0.5, 0.5)
         for aisle in self.stage.GetPrimAtPath("/World/Shelves").GetChildren():
             for part in aisle.GetChildren():
                 name = part.GetName()
+                if name == "back":
+                    self._bind(str(part.GetPath()), backing)
+                    continue
                 cube = UsdGeom.Xformable(part)
                 world = cube.ComputeLocalToWorldTransform(Usd.TimeCode.Default())
                 center = np.array(world.ExtractTranslation())
@@ -320,7 +326,7 @@ class Warehouse:
     def _build_high_quality_environment(self) -> None:
         self.assets_root = get_assets_root_path()
         self.stage.GetPrimAtPath("/World/Sun").SetActive(False)
-        self.stage.GetPrimAtPath("/World/DomeLight").GetAttribute("inputs:intensity").Set(250.0)
+        self.stage.GetPrimAtPath("/World/DomeLight").GetAttribute("inputs:intensity").Set(600.0)
         xs = [float(l["x"]) for l in self.locations.values()]
         ys = [float(l["y"]) for l in self.locations.values()]
         x0, x1, y0, y1 = min(xs) - 12, max(xs) + 4, min(ys) - 12, max(ys) + 4
@@ -375,6 +381,7 @@ class Warehouse:
         self.dispatch_totes: dict[str, str] = {}
         self.shipping: list[tuple[str, list[Box]]] = []
         self.tote_counter = 0
+        self.tote_material = self._material("ToteGrey", (0.3, 0.31, 0.33), 0.6)
         for location in self.locations.values():
             if location["kind"] == "dispatch":
                 self.dispatch_totes[location["id"]] = self._spawn_tote(float(location["y"]))
@@ -384,6 +391,8 @@ class Warehouse:
         path = f"/World/Totes/tote_{self.tote_counter}"
         add_reference_to_stage(f"{self.assets_root}/Isaac/Props/KLT_Bin/small_KLT_visual.usd", path)
         self._place_prop(path, (TOTE_X, y, ROLLER_TOP + TOTE_SIZE[2] / 2), 0, TOTE_SCALE)
+        for child in Usd.PrimRange(self.stage.GetPrimAtPath(path)):
+            UsdShade.MaterialBindingAPI.Apply(child).Bind(self.tote_material, UsdShade.Tokens.strongerThanDescendants)
         return path
 
     def ship_tote(self, location_id: str) -> None:
@@ -632,6 +641,8 @@ class Warehouse:
                        [BOX_SIZE[1] / CARDBOX_SIZE[0], BOX_SIZE[0] / CARDBOX_SIZE[1], BOX_SIZE[2] / CARDBOX_SIZE[2]])
         VisualCuboid(path + "/label", translation=np.array([-BOX_SIZE[0] / 2 - 0.001, 0, 0]),
                      scale=np.array([0.002, BOX_SIZE[1] * 0.7, BOX_SIZE[2] * 0.6]), color=np.array(rgb))
+        VisualCuboid(path + "/top_label", translation=np.array([0, 0, BOX_SIZE[2] / 2 + 0.001]),
+                     scale=np.array([BOX_SIZE[0] * 0.6, BOX_SIZE[1] * 0.7, 0.002]), color=np.array(rgb))
         prim = SingleXFormPrim(path)
         prim.set_world_pose(position)
         return prim
@@ -795,12 +806,18 @@ class Commands:
         location = self.w.locations[location_id]
         x, y, z = float(location["x"]), float(location["y"]), float(location["z"])
         approach = self.w.approach_pose(location_id)
-        at_bin = np.linalg.norm(self.w.base_target[:2] - approach[:2]) < 0.3
+        tote = location["kind"] == "dispatch"
+        at_bin = not tote and np.linalg.norm(self.w.base_target[:2] - approach[:2]) < 0.3
         if at_bin:
             yield from self.drive_to(approach - np.array([SCAN_STANDOFF, 0.0, 0.0]))
         UsdGeom.Camera(self.w.stage.GetPrimAtPath("/World/InspectCam")).GetFocalLengthAttr().Set(focal)
-        set_camera_view(eye=np.array([x - distance, y, z + height]), target=np.array([x, y, z + 0.06]),
-                        camera_prim_path="/World/InspectCam")
+        if tote:
+            UsdGeom.Camera(self.w.stage.GetPrimAtPath("/World/InspectCam")).GetFocalLengthAttr().Set(TOTE_AUDIT_FOCAL)
+            set_camera_view(eye=np.array([TOTE_X - 0.92, y, ROLLER_TOP + 1.34]), target=np.array([TOTE_X, y, ROLLER_TOP + 0.03]),
+                            camera_prim_path="/World/InspectCam")
+        else:
+            set_camera_view(eye=np.array([x - distance, y, z + height]), target=np.array([x, y, z + 0.06]),
+                            camera_prim_path="/World/InspectCam")
         for _ in range(8):
             yield
         frame = self.w.annotators["inspect"].get_data()
@@ -918,8 +935,15 @@ class Commands:
         self.w.tote = []
         yield from self.move_arm(self.w.arm_home, 60)
         if dispatch:
-            self.w.ship_tote(location_id)
+            yield from self.drive_to(self.w.approach_pose(location_id) - np.array([DISPATCH_BACKOFF, 0.0, 0.0]))
         return {"placed": placed}
+
+    def release(self, location_id: str):
+        if self.w.locations[location_id]["kind"] != "dispatch":
+            raise SimError("bad_request", f"{location_id} has no outbound tote")
+        self.w.ship_tote(location_id)
+        yield
+        return {"released": location_id}
 
     def stow(self, sku: str, location_id: str, fail: bool = False):
         box = next((b for b in self.w.tote if b.sku == sku), None)
@@ -1227,7 +1251,7 @@ def make_handler(server: Server):
             length = int(self.headers.get("content-length", 0))
             payload = json.loads(self.rfile.read(length) or b"{}")
             name = self.path.strip("/").split("?")[0]
-            if name not in ("navigate", "inspect", "pick", "place", "stow", "reset", "view", "camera"):
+            if name not in ("navigate", "inspect", "pick", "place", "stow", "reset", "view", "camera", "release"):
                 return self._json(404, {"error": "unknown_command"})
             self._json(*server.submit(name, payload))
 
