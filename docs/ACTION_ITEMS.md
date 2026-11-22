@@ -83,4 +83,27 @@ Running checklist for the Agentic Warehouse Automation demo.
 
 - [x] README (business problem, rationale, architecture, enterprise integration, failures, KPIs, results)
 - [x] Architecture diagram
-- [ ] Demo video
+- [x] Multi-page dashboard: Operations, Agent and Live Simulation pages with shared live KPI bar
+- [ ] Demo video (after the YCB pivot)
+
+## Step 9 — Reliability (Isaac soak test)
+
+- [x] Soak harness `eval/soak_eval.py`: every scoped workflow through the agent chat in Isaac, faults on, 3 seeds
+- [x] Fix: replacement totes could stay hidden when two dispatch spots released within 2s
+- [ ] Deploy and verify: agent tools resolve product names (agent hit its step limit on "Move 2 units of Wireless Mouse …")
+- [ ] Deploy and verify: darker brown labels + prompt hint (tote audit read brown as orange)
+- [ ] Known: VLM read a grey-labelled bin as a non-existent SKU-4004 (low-contrast label); superseded by the YCB pivot
+- [ ] Re-run soak after fixes; cold-start `scripts/demo.sh`; one `--graphics basic` launch
+
+## Step 10 — YCB pivot: language-conditioned grasping
+
+Plan: [YCB Pivot Plan](https://claude.ai/artifact/DEaQ4NEy4PeF2sDDCsHHaj). Decisions: Isaac YCB objects, mixed bins with random poses, physical contact grasping, SmolVLA + diffusion policy vs scripted, descriptions and SKUs in chat, affordances learned implicitly.
+
+- [ ] M0 Stabilize baseline: soak fixes deployed, soak re-run clean, pre-pivot demo tagged
+- [ ] M1 YCB catalog + messy bins: 10–12 objects, SKU → object + description, 2–3 products per bin, random poses, a few misplaced items
+- [ ] M2 Physical grasping: gripper friction/contact tuning, collision meshes, scripted grasp from true pose, per-object success over 100+ trials
+- [ ] M3 Language + grounding: agent tools take descriptions, VLM locates bin and grounds the target among distractors, grounding accuracy benchmark
+- [ ] M4 Demonstrations: ~500 successful language-annotated episodes across objects (LeRobot format)
+- [ ] M5 Train SmolVLA (flow matching) and a diffusion policy on the same data (LLM stopped)
+- [ ] M6 Evaluate + integrate: grasp success by object and clutter, wrong-object rate, end-to-end agent runs by description
+- [ ] M7 README, architecture diagram and action items updated
