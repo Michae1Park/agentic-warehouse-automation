@@ -20,12 +20,13 @@ if [[ "$GRASP_POLICY" != scripted ]]; then
   taskset -c "$CPUS" nohup "$VLA_PYTHON" vla/policy_server.py --checkpoint "$CHECKPOINT" > vla/policy_server.log 2>&1 &
 fi
 
-taskset -c "$CPUS" docker compose --profile isaac up -d --force-recreate
+taskset -c "$CPUS" docker compose --profile isaac up -d
+taskset -c "$CPUS" docker compose --profile isaac up -d --force-recreate --no-deps isaac
 for container in $(docker compose --profile isaac ps -q); do
   docker update --cpuset-cpus "$CPUS" "$container" > /dev/null
 done
 
-echo "Waiting for the LLM to load..."
+echo "Waiting for the LLM (first start ~3-5 min, cached restarts ~1 min)..."
 until curl -sf "http://localhost:8001/v1/models" > /dev/null; do sleep 5; done
 echo "Waiting for Isaac Sim..."
 until curl -sf "http://localhost:8020/" > /dev/null || docker compose logs isaac 2>&1 | grep -q "app ready"; do sleep 5; done
