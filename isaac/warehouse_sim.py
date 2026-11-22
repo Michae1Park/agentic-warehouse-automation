@@ -343,7 +343,7 @@ class Warehouse:
             return
         overview = UsdGeom.Camera.Define(self.stage, "/World/OverviewCam")
         overview.CreateFocalLengthAttr(18.0)
-        set_camera_view(eye=np.array([-4.0, -7.5, 9.5]), target=np.array([6.0, 3.0, 0.0]), camera_prim_path="/World/OverviewCam")
+        self.reset_orbit()
         if args.livestream:
             from omni.kit.viewport.utility import get_active_viewport
 
@@ -364,6 +364,36 @@ class Warehouse:
             annotator = rep.AnnotatorRegistry.get_annotator("rgb")
             annotator.attach([rp])
             self.annotators[name] = annotator
+
+    def reset_orbit(self) -> None:
+        self.orbit_target = np.array([6.0, 3.0, 0.0])
+        offset = np.array([-4.0, -7.5, 9.5]) - self.orbit_target
+        self.orbit_distance = float(np.linalg.norm(offset))
+        self.orbit_yaw = math.atan2(offset[1], offset[0])
+        self.orbit_pitch = math.asin(offset[2] / self.orbit_distance)
+        self.apply_orbit()
+
+    def apply_orbit(self) -> None:
+        self.orbit_pitch = float(np.clip(self.orbit_pitch, 0.05, 1.5))
+        self.orbit_distance = float(np.clip(self.orbit_distance, 1.0, 40.0))
+        direction = np.array([math.cos(self.orbit_pitch) * math.cos(self.orbit_yaw),
+                              math.cos(self.orbit_pitch) * math.sin(self.orbit_yaw), math.sin(self.orbit_pitch)])
+        set_camera_view(eye=self.orbit_target + direction * self.orbit_distance, target=self.orbit_target,
+                        camera_prim_path="/World/OverviewCam")
+
+    def move_camera(self, payload: dict) -> None:
+        if payload.get("reset"):
+            return self.reset_orbit()
+        dyaw, dpitch = payload.get("orbit", (0.0, 0.0))
+        self.orbit_yaw -= float(dyaw)
+        self.orbit_pitch += float(dpitch)
+        dx, dy = payload.get("pan", (0.0, 0.0))
+        right = np.array([-math.sin(self.orbit_yaw), math.cos(self.orbit_yaw), 0.0])
+        forward = np.array([-math.cos(self.orbit_yaw), -math.sin(self.orbit_yaw), 0.0])
+        self.orbit_target = self.orbit_target + (-float(dx) * right + float(dy) * forward) * self.orbit_distance
+        self.orbit_distance *= float(payload.get("zoom", 1.0))
+        self.apply_orbit()
+        self.view = "overview"
 
     def grab(self, box: Box) -> None:
         hand_position, hand_orientation = self.hand.get_world_pose()
@@ -725,7 +755,7 @@ class Server:
             if current is None and not self.inbox.empty():
                 name, payload, done, holder = self.inbox.get()
                 try:
-                    if name in ("reset", "state", "counts", "view", "debug"):
+                    if name in ("reset", "state", "counts", "view", "camera", "debug"):
                         holder.update(status=200, body=self.immediate(name, payload))
                         done.set()
                     else:
@@ -786,6 +816,9 @@ class Server:
             return self.w.debug()
         if name == "counts":
             return {"counts": self.w.counts()}
+        if name == "camera":
+            self.w.move_camera(payload)
+            return {"view": self.w.view}
         if name == "view":
             if payload.get("view") in self.w.annotators:
                 self.w.view = payload["view"]
@@ -981,7 +1014,7 @@ def make_handler(server: Server):
             length = int(self.headers.get("content-length", 0))
             payload = json.loads(self.rfile.read(length) or b"{}")
             name = self.path.strip("/").split("?")[0]
-            if name not in ("navigate", "inspect", "pick", "place", "stow", "reset", "view"):
+            if name not in ("navigate", "inspect", "pick", "place", "stow", "reset", "view", "camera"):
                 return self._json(404, {"error": "unknown_command"})
             self._json(*server.submit(name, payload))
 
