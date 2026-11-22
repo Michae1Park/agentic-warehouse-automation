@@ -18,11 +18,12 @@ services:
   llm:
     image: vllm/vllm-openai:v0.33.0
     command: >
-      --model Qwen/Qwen3.8-27B-FP8
-      --served-model-name qwen3.8-27b
+      --model ${LLM_WEIGHTS:-Qwen/Qwen3.8-27B-FP8}
+      --served-model-name ${LLM_MODEL:-qwen3.8-27b}
+      ${LLM_ARGS:-}
       --max-model-len 32768
       --max-num-seqs 4
-      --gpu-memory-utilization 0.75
+      --gpu-memory-utilization ${LLM_GPU_UTIL:-0.75}
       --enable-auto-tool-choice
       --tool-call-parser qwen3_coder
       --reasoning-parser qwen3
@@ -51,7 +52,7 @@ services:
     environment:
       DATABASE_URL: postgresql://warehouse:warehouse@postgres:5432/warehouse
       LLM_BASE_URL: http://llm:8000/v1
-      LLM_MODEL: qwen3.8-27b
+      LLM_MODEL: ${LLM_MODEL:-qwen3.8-27b}
       ROBOT_BACKEND: ${ROBOT_BACKEND:-mock}
       GRASP_POLICY: ${GRASP_POLICY:-scripted}
       ISAAC_URL: http://host.docker.internal:8020

@@ -7,13 +7,15 @@ GRASP_POLICY="${GRASP_POLICY:-scripted}"
 CHECKPOINT="vla/outputs/smolvla_grasp/checkpoints/last/pretrained_model"
 VLA_PYTHON="${VLA_PYTHON:-$HOME/workspace/robo-learning/.venv/bin/python}"
 
+LLM_SETTINGS=$(grep -E "^LLM_(WEIGHTS|MODEL|GPU_UTIL|ARGS)=" .env 2>/dev/null || true)
 cat > .env <<EOF
 BACKEND_PORT=8010
 LLM_PORT=8001
 ROBOT_BACKEND=isaac
 SIM_URL=http://localhost:8020
-ISAAC_ARGS=--livestream
+ISAAC_ARGS="--livestream --graphics high"
 GRASP_POLICY=$GRASP_POLICY
+$LLM_SETTINGS
 EOF
 
 if [[ "$GRASP_POLICY" != scripted ]]; then
