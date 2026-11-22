@@ -19,12 +19,18 @@ parser.add_argument("--collect", type=int, default=0, help="record N scripted gr
 parser.add_argument("--out", default="/workspace/vla/data/raw")
 parser.add_argument("--seed", type=int, default=0)
 parser.add_argument("--policy-url", default="http://localhost:8030")
+parser.add_argument("--livestream", action="store_true", help="serve the viewport to the Isaac Sim WebRTC Streaming Client")
 parser.add_argument("--eval-grasp", type=int, default=0, help="compare scripted vs VLA grasps on N randomized trials")
 args, _ = parser.parse_known_args()
 
 from isaacsim import SimulationApp
 
 app = SimulationApp({"headless": True, "width": args.width, "height": args.height})
+if args.livestream:
+    from isaacsim.core.utils.extensions import enable_extension
+
+    app.set_setting("/app/window/drawMouse", True)
+    enable_extension("omni.kit.livestream.webrtc")
 
 import numpy as np
 import omni.replicator.core as rep

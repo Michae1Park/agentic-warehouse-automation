@@ -5,7 +5,7 @@ class Settings(BaseSettings):
     database_url: str = "postgresql://warehouse:warehouse@localhost:5432/warehouse"
     cors_origins: list[str] = ["http://localhost:5173"]
     llm_base_url: str = "http://localhost:8001/v1"
-    llm_model: str = "qwen3.5-9b"
+    llm_model: str = "qwen3.8-27b"
     llm_thinking: bool = False
     agent_max_iterations: int = 12
     robot_ids: list[str] = ["amr-01"]

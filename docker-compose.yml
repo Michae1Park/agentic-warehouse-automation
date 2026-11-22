@@ -18,12 +18,11 @@ services:
   llm:
     image: vllm/vllm-openai:v0.33.0
     command: >
-      --model Qwen/Qwen3.5-9B
-      --served-model-name qwen3.5-9b
-      --quantization fp8
+      --model Qwen/Qwen3.8-27B-FP8
+      --served-model-name qwen3.8-27b
       --max-model-len 32768
-      --max-num-seqs 16
-      --gpu-memory-utilization 0.35
+      --max-num-seqs 4
+      --gpu-memory-utilization 0.75
       --enable-auto-tool-choice
       --tool-call-parser qwen3_coder
       --reasoning-parser qwen3
@@ -51,7 +50,7 @@ services:
     environment:
       DATABASE_URL: postgresql://warehouse:warehouse@postgres:5432/warehouse
       LLM_BASE_URL: http://llm:8000/v1
-      LLM_MODEL: qwen3.5-9b
+      LLM_MODEL: qwen3.8-27b
       ROBOT_BACKEND: ${ROBOT_BACKEND:-mock}
       ISAAC_URL: http://host.docker.internal:8020
     extra_hosts:
@@ -85,7 +84,7 @@ services:
     user: "0"
     network_mode: host
     entrypoint: /isaac-sim/python.sh
-    command: warehouse_sim.py --api http://localhost:${BACKEND_PORT:-8010}
+    command: warehouse_sim.py --api http://localhost:${BACKEND_PORT:-8010} ${ISAAC_ARGS:-}
     working_dir: /workspace
     environment:
       ACCEPT_EULA: "Y"
