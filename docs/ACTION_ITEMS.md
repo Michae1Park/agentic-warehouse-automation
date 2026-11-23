@@ -109,3 +109,18 @@ Plan: [YCB Pivot Plan](https://claude.ai/artifact/DEaQ4NEy4PeF2sDDCsHHaj). Decis
 - [x] M5 Trained on the same data with the LLM stopped (`vla/train.sh`, 8k steps, batch 32): SmolVLA 34 min, loss 0.072, 5.4 GB; diffusion baseline (n_obs_steps=1, not language-conditioned) 13 min, loss 0.011, 4.9 GB. Both load in `vla/policy_server.py`
 - [x] M6 Evaluate + integrate: 30-trial YCB grasp eval: SmolVLA 67% (mustard 36%, soup 94%), diffusion 63% (29% / 94%), scripted 57% (21% / 88%) (`eval/results/grasp_ycb_{smolvla,diffusion}/`). Grounding 72/72 (wrong-object rate 0%). SmolVLA is the primary picker with scripted fallback; #1040, #1041, #1042 fulfilled with all picks by SmolVLA. Dashboard shows the grasp policy and VLA instruction per pick. Open: mustard grasps for all policies
 - [x] M7 README (YCB grasp + grounding results, limitations), architecture diagram and action items updated
+
+## Step 11 — Realistic manipulation (in progress)
+
+Resume point if the session is lost. Work is uncommitted on `feat/poc` until verified.
+
+- [x] Side stance: base parks parallel to the shelf / receiving pallet / conveyor (`approach_pose`, `face_x`, `STANCE_CLEARANCE`), arm faces work with `side_home` (joint1 = -90°). Base slides along the shelf to line the arm up with the item (`align_to`); arm handles reach and height only. Base sidesteps away from the work face before turning and docks sideways on arrival (`UNDOCK`), so its corners never sweep the shelf
+- [x] Real transfers instead of teleports: pick → lift 3 cm → retract straight out → set down in a deck-tote slot (`stash`); dispatch takes each item from the deck tote and sets it in the outbound tote (`take_from_deck`, `set_down`); stow carries from the deck tote into the shelf. Deck tote raised on a stand behind the arm (surface 0.72 m; a horizontal gripper cannot reach below ~0.8 m near the base, found with the new `/probe` IK command). Verified: 3 picks → dispatch place, receiving pick → stow into B-01-1, nothing knocked off
+- [ ] Grasp candidate search (pitch 0/0.2/0.4/0.6 × grasp height × roll) with a clean `ik_failed` instead of driving into the item; eval restores the whole bin after each trial
+- [x] Spacing: pickable items in a single front row with `PICK_GAP` = 6 cm finger clearance (layout_bin + cluster_spot)
+- [ ] Grasp eval on the side stance, 50 trials kinematic + 50 physical (running: `eval/results/grasp_side_{kin,phys}`), then e2e #1042 through the agent
+- [ ] Re-collect demos and retrain SmolVLA + diffusion on the new stance (old checkpoints assume the front stance; demo runs `GRASP_POLICY=scripted` until then)
+- [ ] Misplaced-stock fault: `misplaced_stock_rate` in `FaultConfig` moves a pickable SKU's stock to another bin in the physical world; inspection records unrecorded pickable stock by cycle count (`record_found_stock`) and raises a resolved `inventory_discrepancy`. Written, compiles, not yet tested
+- [ ] Then: expand pickable set (candidates: sugar box, potted meat can), toppled pickable items, mustard grasp rate, physical grasp ≥ 80%
+- Diagnosis behind this step: with the base facing the shelf, `link0` (0.30 m ahead of base centre) ends up only ~0.30 m from front-row items, forcing a folded wrist; after the lift the arm swung to home beside the shelf and the item was teleported to the deck. Mustard failures (eval 30 trials): upper shelf C-03-2 out of reach, IK failures at 0.43 m, and pregrasp misses that knocked items up to 16 cm
+
