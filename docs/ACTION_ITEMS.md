@@ -102,7 +102,7 @@ Plan: [YCB Pivot Plan](https://claude.ai/artifact/DEaQ4NEy4PeF2sDDCsHHaj). Decis
 - [x] M0 Stabilize baseline: soak fixes deployed, pre-pivot demo tagged `pre-ycb-pivot` (soak re-run skipped)
 - [x] M1 (prototype scope) YCB catalog + messy bins: 2 pickable SKUs (mustard bottle, tomato soup can) with descriptions; 10 other YCB objects as non-WMS background clutter; random positions/yaw (catalog items in the front band); under-shelf strip lights; agent resolves descriptions ("red soup cans"). Verified e2e in Isaac: #1042 fulfilled + tote audit passed, relocation by description. Kinematic grasp for now
 - [x] Realistic shelves: same-product clusters per bin (front row first, ±1 cm / ±7° jitter, 12% of non-pickable items toppled), never mixed piles; 10 other YCB objects are real WMS SKUs flagged `robot_pickable = false` (agent refuses robot tasks for them and logs `manual_handling_required`); 4 bins fully empty for restocking; stows extend the SKU's cluster; receiving pallet raised to 0.3 m with a front-row layout. Verified: restock into an empty bin, #1042 e2e. Shelf grasp (attach-on-grasp) 87% over 30 trials
-- [ ] M1 follow-ups: expand pickable set; toppled pickable items; misplaced-item fault
+- [ ] M1 follow-ups: expand pickable set (toppled pickables → Step 12, misplaced-item fault → Step 11)
 - [ ] M2 Physical grasping (in progress): YCB items are rigid bodies with convex-hull colliders and real mass; finger drives capped (stiffness 1e7 → 2e3, max force 1200 → 40 N) so they no longer crush through items; yaw-aligned grasp from the true pose with base alignment, base back-off, Cartesian approach and 180° roll fallback. 20 held-out trials, seed 3: `--grasp physical` 65%, `--grasp kinematic` (attach on close) 70%. Demo default stays kinematic until physical is ≥ 80%; remaining failures: mustard drops during lift, IK limits at bin edges. 100+ trial run pending
 - [x] M3 Language + grounding: agent resolves descriptions to SKUs; before each pick the VLM points at the described item in the bin image (0–1000 coords), the sim projects every object (catalog + clutter) into that view and grasps the nearest one, wrong objects raise `wrong_object` → regrasp. Benchmark `eval/grounding_eval.py`: 72/72 correct over 3 seeds (name / full description / "the red can"), 1.2s per query. Verified e2e: #1040 fulfilled with grounded picks
 - [x] M4 Demonstrations: 400 successful episodes from the scripted 6-DoF grasp (arm phase only, layout reshuffled every 10 episodes, 3 instruction phrasings: name / description / "grab the {color} {noun}"), kept only if the lift holds (400 of 584 attempts, 68%); 230 soup can / 170 mustard (`vla/data/raw_ycb` → LeRobot)
@@ -122,7 +122,21 @@ Baseline tagged `baseline-side-stance`: scripted grasp is the production path, l
 - [ ] Re-collect demos and retrain SmolVLA + diffusion on the new stance (old checkpoints assume the front stance; demo runs `GRASP_POLICY=scripted` until then)
 - [x] Misplaced-stock fault: `misplaced_stock_rate` in `FaultConfig` moves a pickable SKU's stock to another bin in the physical world; inspection records unrecorded pickable stock by cycle count (`record_found_stock`) and raises a resolved `inventory_discrepancy`. Not yet exercised in an e2e run
 - [x] CI: GitHub Actions lint, backend smoke test (Postgres + mock robot: #1042 fulfilled, #1044 refused), frontend build
-- [ ] Decide the VLA's role: harder scenario (estimated poses instead of simulator poses, toppled pickables, physical grasping, recovery demos) or keep it as a research track
-- [ ] Then: expand pickable set (candidates: sugar box, potted meat can), toppled pickable items, mustard grasp rate, physical grasp ≥ 80%
+- [x] Decide the VLA's role: harder scenarios that need it (Step 12)
+- [ ] Then: expand pickable set (candidates: sugar box, potted meat can), mustard grasp rate, physical grasp ≥ 80% (toppled pickables moved to Step 12)
 - Diagnosis behind this step: with the base facing the shelf, `link0` (0.30 m ahead of base centre) ends up only ~0.30 m from front-row items, forcing a folded wrist; after the lift the arm swung to home beside the shelf and the item was teleported to the deck. Mustard failures (eval 30 trials): upper shelf C-03-2 out of reach, IK failures at 0.43 m, and pregrasp misses that knocked items up to 16 cm
 
+
+## Step 12 — Scenarios that need a VLA
+
+Decision: the VLA must earn its place. Three hard scenes, a fair perception-only baseline, and a privileged sim-only expert for demos. No ablations; the reasoning goes in the README.
+
+- [ ] Fair baseline: deployed scripted planner uses a pose estimated from the depth camera (segment + fit), never the simulator pose
+- [ ] Privileged expert: demo generator uses simulator poses (only possible in sim), with perturbations (mid-approach nudge, grasp offset, partial slip) and recorded corrections
+- [ ] Physical grasping as default in all three scenes
+- [ ] Scene 1 — Toppled shelf items: pickable targets lying on their side, leaning or upside down among upright neighbours
+- [ ] Scene 2 — Cluttered bin picking: 6–10 mixed YCB items piled in a tote, target named by description, partial occlusion
+- [ ] Scene 3 — Mixed-SKU deep shelving: target behind a different SKU ("the mustard behind the cracker box"); expert uses a scripted push primitive to clear the blocker, then grasps
+- [ ] Collect demos per scene, retrain SmolVLA + diffusion
+- [ ] Eval per scene: depth-based scripted vs SmolVLA vs diffusion
+- [ ] README: why each scene breaks the scripted planner; FIFO/expiry rotation as a further real-world reason for back-row picks; deformables (bags, pouches) as future work
