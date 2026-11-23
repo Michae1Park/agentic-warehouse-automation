@@ -139,17 +139,28 @@ Fault profile `faulty`: grasp failure 15%, blocked path 10%, missing stock 20%.
 
 Exact counts are limited by boxes hidden behind the front row, so cycle counts use presence (see Limitations).
 
-### Grasping: scripted vs VLA (`--eval-grasp`)
+### Grasping: scripted vs SmolVLA vs diffusion (`--eval-grasp`)
 
-50 randomized held-out trials (`eval/results/grasp/`).
+YCB objects on realistic shelves (same-product clusters, some toppled background items). 30 randomized trials per
+policy, attach-on-grasp, `--graphics basic` (`eval/results/grasp_ycb_smolvla/`, `eval/results/grasp_ycb_diffusion/`).
+Both learned policies were trained on the same 400 successful scripted demonstrations.
 
-| Policy | Success | Mean time (sim) |
-|---|---|---|
-| Scripted (Lula IK) | 70% | 3.4s |
-| SmolVLA | 16% | 9.0s |
-| SmolVLA + scripted fallback | 72% | — |
+| Policy | Overall | Mustard bottle | Tomato soup can | Mean time (sim) |
+|---|---|---|---|---|
+| Scripted (Lula IK, true pose) | 57% | 21% | 88% | 8.1s |
+| **SmolVLA** (language-conditioned) | **67%** | 36% | 94% | 9.0s |
+| Diffusion policy (vision only) | 63% | 29% | 94% | 8.0s |
 
-The VLA does not beat the scripted grasp yet. It runs as the primary picker only behind the scripted fallback.
+The learned policies match or beat the scripted planner they were trained on, because they only saw its successful
+episodes. The mustard bottle (tall, narrow, often on an upper shelf) is the open problem for all three policies.
+In the agent, SmolVLA runs as the primary picker with the scripted grasp as fallback (`GRASP_POLICY=vla_with_fallback`).
+Verified end to end: orders #1040, #1041 and #1042 fulfilled with every pick done by SmolVLA and tote audits passed.
+
+### Language grounding (`eval/grounding_eval.py`)
+
+Before each pick the VLM points at the described item in the bin image and the simulator grasps the object nearest
+to that point. 3 seeds, three phrasings per stocked bin (name, full description, attribute like "the red can"):
+**72 / 72** correct, 1.2s per query.
 
 ### Outbound tote audit
 
@@ -163,20 +174,21 @@ the actual contents in **2 / 2** cases instead of echoing the order, so the mism
 
 This is a portfolio demo, so the simplifications are stated plainly:
 
-- **Grasp physics.** Boxes are visual objects. A grasp succeeds when the fingertips close within 5 cm of the target
-  box, and the box is then attached to the hand. Arm motion is physically simulated; contact-rich grasping is not.
-- **Carton-flow shelving.** After each pick the remaining boxes slide forward, as in a gravity-flow rack, so the next
-  unit is always reachable from the aisle.
+- **Grasp physics.** YCB objects are rigid bodies with convex-hull colliders, but the demo uses attach-on-grasp: once
+  the fingers close on the item it is attached to the hand. Physical grasping (`--grasp physical`) reaches 65% and
+  stays experimental until it passes 80%.
+- **Two pickable products.** Mustard bottle and tomato soup can are robot-pickable; the other 10 YCB products are
+  real WMS SKUs flagged `robot_pickable = false`, which the agent refuses and routes to manual handling.
 - **Navigation.** A corridor waypoint planner inside the simulator drives the holonomic base. ROS2 / Nav2 and MoveIt2
   are not integrated. The `RobotGateway` interface is where they would plug in.
 - **VLM counting.** From a single front-facing camera the VLM reliably identifies products and detects empty or wrong
   bins, but it cannot count boxes hidden behind the front row. Cycle counts therefore use VLM presence (zero-out
   missing SKUs, flag unexpected ones) rather than VLM quantities.
 - **Faults are injected**, with seeded probabilities, into a physical world model that is separate from the database.
-- **The VLA** is SmolVLA fine-tuned (8k steps) on 196 scripted demonstrations (7,448 frames, end-effector action
-  space) of the reach-and-grasp segment only. 200 were recorded; 4 were truncated by a machine crash and discarded.
-  Lifting, stowing and placing remain scripted. It was trained on the basic scene, so data collection and grasp
-  evaluation keep `--graphics basic`.
+- **The VLA** is SmolVLA fine-tuned (8k steps, 34 min) on 400 successful scripted demonstrations of the arm phase
+  only, with a 6-D end-effector action space (tip xyz, yaw, pitch, gripper) and three instruction phrasings. Base
+  approach, lifting and placing remain scripted. Data collection and evaluation use `--graphics basic`. The diffusion
+  baseline uses one observation frame and no language.
 - **Conveyor.** Totes are moved kinematically along the roller conveyor and removed at the outbound pallet; there is
   no packing or shipping workflow behind it. Items are released into the tote at the drop pose rather than dropped
   with physics.
