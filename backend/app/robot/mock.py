@@ -43,7 +43,7 @@ class MockRobot:
         await self._sleep(1.0)
         return Observation(location_id, world.observe(location_id))
 
-    async def pick(self, sku: str, location_id: str) -> None:
+    async def pick(self, sku: str, location_id: str, point: list[float] | None = None) -> None:
         await world.ensure_loaded()
         await self._sleep(3.0)
         if world.quantity(location_id, sku) <= 0:

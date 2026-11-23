@@ -64,6 +64,30 @@ Report only the items you actually see inside the tote.
 Reply with JSON only, mapping SKU to unit count, e.g. {{"SKU-1001": 2}}. Reply {{}} if the tote is empty."""
 
 
+GROUND_PROMPT = """You are the vision system of a warehouse picking robot. The image shows a shelf bin holding \
+several different grocery and household items.
+
+Find this item: {description}.
+
+If several units match, choose the one that is most fully visible and closest to the camera. \
+Reply with JSON only: {{"point": [x, y]}}, the center of that item in image coordinates scaled to 0-1000 \
+(x from the left edge, y from the top edge). Reply {{"point": null}} if no such item is visible."""
+
+
+async def ground(image_jpeg: bytes, description: str) -> dict:
+    result = await _complete(image_jpeg, GROUND_PROMPT.format(description=description))
+    match = re.search(r"\{.*\}", result["raw"], re.DOTALL)
+    point = None
+    if match:
+        try:
+            value = json.loads(match.group(0)).get("point")
+            if isinstance(value, list) and len(value) == 2:
+                point = [float(value[0]), float(value[1])]
+        except (json.JSONDecodeError, TypeError, ValueError):
+            point = None
+    return {"point": point, "raw": result["raw"], "latency_ms": result["latency_ms"]}
+
+
 async def identify_products(image_jpeg: bytes, location_id: str) -> dict:
     prompt = PROMPT.format(location_id=location_id, catalog=await _catalog(), expected=await _expected(location_id))
     return await _ask(image_jpeg, prompt)
@@ -76,6 +100,11 @@ async def verify_tote(image_jpeg: bytes, expected: dict[str, int]) -> dict:
 
 
 async def _ask(image_jpeg: bytes, prompt: str) -> dict:
+    result = await _complete(image_jpeg, prompt)
+    return {"counts": _parse(result["raw"]), **result}
+
+
+async def _complete(image_jpeg: bytes, prompt: str) -> dict:
     started = time.perf_counter()
     response = await client.chat.completions.create(
         model=settings.llm_model,
@@ -88,4 +117,4 @@ async def _ask(image_jpeg: bytes, prompt: str) -> dict:
         extra_body={"chat_template_kwargs": {"enable_thinking": False}},
     )
     text = response.choices[0].message.content or ""
-    return {"counts": _parse(text), "raw": text, "latency_ms": int((time.perf_counter() - started) * 1000)}
+    return {"raw": text, "latency_ms": int((time.perf_counter() - started) * 1000)}

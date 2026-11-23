@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     robot_backend: str = "mock"
     perception_mode: str = "vlm"
     grasp_policy: str = "scripted"
+    vlm_grounding: bool = True
     isaac_url: str = "http://localhost:8020"
 
 

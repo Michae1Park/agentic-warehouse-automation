@@ -202,9 +202,17 @@ class TaskExecutor:
         max_attempts = settings.pick_max_attempts if settings.recovery_enabled else 1
         failed_attempts = 0
         policies: list[str] = []
+        groundings: list[dict] = []
         while picked < args["quantity"]:
             try:
-                outcome = await self.robot.pick(args["sku"], args["location_id"]) or {}
+                point = None
+                if settings.vlm_grounding and hasattr(self.robot, "resolve"):
+                    grounding = await self._ground(args["sku"], args["location_id"])
+                    groundings.append(grounding)
+                    point = grounding["point"]
+                    if point is None:
+                        raise RobotError("not_grounded", f"VLM could not find {args['sku']} at {args['location_id']}")
+                outcome = await self.robot.pick(args["sku"], args["location_id"], point) or {}
             except RobotError as err:
                 failed_attempts += 1
                 if err.code == "item_not_found" or failed_attempts >= max_attempts:
@@ -217,7 +225,13 @@ class TaskExecutor:
             policies.append(outcome.get("policy_used", "scripted"))
             await warehouse.record_pick(task["id"], step["id"], self.robot.robot_id, args["inventory_id"], task["order_id"])
             picked += 1
-        return {"picked": picked, "failed_attempts": failed_attempts, "grasp_policies": policies}
+        return {"picked": picked, "failed_attempts": failed_attempts, "grasp_policies": policies, "groundings": groundings}
+
+    async def _ground(self, sku: str, location_id: str) -> dict:
+        product = await fetch_one("SELECT name, description FROM products WHERE sku = %s", sku)
+        observation = await self.robot.inspect(location_id)
+        result = await perception.ground(observation.image_jpeg, f"{product['name']} ({product['description']})")
+        return {"point": result["point"], "latency_ms": result["latency_ms"]}
 
     async def _do_place(self, task: dict, step: dict) -> dict:
         location_id = step["args"]["location_id"]
