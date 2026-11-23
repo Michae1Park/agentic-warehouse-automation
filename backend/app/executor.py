@@ -6,7 +6,7 @@ from psycopg.types.json import Jsonb
 
 from . import perception, warehouse
 from .config import settings
-from .db import fetch_one, pool
+from .db import fetch_all, fetch_one, pool
 from .robot.gateway import RobotError, RobotGateway
 
 log = logging.getLogger(__name__)
@@ -189,12 +189,30 @@ class TaskExecutor:
     async def _do_inspect(self, task: dict, step: dict) -> dict:
         args = step["args"]
         counts, detail = await self._perceive(args["location_id"])
+        found = await self._record_unexpected(task, args["location_id"], counts)
         if args["sku"] not in counts:
             raise StepFailed(
                 "item_not_found",
                 f"expected {args['sku']} at {args['location_id']}, observed {list(counts) or 'nothing'}",
             )
-        return {"observed": list(counts), **detail}
+        return {"observed": list(counts), **({"found": found} if found else {}), **detail}
+
+    async def _record_unexpected(self, task: dict, location_id: str, counts: dict[str, int]) -> list[dict]:
+        recorded = {r["sku"] for r in await fetch_all(
+            "SELECT sku FROM inventory WHERE location_id = %s AND quantity > 0", location_id)}
+        pickable = {r["sku"] for r in await fetch_all("SELECT sku FROM products WHERE robot_pickable")}
+        unexpected = {sku: max(qty, 1) for sku, qty in counts.items() if sku not in recorded and sku in pickable}
+        if not unexpected:
+            return []
+        found = await warehouse.record_found_stock(task["id"], location_id, unexpected)
+        for row in found:
+            await warehouse.raise_exception(
+                "inventory_discrepancy",
+                f"{row['sku']} found at {location_id} but not recorded there (misplaced stock); "
+                f"added {row['counted']} to inventory by cycle count",
+                severity="info", task_id=task["id"], order_id=task["order_id"], status="resolved",
+            )
+        return found
 
     async def _do_pick(self, task: dict, step: dict) -> dict:
         args = step["args"]

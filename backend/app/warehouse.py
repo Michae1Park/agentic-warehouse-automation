@@ -476,6 +476,26 @@ async def record_count(task_id: int, location_id: str, counts: dict[str, int]) -
     return adjustments
 
 
+async def record_found_stock(task_id: int, location_id: str, found: dict[str, int]) -> list[dict]:
+    rows = []
+    async with pool.connection() as conn, conn.transaction():
+        for sku, quantity in found.items():
+            await conn.execute(
+                """
+                INSERT INTO inventory (sku, location_id, quantity) VALUES (%s, %s, %s)
+                ON CONFLICT (sku, location_id) DO UPDATE SET quantity = EXCLUDED.quantity, updated_at = now()
+                """,
+                (sku, location_id, quantity),
+            )
+            await conn.execute(
+                "INSERT INTO inventory_transactions (sku, location_id, delta, reason, task_id) "
+                "VALUES (%s, %s, %s, 'cycle_count', %s)",
+                (sku, location_id, quantity, task_id),
+            )
+            rows.append({"sku": sku, "location_id": location_id, "system": 0, "counted": quantity})
+    return rows
+
+
 async def record_stow(task_id: int, robot_id: str, sku: str, location_id: str) -> None:
     async with pool.connection() as conn, conn.transaction():
         await conn.execute(

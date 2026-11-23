@@ -9,6 +9,7 @@ class FaultConfig:
     grasp_failure_rate: float = 0.0
     nav_block_rate: float = 0.0
     missing_stock_rate: float = 0.0
+    misplaced_stock_rate: float = 0.0
 
 
 @dataclass
@@ -17,6 +18,7 @@ class PhysicalWorld:
     faults: FaultConfig = field(default_factory=FaultConfig)
     rng: random.Random = field(default_factory=random.Random)
     loaded: bool = False
+    misplaced: list[dict] = field(default_factory=list)
 
     async def load(self, seed: int | None = None, faults: FaultConfig | None = None) -> list[dict]:
         self.rng = random.Random(seed)
@@ -28,8 +30,29 @@ class PhysicalWorld:
             if self.rng.random() < self.faults.missing_stock_rate:
                 self.stock[key] = 0
                 missing.append({"location_id": key[0], "sku": key[1]})
+        self.misplaced = await self._misplace()
         self.loaded = True
         return missing
+
+    async def _misplace(self) -> list[dict]:
+        if not self.faults.misplaced_stock_rate:
+            return []
+        pickable = {r["sku"] for r in await fetch_all("SELECT sku FROM products WHERE robot_pickable")}
+        bins = [r["id"] for r in await fetch_all("SELECT id FROM locations WHERE kind = 'storage' ORDER BY id")]
+        misplaced = []
+        for (location_id, sku), qty in list(self.stock.items()):
+            if sku not in pickable or location_id not in bins or qty <= 0:
+                continue
+            if self.rng.random() >= self.faults.misplaced_stock_rate:
+                continue
+            targets = [b for b in bins if b != location_id and self.stock.get((b, sku), 0) == 0]
+            if not targets:
+                continue
+            target = self.rng.choice(targets)
+            self.stock[(location_id, sku)] = 0
+            self.stock[(target, sku)] = qty
+            misplaced.append({"sku": sku, "from": location_id, "to": target, "quantity": qty})
+        return misplaced
 
     async def ensure_loaded(self) -> None:
         if not self.loaded:

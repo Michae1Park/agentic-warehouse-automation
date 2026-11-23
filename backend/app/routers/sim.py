@@ -64,8 +64,8 @@ async def reset(request: ResetRequest, http_request: Request):
     missing = await world.load(request.seed, request.faults)
     for robot in http_request.app.state.robots.values():
         if hasattr(robot, "reset"):
-            await robot.reset(missing, request.seed)
-    return {"status": "reset", "missing_stock": missing}
+            await robot.reset(missing, request.seed, world.misplaced)
+    return {"status": "reset", "missing_stock": missing, "misplaced_stock": world.misplaced}
 
 
 @router.get("/inventory-accuracy")

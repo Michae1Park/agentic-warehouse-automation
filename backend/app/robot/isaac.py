@@ -82,6 +82,6 @@ class IsaacRobot:
         await self._with_pose_sync("stow", {"sku": sku, "location_id": location_id, "fail": fail})
         world.add(location_id, sku)
 
-    async def reset(self, missing: list[dict], seed: int = 0) -> None:
-        await self._command("reset", {"missing": missing, "seed": seed})
+    async def reset(self, missing: list[dict], seed: int = 0, misplaced: list[dict] | None = None) -> None:
+        await self._command("reset", {"missing": missing, "seed": seed, "misplaced": misplaced or []})
         await self._sync_pose()
