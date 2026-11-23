@@ -100,7 +100,8 @@ Running checklist for the Agentic Warehouse Automation demo.
 Plan: [YCB Pivot Plan](https://claude.ai/artifact/DEaQ4NEy4PeF2sDDCsHHaj). Decisions: Isaac YCB objects, mixed bins with random poses, physical contact grasping, SmolVLA + diffusion policy vs scripted, descriptions and SKUs in chat, affordances learned implicitly.
 
 - [x] M0 Stabilize baseline: soak fixes deployed, pre-pivot demo tagged `pre-ycb-pivot` (soak re-run skipped)
-- [ ] M1 YCB catalog + messy bins: 10–12 objects, SKU → object + description, 2–3 products per bin, random poses, a few misplaced items
+- [x] M1 (prototype scope) YCB catalog + messy bins: 2 pickable SKUs (mustard bottle, tomato soup can) with descriptions; 10 other YCB objects as non-WMS background clutter; random positions/yaw (catalog items in the front band); under-shelf strip lights; agent resolves descriptions ("red soup cans"). Verified e2e in Isaac: #1042 fulfilled + tote audit passed, relocation by description. Kinematic grasp for now
+- [ ] M1 follow-ups: expand pickable set to 10–12 objects; misplaced-item fault
 - [ ] M2 Physical grasping: gripper friction/contact tuning, collision meshes, scripted grasp from true pose, per-object success over 100+ trials
 - [ ] M3 Language + grounding: agent tools take descriptions, VLM locates bin and grounds the target among distractors, grounding accuracy benchmark
 - [ ] M4 Demonstrations: ~500 successful language-annotated episodes across objects (LeRobot format)

@@ -13,30 +13,31 @@ client = AsyncOpenAI(base_url=settings.llm_base_url, api_key="unused")
 PROMPT = """You are the vision system of a warehouse picking robot. The image shows shelf bin {location_id}: \
 the shelf section in the center of the image, between the two vertical rack posts.
 
-Product catalog (each product is a box identified by its color: either the whole box is that color, \
-or it is a cardboard box with a label of that color on its front). Plain cardboard is not a label color; brown labels are dark \
-chocolate brown, clearly darker than orange labels):
+Product catalog of items this robot handles:
 {catalog}
 
-The warehouse management system expects this bin to contain: {expected}.
-The record may be wrong. Report only what you actually see in this bin, ignoring anything outside it. An empty bin shows only the bare shelf board.
+The bin may also hold other grocery and household items (boxes, bottles, cans, toys) that are not in this catalog; \
+ignore them.
 
-Count the boxes of each product in the bin. Reply with JSON only, mapping SKU to box count, \
+The warehouse management system expects this bin to contain: {expected}.
+The record may be wrong. Report only what you actually see in this bin, ignoring anything outside it.
+
+Count the units of each catalog product in the bin. Reply with JSON only, mapping SKU to unit count, \
 e.g. {{"SKU-1001": 3}}. Reply {{}} if the bin is empty."""
 
 
 async def _catalog() -> str:
-    rows = await fetch_all("SELECT sku, name, color FROM products ORDER BY sku")
-    return "\n".join(f"- {r['color']}: {r['sku']} ({r['name']})" for r in rows)
+    rows = await fetch_all("SELECT sku, name, description FROM products ORDER BY sku")
+    return "\n".join(f"- {r['sku']} {r['name']}: {r['description']}" for r in rows)
 
 
 async def _expected(location_id: str) -> str:
     rows = await fetch_all(
-        "SELECT i.sku, p.color, i.quantity FROM inventory i JOIN products p ON p.sku = i.sku "
+        "SELECT i.sku, p.name, i.quantity FROM inventory i JOIN products p ON p.sku = i.sku "
         "WHERE i.location_id = %s AND i.quantity > 0",
         location_id,
     )
-    return ", ".join(f"{r['quantity']} x {r['sku']} ({r['color']})" for r in rows) or "nothing (empty bin)"
+    return ", ".join(f"{r['quantity']} x {r['sku']} ({r['name']})" for r in rows) or "nothing (empty bin)"
 
 
 def _parse(text: str) -> dict[str, int]:
@@ -53,16 +54,14 @@ def _parse(text: str) -> dict[str, int]:
 TOTE_PROMPT = """You are the quality-check camera of an outbound conveyor. The image looks down into a plastic tote \
 that a robot has just filled for a customer order.
 
-Product catalog (each product is a box identified by its color: either the whole box is that color, \
-or it is a cardboard box with a label of that color). Plain cardboard is not a label color; brown labels are dark \
-chocolate brown, clearly darker than orange labels):
+Product catalog:
 {catalog}
 
 The order says the tote should contain: {expected}.
 The tote itself is dark grey plastic; it is not a product. The order may have been packed wrong. \
-Report only the boxes you actually see inside the tote.
+Report only the items you actually see inside the tote.
 
-Reply with JSON only, mapping SKU to box count, e.g. {{"SKU-1001": 2}}. Reply {{}} if the tote is empty."""
+Reply with JSON only, mapping SKU to unit count, e.g. {{"SKU-1001": 2}}. Reply {{}} if the tote is empty."""
 
 
 async def identify_products(image_jpeg: bytes, location_id: str) -> dict:
@@ -71,8 +70,8 @@ async def identify_products(image_jpeg: bytes, location_id: str) -> dict:
 
 
 async def verify_tote(image_jpeg: bytes, expected: dict[str, int]) -> dict:
-    colors = {r["sku"]: r["color"] for r in await fetch_all("SELECT sku, color FROM products")}
-    listed = ", ".join(f"{qty} x {sku} ({colors.get(sku, '?')})" for sku, qty in sorted(expected.items()))
+    names = {r["sku"]: r["name"] for r in await fetch_all("SELECT sku, name FROM products")}
+    listed = ", ".join(f"{qty} x {sku} ({names.get(sku, '?')})" for sku, qty in sorted(expected.items()))
     return await _ask(image_jpeg, TOTE_PROMPT.format(catalog=await _catalog(), expected=listed))
 
 

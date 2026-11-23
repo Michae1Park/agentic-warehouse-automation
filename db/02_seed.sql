@@ -1,16 +1,8 @@
-INSERT INTO products (sku, name, category, weight_kg, size_cm, color) VALUES
-    ('SKU-1001', 'Wireless Mouse',        'electronics', 0.30, '{15,10,6}',  'red'),
-    ('SKU-1002', 'USB-C Hub',             'electronics', 0.25, '{14,9,4}',   'blue'),
-    ('SKU-1003', 'Mechanical Keyboard',   'electronics', 1.10, '{45,15,6}',  'black'),
-    ('SKU-1004', 'Noise-Cancel Headset',  'electronics', 0.60, '{22,20,10}', 'white'),
-    ('SKU-2001', 'Ceramic Mug Set',       'home',        1.40, '{25,20,12}', 'yellow'),
-    ('SKU-2002', 'LED Desk Lamp',         'home',        0.90, '{30,15,15}', 'green'),
-    ('SKU-2003', 'Cotton Towel Pack',     'home',        0.80, '{30,25,10}', 'orange'),
-    ('SKU-3001', 'Protein Bar Box',       'grocery',     0.70, '{20,15,8}',  'purple'),
-    ('SKU-3002', 'Green Tea Tin',         'grocery',     0.30, '{10,10,15}', 'cyan'),
-    ('SKU-4001', 'Yoga Block',            'sports',      0.40, '{23,15,8}',  'magenta'),
-    ('SKU-4002', 'Resistance Band Kit',   'sports',      0.50, '{20,15,6}',  'gray'),
-    ('SKU-4003', 'Water Bottle',          'sports',      0.35, '{25,8,8}',   'brown');
+INSERT INTO products (sku, name, category, weight_kg, size_cm, color, description, ycb_object) VALUES
+    ('SKU-1001', 'Mustard Bottle',  'grocery', 0.60, '{9.6,5.8,19.1}',  'yellow',
+     'yellow plastic squeeze bottle of mustard with a red cap', '006_mustard_bottle'),
+    ('SKU-1002', 'Tomato Soup Can', 'grocery', 0.35, '{6.8,6.8,10.2}',  'red',
+     'small red and white cylindrical can of tomato soup', '005_tomato_soup_can');
 
 INSERT INTO locations (id, kind, aisle, bay, level, x, y, z)
 SELECT format('%s-%s-%s', a.aisle, lpad(b.bay::text, 2, '0'), l.level),
@@ -27,28 +19,16 @@ INSERT INTO locations (id, kind, x, y) VALUES
     ('DOCK-1',     'charging', 0.0, 0.0);
 
 INSERT INTO inventory (sku, location_id, quantity) VALUES
-    ('SKU-1001', 'A-01-1', 12),
-    ('SKU-1002', 'A-01-2', 20),
-    ('SKU-1003', 'A-02-1', 6),
-    ('SKU-1004', 'A-03-1', 4),
-    ('SKU-2001', 'B-01-1', 8),
-    ('SKU-2002', 'B-02-1', 10),
-    ('SKU-2002', 'C-04-2', 3),
-    ('SKU-2003', 'B-03-2', 15),
-    ('SKU-3001', 'C-01-1', 25),
-    ('SKU-3002', 'C-02-1', 2),
-    ('SKU-4001', 'C-03-1', 9),
-    ('SKU-4002', 'B-04-1', 7),
-    ('SKU-4003', 'A-04-2', 14),
-    ('SKU-1001', 'B-01-2', 6),
-    ('SKU-1003', 'C-02-2', 4),
-    ('SKU-2001', 'A-02-2', 5),
-    ('SKU-3001', 'B-02-2', 10),
-    ('SKU-4001', 'A-03-2', 6),
-    ('SKU-4003', 'C-03-2', 8),
-    ('SKU-3002', 'STAGING-1', 12),
-    ('SKU-2002', 'STAGING-1', 6),
-    ('SKU-1004', 'STAGING-1', 8);
+    ('SKU-1001', 'A-01-1', 3),
+    ('SKU-1001', 'B-02-1', 2),
+    ('SKU-1001', 'C-03-2', 2),
+    ('SKU-1001', 'A-03-1', 2),
+    ('SKU-1002', 'A-03-1', 2),
+    ('SKU-1002', 'A-02-1', 4),
+    ('SKU-1002', 'B-03-1', 3),
+    ('SKU-1002', 'C-01-1', 3),
+    ('SKU-1001', 'STAGING-1', 4),
+    ('SKU-1002', 'STAGING-1', 4);
 
 INSERT INTO orders (id, customer, priority, dispatch_location) VALUES
     (1040, 'Northwind Retail',  3, 'DISPATCH-1'),
@@ -58,17 +38,13 @@ INSERT INTO orders (id, customer, priority, dispatch_location) VALUES
     (1044, 'Tailspin Grocers',  2, 'DISPATCH-1');
 
 INSERT INTO order_lines (order_id, sku, quantity) VALUES
-    (1040, 'SKU-1001', 2),
-    (1040, 'SKU-1002', 1),
-    (1041, 'SKU-1003', 1),
-    (1041, 'SKU-2002', 1),
-    (1042, 'SKU-4001', 2),
-    (1042, 'SKU-4003', 1),
-    (1042, 'SKU-3001', 1),
-    (1043, 'SKU-2001', 1),
-    (1043, 'SKU-2003', 2),
-    (1044, 'SKU-3002', 3),
-    (1044, 'SKU-3001', 2);
+    (1040, 'SKU-1001', 1),
+    (1040, 'SKU-1002', 2),
+    (1041, 'SKU-1002', 1),
+    (1042, 'SKU-1001', 2),
+    (1042, 'SKU-1002', 1),
+    (1043, 'SKU-1001', 1),
+    (1044, 'SKU-1001', 8);
 
 INSERT INTO robots (id, name, model, x, y) VALUES
     ('amr-01', 'Picker 1', 'Ridgeback-Franka', 0.0, 0.0);

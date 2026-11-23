@@ -29,7 +29,7 @@ class ResetRequest(BaseModel):
 def _generate_orders(rng: random.Random, count: int, skus: list[str]) -> list[tuple[int, str, int, str, list]]:
     orders = []
     for i in range(count):
-        lines = [(sku, rng.randint(1, 2)) for sku in rng.sample(skus, rng.randint(1, 3))]
+        lines = [(sku, rng.randint(1, 2)) for sku in rng.sample(skus, rng.randint(1, min(3, len(skus))))]
         orders.append((2001 + i, f"Customer {i + 1:03d}", rng.randint(1, 3), rng.choice(["DISPATCH-1", "DISPATCH-2"]), lines))
     return orders
 
@@ -64,7 +64,7 @@ async def reset(request: ResetRequest, http_request: Request):
     missing = await world.load(request.seed, request.faults)
     for robot in http_request.app.state.robots.values():
         if hasattr(robot, "reset"):
-            await robot.reset(missing)
+            await robot.reset(missing, request.seed)
     return {"status": "reset", "missing_stock": missing}
 
 

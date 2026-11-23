@@ -11,7 +11,9 @@ CREATE TABLE products (
     category    TEXT NOT NULL,
     weight_kg   NUMERIC(6, 2) NOT NULL,
     size_cm     NUMERIC(5, 1)[] NOT NULL,
-    color       TEXT NOT NULL
+    color       TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    ycb_object  TEXT
 );
 
 CREATE TABLE locations (

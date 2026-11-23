@@ -1,4 +1,5 @@
 import math
+import re
 from typing import Any
 
 from psycopg import AsyncConnection
@@ -28,6 +29,9 @@ async def get_order(order_id: int) -> dict | None:
     return order
 
 
+STOP_WORDS = {"the", "a", "an", "of", "with", "and", "some", "one", "two", "three", "units", "unit", "please"}
+
+
 async def resolve_product(query: str) -> dict:
     text = query.strip()
     rows = await fetch_all(
@@ -35,11 +39,25 @@ async def resolve_product(query: str) -> dict:
     )
     if not rows:
         rows = await fetch_all("SELECT sku, name FROM products WHERE name ILIKE %s ORDER BY sku", f"%{text}%")
+    if not rows:
+        rows = await _match_description(text)
     if len(rows) == 1:
         return rows[0]
     if rows:
         return {"error": f"'{query}' matches several products", "candidates": rows}
     return {"error": f"no product matches '{query}'"}
+
+
+async def _match_description(text: str) -> list[dict]:
+    words = set(re.findall(r"[a-z]+", text.lower())) - STOP_WORDS
+    products = await fetch_all("SELECT sku, name, color, category, description FROM products ORDER BY sku")
+    scored = []
+    for product in products:
+        vocabulary = set(re.findall(r"[a-z]+", " ".join(
+            [product["name"], product["color"], product["category"], product["description"]]).lower()))
+        scored.append((len(words & vocabulary), product))
+    best = max((score for score, _ in scored), default=0)
+    return [{"sku": p["sku"], "name": p["name"]} for score, p in scored if best and score == best]
 
 
 async def find_stock(sku: str) -> list[dict]:
