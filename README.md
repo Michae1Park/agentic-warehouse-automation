@@ -14,6 +14,8 @@ existing models and tools into one reliable, measurable workflow.
 
 ![Dashboard](docs/images/dashboard.png)
 
+**Demo video:** [docs/demo/demo.mp4](docs/demo/demo.mp4) (3× speed): fulfillment with an empty bin recovered, VLA picks, restock into an empty bin, and a refused non-pickable request.
+
 ---
 
 ## 1. What business problem does this solve?

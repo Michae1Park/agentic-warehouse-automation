@@ -84,7 +84,7 @@ Running checklist for the Agentic Warehouse Automation demo.
 - [x] README (business problem, rationale, architecture, enterprise integration, failures, KPIs, results)
 - [x] Architecture diagram
 - [x] Multi-page dashboard: Operations, Agent and Live Simulation pages with shared live KPI bar
-- [ ] Demo video (after the YCB pivot)
+- [x] Demo video `docs/demo/demo.mp4` (3× speed, 3 min): #1042 with an empty bin recounted and rerouted, all picks by SmolVLA, tote audit; restock of "red soup cans" into an empty bin; non-pickable cracker boxes refused (`manual_handling_required`)
 
 ## Step 9 — Reliability (Isaac soak test)
 
