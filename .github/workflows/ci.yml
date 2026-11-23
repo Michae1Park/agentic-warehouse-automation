@@ -1,0 +1,70 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install ruff
+      - run: ruff check --select E9,F backend isaac eval vla
+      - run: python -m compileall -q backend isaac eval vla
+
+  backend:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: warehouse
+          POSTGRES_PASSWORD: warehouse
+          POSTGRES_DB: warehouse
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U warehouse"
+          --health-interval 2s
+          --health-retries 30
+    env:
+      DATABASE_URL: postgresql://warehouse:warehouse@localhost:5432/warehouse
+      SEED_SQL_PATH: ${{ github.workspace }}/db/02_seed.sql
+      PERCEPTION_MODE: ground_truth
+      VLM_GROUNDING: "false"
+      ROBOT_BACKEND: mock
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: |
+          for f in db/01_schema.sql db/02_seed.sql; do
+            PGPASSWORD=warehouse psql -h localhost -U warehouse -d warehouse -v ON_ERROR_STOP=1 -q -f "$f"
+          done
+      - run: pip install ./backend pytest
+      - working-directory: backend
+        run: |
+          uvicorn app.main:app --port 8000 > ../backend.log 2>&1 &
+          API_URL=http://localhost:8000 pytest -q tests
+      - if: failure()
+        run: cat backend.log
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run build

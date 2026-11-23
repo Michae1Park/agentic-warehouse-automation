@@ -5,7 +5,6 @@ import json
 import math
 import queue
 import threading
-import time
 import traceback
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
