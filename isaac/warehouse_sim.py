@@ -24,6 +24,9 @@ parser.add_argument("--eval-grasp", type=int, default=0, help="compare grasp pol
 parser.add_argument("--policies", nargs="+", default=["scripted", "vla"])
 parser.add_argument("--grasp", choices=("kinematic", "physical"), default="kinematic",
                     help="kinematic attaches the item on close; physical lifts it through finger contact")
+parser.add_argument("--scenario", choices=("nominal", "hard"), default="hard",
+                    help="hard adds toppled pickables, a cluttered receiving tote and mixed-SKU deep shelving")
+parser.add_argument("--eval-scene", choices=("nominal", "toppled", "tote", "deep", "hard"), default="hard")
 parser.add_argument("--pose", choices=("depth", "sim"), default="depth",
                     help="depth estimates the target pose from the head depth camera; sim reads the simulator (privileged expert)")
 args, _ = parser.parse_known_args()
@@ -175,6 +178,37 @@ HEAD_HEIGHT = 1.3
 HEAD_REACH = 0.8
 HEAD_LOOK_ABOVE = 0.08
 MIN_VISIBLE_POINTS = 40
+MAX_GRASP_WIDTH = 0.075
+ATTACH_MARGIN = 0.015
+PICK_TOPPLE_RATE = 0.25
+TOPPLE_BIN = "B-01-1"
+DEEP_BIN = "C-04-1"
+TOTE_BIN = "STAGING-1"
+FINGER_REACH = 0.05
+DEEP_PAIR_SLOTS = (-0.20, 0.27)
+DEEP_EXTRA_SLOTS = (0.03, -0.45, 0.48)
+DEEP_ROW_GAP = 0.03
+RECEIVING_TOTE_SCALE = np.array([2.5, 2.5, 0.8])
+RECEIVING_TOTE_SIZE = np.array([0.198, 0.296, 0.146]) * RECEIVING_TOTE_SCALE
+RECEIVING_TOTE_INSET = 0.03
+TOTE_WALL = 0.01
+TOTE_CLUTTER = ("009_gelatin_box", "061_foam_brick", "008_pudding_box", "010_potted_meat_can", "004_sugar_box",
+                "025_mug", "009_gelatin_box", "061_foam_brick")
+TOTE_LAYER = 4
+PALLET_TOP = 0.211
+DECOR_TOTE_SCALE = np.array([2.6, 1.6, 1.0])
+DECOR_TOTE_SIZE = np.array([0.198, 0.296, 0.146]) * DECOR_TOTE_SCALE
+DECOR_PALLETS = ((12.35, 9.45), (13.75, 8.2))
+DECOR_FILLED_TOTES = ((12.06, 9.45, PALLET_TOP), (12.64, 9.45, PALLET_TOP), (13.46, 8.2, PALLET_TOP))
+DECOR_EMPTY_STACKS = ((14.04, 8.2, PALLET_TOP, 2), (13.75, 9.45, 0.0, 3))
+DECOR_TOTE_ITEMS = 7
+YAW_SPREAD_PICKABLE = 1.0
+YAW_SPREAD_OTHER = 0.5
+SETTLE_STEPS = 120
+TOP_DOWN_LIFT = 0.15
+PUSH_CLEARANCE = 0.03
+PUSH_HEIGHT = 0.05
+PUSH_STANDOFF = 0.15
 
 
 
@@ -199,6 +233,7 @@ class Item:
         self.position = np.zeros(3)
         self.yaw = 0.0
         self.toppled = False
+        self.flipped = False
         self.deck_slot = 0
 
     @property
@@ -217,7 +252,10 @@ class Item:
         self.position = np.asarray(position, dtype=float)
         if yaw is not None:
             self.yaw = float(yaw)
-        euler = [0.0, 0.0, self.yaw - math.pi / 2] if self.toppled else [-math.pi / 2, 0.0, self.yaw]
+        if self.toppled:
+            euler = [0.0, 0.0, self.yaw - math.pi / 2]
+        else:
+            euler = [math.pi / 2 if self.flipped else -math.pi / 2, 0.0, self.yaw]
         self.prim.set_world_pose(self.position, euler_angles_to_quat(np.array(euler)))
 
     def rest_on(self, surface: np.ndarray, yaw: float | None = None) -> None:
@@ -225,10 +263,34 @@ class Item:
 
 
 class Target:
-    def __init__(self, position: np.ndarray, yaw: float, height: float):
-        self.position = np.asarray(position, dtype=float)
-        self.yaw = float(yaw)
-        self.height = float(height)
+    def __init__(self, center: np.ndarray, axes: np.ndarray, extents: np.ndarray):
+        self.center = np.asarray(center, dtype=float)
+        self.axes = np.asarray(axes, dtype=float)
+        self.extents = np.asarray(extents, dtype=float)
+        pairs = [(i, j) for i in range(3) for j in range(i + 1, 3) if abs(self.extents[i] - self.extents[j]) < 0.003]
+        self.round_axis = next((3 - i - j for i, j in pairs), None) if len(pairs) == 1 else None
+
+    def extent_along(self, direction: np.ndarray) -> float:
+        projections = np.abs(self.axes.T @ direction)
+        if self.round_axis is None:
+            return float(projections @ self.extents)
+        along = min(1.0, float(projections[self.round_axis]))
+        diameter = self.extents[(self.round_axis + 1) % 3]
+        return along * self.extents[self.round_axis] + math.sqrt(1.0 - along ** 2) * diameter
+
+    @property
+    def height(self) -> float:
+        return self.extent_along(np.array([0.0, 0.0, 1.0]))
+
+    def contains(self, point: np.ndarray, margin: float) -> bool:
+        local = self.axes.T @ (np.asarray(point) - self.center)
+        return bool(np.all(np.abs(local) <= self.extents / 2 + margin))
+
+
+def tool_rotation(yaw: float, pitch: float, roll: float) -> np.ndarray:
+    base = quat_to_rot_matrix(euler_angles_to_quat(np.array([0.0, math.pi / 2 + pitch, yaw])))
+    spin = np.array([[math.cos(roll), -math.sin(roll), 0], [math.sin(roll), math.cos(roll), 0], [0, 0, 1]])
+    return base @ spin
 
 
 class Warehouse:
@@ -252,6 +314,9 @@ class Warehouse:
         self._build_conveyor()
         if args.graphics == "high":
             self._build_high_quality_environment()
+        if args.scenario == "hard":
+            self._build_receiving_tote()
+            self._build_decor_totes()
         self._build_robot()
         self.world.reset()
         self._init_robot()
@@ -670,13 +735,35 @@ class Warehouse:
         transform = np.array(UsdGeom.Xformable(self.stage.GetPrimAtPath("/World/HeadCam")).ComputeLocalToWorldTransform(Usd.TimeCode.Default()))
         return (camera @ transform)[:, :3]
 
+    def prim_transform(self, path: str) -> np.ndarray:
+        matrix = UsdGeom.Xformable(self.stage.GetPrimAtPath(path)).ComputeLocalToWorldTransform(Usd.TimeCode.Default())
+        return np.array([[matrix[i][j] for j in range(4)] for i in range(4)], dtype=float)
+
+    def true_target(self, box: Item) -> Target:
+        cache = UsdGeom.BBoxCache(Usd.TimeCode.Default(), ["default", "render"])
+        local = cache.ComputeUntransformedBound(self.stage.GetPrimAtPath(box.path)).ComputeAlignedRange()
+        transform = self.prim_transform(box.path)
+        rotation = transform[:3, :3]
+        scale = np.linalg.norm(rotation, axis=1)
+        center = np.array(list(local.GetMidpoint()), dtype=float) @ rotation + transform[3, :3]
+        measured = np.array(list(local.GetSize()), dtype=float) * scale
+        extents = np.empty(3)
+        extents[np.argsort(measured)] = np.sort(box.size)
+        return Target(center, (rotation / scale[:, None]).T, extents)
+
+    def surface_z(self, location_id: str) -> float:
+        location = self.locations[location_id]
+        if location["kind"] == "staging":
+            return STAGING_HEIGHT + (TOTE_WALL if args.scenario == "hard" else 0.0)
+        return float(location["z"])
+
     def estimate_target(self, box: Item, surface_z: float) -> Target:
         points = self.visible_points(box)
         if len(points) < MIN_VISIBLE_POINTS:
             raise SimError("not_visible", f"only {len(points)} depth points on {box.sku or box.ycb}")
         height = float(np.percentile(points[:, 2], 98)) - surface_z
         planar = points[:, :2] - points[:, :2].mean(axis=0)
-        eye = np.array(UsdGeom.Xformable(self.stage.GetPrimAtPath("/World/HeadCam")).ComputeLocalToWorldTransform(Usd.TimeCode.Default()))[3, :2]
+        eye = self.prim_transform("/World/HeadCam")[3, :2]
         view = points[:, :2].mean(axis=0) - eye
         axes = np.linalg.eigh(np.cov(planar.T))[1].T
         normal = max(axes, key=lambda axis: abs(float(axis @ view)))
@@ -686,9 +773,11 @@ class Warehouse:
         width = float(np.percentile(along_face, 98) - np.percentile(along_face, 2))
         dims = list(box.size)
         dims.remove(min(dims, key=lambda d: abs(d - height)))
-        dims.remove(min(dims, key=lambda d: abs(d - width)))
+        matched_width = min(dims, key=lambda d: abs(d - width))
+        dims.remove(matched_width)
         center_planar = (np.percentile(along_normal, 2) + dims[0] / 2) * normal + float(np.median(along_face)) * face_axis
-        return Target(np.array([*center_planar, surface_z + height / 2]), math.atan2(normal[1], normal[0]), height)
+        axes3 = np.array([[normal[0], face_axis[0], 0.0], [normal[1], face_axis[1], 0.0], [0.0, 0.0, 1.0]])
+        return Target(np.array([*center_planar, surface_z + height / 2]), axes3, np.array([dims[0], matched_width, height]))
 
     def fingertip(self) -> np.ndarray:
         position, orientation = self.hand.get_world_pose()
@@ -871,6 +960,80 @@ class Warehouse:
                 return candidate, yaw
         raise SimError("bin_full", f"no free space in {location_id}")
 
+    def _build_tote(self, root: str, base: np.ndarray, scale: np.ndarray, colliders: bool) -> np.ndarray:
+        size = np.array([0.198, 0.296, 0.146]) * scale
+        add_reference_to_stage(f"{self.assets_root}/Isaac/Props/KLT_Bin/small_KLT_visual.usd", f"{root}/visual")
+        self._place_prop(f"{root}/visual", (base[0], base[1], base[2] + size[2] / 2), 0, scale)
+        for child in Usd.PrimRange(self.stage.GetPrimAtPath(f"{root}/visual")):
+            UsdShade.MaterialBindingAPI.Apply(child).Bind(self.tote_material, UsdShade.Tokens.strongerThanDescendants)
+        if colliders:
+            walls = {
+                "floor": ((0, 0, TOTE_WALL / 2), (size[0], size[1], TOTE_WALL)),
+                "front": ((-size[0] / 2, 0, size[2] / 2), (TOTE_WALL, size[1], size[2])),
+                "back": ((size[0] / 2, 0, size[2] / 2), (TOTE_WALL, size[1], size[2])),
+                "left": ((0, -size[1] / 2, size[2] / 2), (size[0], TOTE_WALL, size[2])),
+                "right": ((0, size[1] / 2, size[2] / 2), (size[0], TOTE_WALL, size[2])),
+            }
+            for name, (offset, extent) in walls.items():
+                FixedCuboid(f"{root}/{name}", position=base + np.array(offset), scale=np.array(extent), size=1.0, visible=False)
+        return size
+
+    def _build_receiving_tote(self) -> None:
+        location = self.locations[TOTE_BIN]
+        self.receiving_tote = np.array([self.face_x(TOTE_BIN) + RECEIVING_TOTE_INSET + RECEIVING_TOTE_SIZE[0] / 2,
+                                        float(location["y"]), STAGING_HEIGHT])
+        self._build_tote("/World/ReceivingTote", self.receiving_tote, RECEIVING_TOTE_SCALE, colliders=True)
+
+    def _build_decor_totes(self) -> None:
+        for i, (x, y) in enumerate(DECOR_PALLETS):
+            self._add_prop("SM_PaletteA_01", f"/World/DecorTotes/pallet_{i}", (x, y, 0.0), 90, (1, 1, 1))
+        self.decor_totes = [np.array(base) for base in DECOR_FILLED_TOTES]
+        for i, base in enumerate(self.decor_totes):
+            self._build_tote(f"/World/DecorTotes/filled_{i}", base, DECOR_TOTE_SCALE, colliders=True)
+        for i, (x, y, z, count) in enumerate(DECOR_EMPTY_STACKS):
+            for level in range(count):
+                base = np.array([x, y, z + level * DECOR_TOTE_SIZE[2]])
+                self._build_tote(f"/World/DecorTotes/stack_{i}_{level}", base, DECOR_TOTE_SCALE, colliders=False)
+
+    def fill_tote(self, base: np.ndarray, size: np.ndarray, items: list[Item], location_id: str | None) -> None:
+        inner = size[:2] / 2 - 0.07
+        for order, item in enumerate(self.rng.permutation(len(items))):
+            layer = order // TOTE_LAYER
+            box = items[item]
+            box.location_id = location_id
+            box.toppled = bool(self.rng.random() < 0.5)
+            offset = self.rng.uniform(-inner, inner)
+            box.move(base + np.array([offset[0], offset[1], 0.08 + 0.06 * layer]), self.rng.uniform(-math.pi, math.pi))
+            tilt = euler_angles_to_quat(np.array([*self.rng.uniform(-0.6, 0.6, 2), 0.0]))
+            position, orientation = box.prim.get_world_pose()
+            rotation = quat_to_rot_matrix(tilt) @ quat_to_rot_matrix(orientation)
+            box.prim.set_world_pose(position, rot_matrix_to_quat(rotation))
+            self.set_dynamic(box, True)
+
+    def fill_decor_totes(self) -> None:
+        objects = sorted(YCB_SIZES)
+        for base in self.decor_totes:
+            items = [self.spawn_item(None, None, objects[self.rng.integers(len(objects))]) for _ in range(DECOR_TOTE_ITEMS)]
+            self.fill_tote(base, DECOR_TOTE_SIZE, items, None)
+
+    def layout_deep(self, location_id: str, items: list[Item]) -> None:
+        location = self.locations[location_id]
+        y = float(location["y"])
+        front_x = self.face_x(location_id) + BIN_MARGIN
+        z = float(location["z"])
+        targets = [b for b in items if self.pickable(b.sku)]
+        blockers = sorted((b for b in items if not self.pickable(b.sku)), key=lambda b: -b.size[0])
+        for slot, target, blocker in zip(DEEP_PAIR_SLOTS, targets, blockers):
+            blocker.location_id = target.location_id = location_id
+            blocker.rest_on(np.array([front_x + blocker.size[1] / 2, y + slot, z]), math.pi / 2)
+            target.rest_on(np.array([front_x + blocker.size[1] + DEEP_ROW_GAP + target.size[0] / 2, y + slot, z]),
+                           self.rng.uniform(-CLUSTER_YAW, CLUSTER_YAW))
+        for slot, extra in zip(DEEP_EXTRA_SLOTS, blockers[len(targets):] + targets[len(blockers):]):
+            extra.location_id = location_id
+            extra.rest_on(np.array([front_x + extra.size[0] / 2, y + slot, z]), self.rng.uniform(-CLUSTER_YAW, CLUSTER_YAW))
+        for item in items:
+            self.set_dynamic(item, True)
+
     def layout_bin(self, location_id: str, groups: list[list[Item]]) -> None:
         location = self.locations[location_id]
         x, y, z = float(location["x"]), float(location["y"]), float(location["z"])
@@ -880,7 +1043,13 @@ class Warehouse:
         clusters = []
         for group in groups:
             pickable = self.pickable(group[0].sku)
-            cell = np.max([b.footprint[:2] for b in group], axis=0) + np.array([CLUSTER_GAP, PICK_GAP if pickable else CLUSTER_GAP])
+            if pickable and any(b.toppled for b in group):
+                extent = np.full(2, 2 * max(b.radius for b in group))
+            else:
+                angle = YAW_SPREAD_PICKABLE if pickable else YAW_SPREAD_OTHER
+                rotation = np.abs(np.array([[math.cos(angle), math.sin(angle)], [math.sin(angle), math.cos(angle)]]))
+                extent = np.max([np.maximum(b.footprint[:2], rotation @ b.footprint[:2]) for b in group], axis=0)
+            cell = extent + np.array([CLUSTER_GAP, PICK_GAP if pickable else CLUSTER_GAP])
             max_rows = max(1, int(depth // cell[0]))
             rows = 1 if pickable else min(max_rows, 1 if len(group) <= 3 else 2)
             columns = math.ceil(len(group) / rows)
@@ -900,8 +1069,9 @@ class Warehouse:
         cursor = y - usable / 2
         for gap, index in zip(gaps, order):
             group, cell, columns = clusters[index]
+            pickable = self.pickable(group[0].sku)
             cursor += gap
-            if self.pickable(group[0].sku):
+            if pickable:
                 cursor += PICK_GAP / 2
             for k, item in enumerate(group):
                 row, column = divmod(k, columns)
@@ -909,7 +1079,11 @@ class Warehouse:
                 surface = np.array([front_x + cell[0] * (row + 0.5) + jitter[0],
                                     cursor + cell[1] * (column + 0.5) + jitter[1], z])
                 item.location_id = location_id
-                item.rest_on(surface, self.rng.uniform(-CLUSTER_YAW, CLUSTER_YAW))
+                if item.toppled and pickable:
+                    spread = math.pi / 2
+                else:
+                    spread = YAW_SPREAD_PICKABLE if pickable else YAW_SPREAD_OTHER
+                item.rest_on(surface, self.rng.uniform(-spread, spread))
                 self.set_dynamic(item, True)
             cursor += columns * cell[1]
 
@@ -965,7 +1139,7 @@ class Warehouse:
         return bool(sku) and bool(self.products[sku]["robot_pickable"])
 
     def repack(self, location_id: str) -> None:
-        if self.locations[location_id]["kind"] == "storage":
+        if self.locations[location_id]["kind"] == "storage" or (location_id == TOTE_BIN and args.scenario == "hard"):
             return
         boxes = sorted(self.boxes_at(location_id), key=lambda b: (b.sku, b.path))
         for box, surface in zip(boxes, self.slot_surfaces(location_id, len(boxes))):
@@ -993,18 +1167,33 @@ class Warehouse:
             if self.locations[location_id]["kind"] == "storage":
                 continue
             skus = [sku for sku, qty in items for _ in range(qty)]
+            if location_id == TOTE_BIN and args.scenario == "hard":
+                tote_items = [self.spawn_item(sku, location_id) for sku in skus]
+                tote_items += [self.spawn_item(None, location_id, ycb) for ycb in TOTE_CLUTTER]
+                self.fill_tote(self.receiving_tote, RECEIVING_TOTE_SIZE, tote_items, location_id)
+                continue
             for sku, surface in zip(skus, self.slot_surfaces(location_id, len(skus))):
                 item = self.spawn_item(sku, location_id)
                 item.rest_on(surface, 0.0)
                 self.set_dynamic(item, self.locations[location_id]["kind"] == "staging")
+        if args.scenario == "hard":
+            self.fill_decor_totes()
         for location in self.locations.values():
             if location["kind"] != "storage":
                 continue
             groups = [[self.spawn_item(sku, None) for _ in range(qty)] for sku, qty in by_location.get(location["id"], [])]
+            if args.scenario == "hard" and location["id"] == DEEP_BIN and groups:
+                self.layout_deep(location["id"], [item for group in groups for item in group])
+                continue
             for group in groups:
                 for item in group:
-                    item.toppled = (len(group) <= TOPPLE_MAX_CLUSTER and not self.products[item.sku]["robot_pickable"]
-                                    and bool(self.rng.random() < TOPPLE_RATE))
+                    if self.products[item.sku]["robot_pickable"]:
+                        rate = 0.0 if args.scenario == "nominal" else 1.0 if location["id"] == TOPPLE_BIN else PICK_TOPPLE_RATE
+                        if self.rng.random() < rate:
+                            if item.size[0] <= MAX_GRASP_WIDTH:
+                                item.toppled = True
+                    else:
+                        item.toppled = len(group) <= TOPPLE_MAX_CLUSTER and bool(self.rng.random() < TOPPLE_RATE)
             if groups:
                 self.layout_bin(location["id"], groups)
         return self.counts()
@@ -1063,21 +1252,23 @@ class Commands:
         self.w = warehouse
         self.pose_source = pose_source or args.pose
         self.target: Target | None = None
+        self.grasp_choice: dict | None = None
+        self.last_grasp: dict = {}
 
     def true_target(self, box: Item) -> Target:
-        return Target(self.w.sync(box).copy(), box.yaw, box.footprint[2])
+        return self.w.true_target(box)
 
     def locate(self, box: Item):
         truth = self.true_target(box)
         if self.pose_source == "sim":
             return truth
-        surface_z = float(self.w.locations[box.location_id]["z"])
+        surface_z = self.w.surface_z(box.location_id)
         self.w.look_z = surface_z + HEAD_LOOK_ABOVE
         for _ in range(6):
             yield
         estimate = self.w.estimate_target(box, surface_z)
-        self.last_grasp = {**self.last_grasp, "pose_error_m": round(float(np.linalg.norm(estimate.position - truth.position)), 3),
-                           "yaw_error_deg": round(math.degrees(abs(wrap_angle(estimate.yaw - truth.yaw))), 1)}
+        self.last_grasp = {**self.last_grasp, "pose_error_m": round(float(np.linalg.norm(estimate.center - truth.center)), 3),
+                           "height_error_m": round(estimate.height - truth.height, 3)}
         return estimate
 
     def drive_to(self, target: np.ndarray):
@@ -1253,26 +1444,43 @@ class Commands:
         base = self.w.base_pose()
         return min(candidates, key=lambda b: np.linalg.norm(b.prim.get_world_pose()[0][:2] - base[:2]))
 
-    def grasp_candidates(self, height: float) -> list[tuple[float, float, float]]:
-        default_pitch = SHORT_GRASP_PITCH if height < SHORT_ITEM else GRASP_PITCH
-        default_drop = max(GRASP_BELOW_TOP, height * 0.3)
-        pitches = [default_pitch] + [p for p in GRASP_PITCH_FALLBACKS if p != default_pitch]
-        drops = [default_drop] + ([height / 2] if height >= SHORT_ITEM else [])
-        return [(pitch, drop, roll) for drop in drops for pitch in pitches for roll in (0.0, math.pi)]
+    def work_yaw(self) -> float:
+        return float(self.w.base_target[2]) - math.pi / 2
 
-    def grasp_frame(self, target: Target, roll: float = 0.0, pitch: float | None = None,
-                    drop: float | None = None, yaw: float | None = None) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        choice = getattr(self, "grasp_choice", None) or {}
-        if pitch is None:
-            pitch = choice.get("pitch", SHORT_GRASP_PITCH if target.height < SHORT_ITEM else GRASP_PITCH)
-        if drop is None:
-            drop = choice.get("drop", max(GRASP_BELOW_TOP, target.height * 0.3))
-        yaw = target.yaw if yaw is None else yaw
-        position = target.position + np.array([0.0, 0.0, target.height / 2 - drop])
-        direction = np.array([math.cos(yaw) * math.cos(pitch), math.sin(yaw) * math.cos(pitch), -math.sin(pitch)])
-        base = quat_to_rot_matrix(euler_angles_to_quat(np.array([0.0, math.pi / 2 + pitch, yaw])))
-        spin = np.array([[math.cos(roll), -math.sin(roll), 0], [math.sin(roll), math.cos(roll), 0], [0, 0, 1]])
-        return position, direction, rot_matrix_to_quat(base @ spin)
+    def grasp_options(self, target: Target, surface_z: float, top_down: bool = False) -> list[dict]:
+        work = self.work_yaw()
+        yaws = [work + offset for offset in (0.0, 0.35, -0.35, 0.7, -0.7)]
+        for axis in target.axes.T:
+            if np.linalg.norm(axis[:2]) > 0.3:
+                for angle in (math.atan2(axis[1], axis[0]), math.atan2(-axis[1], -axis[0])):
+                    if top_down or abs(wrap_angle(angle - work)) < 0.8:
+                        yaws.append(angle)
+                        yaws.append(angle + math.pi / 2)
+        height = target.height
+        top = target.center[2] + height / 2
+        options = []
+        for yaw in yaws:
+            for pitch in ((1.2, math.pi / 2) if top_down else (*GRASP_PITCH_FALLBACKS, 1.2, math.pi / 2)):
+                for roll in (0.0, math.pi / 2, math.pi):
+                    rotation = tool_rotation(yaw, pitch, roll)
+                    if target.extent_along(rotation[:, 1]) > MAX_GRASP_WIDTH:
+                        continue
+                    if pitch > 1.0:
+                        drop = min(0.03, height / 2)
+                    else:
+                        drop = min(max(GRASP_BELOW_TOP, height * 0.3), height - 0.02)
+                    position = np.array([target.center[0], target.center[1], top - drop])
+                    if position[2] - abs(rotation[2, 1]) * FINGER_REACH < surface_z + 0.005:
+                        continue
+                    preferred = SHORT_GRASP_PITCH if height < SHORT_ITEM else GRASP_PITCH
+                    score = abs(wrap_angle(yaw - work)) + abs(pitch - preferred) * 0.5 + (roll % math.pi > 0) * 0.2
+                    options.append({"yaw": yaw, "pitch": pitch, "roll": roll, "position": position,
+                                    "direction": rotation[:, 2], "orientation": rot_matrix_to_quat(rotation), "score": score})
+        return sorted(options, key=lambda o: o["score"])
+
+    def carry_orientation(self, yaw: float) -> np.ndarray:
+        choice = self.grasp_choice or {"pitch": GRASP_PITCH, "roll": 0.0}
+        return rot_matrix_to_quat(tool_rotation(yaw, choice["pitch"], choice["roll"]))
 
     def face_work(self):
         if np.abs(self.w.arm_target - self.w.side_home).max() > 0.05:
@@ -1287,26 +1495,101 @@ class Commands:
         yield from self.drive_to(target)
 
     def prepare(self, box: Item):
-        self.last_grasp = {}
-        yield from self.face_work()
-        yield from self.align_to(self.w.sync(box))
-        self.target = yield from self.locate(box)
         self.grasp_choice = None
-        for pitch, drop, roll in self.grasp_candidates(self.target.height):
-            position, direction, orientation = self.grasp_frame(self.target, roll, pitch, drop)
+        yield from self.face_work()
+        coarse = yield from self.locate(box)
+        yield from self.align_to(coarse.center)
+        self.target = yield from self.locate(box)
+        pregrasp_joints = None
+        top_down = box.location_id == TOTE_BIN and args.scenario == "hard"
+        for option in self.grasp_options(self.target, self.w.surface_z(box.location_id), top_down):
             try:
-                pregrasp_joints = self.w.solve_ik(position - direction * GRASP_STANDOFF, orientation)
-                self.w.solve_ik(position, orientation)
+                pregrasp_joints = self.w.solve_ik(option["position"] - option["direction"] * GRASP_STANDOFF, option["orientation"])
+                self.w.solve_ik(option["position"], option["orientation"])
             except SimError:
                 continue
-            self.grasp_choice = {"pitch": pitch, "drop": drop}
+            self.grasp_choice = option
             break
+        self.last_grasp = {**self.last_grasp, "target_upright": round(float(np.abs(self.true_target(box).axes[2]).max()), 2),
+                           "options": len(self.grasp_options(self.target, self.w.surface_z(box.location_id), top_down))}
+        if self.last_grasp["options"] == 0:
+            self.last_grasp = {**self.last_grasp, "extents": np.round(self.target.extents, 3).tolist(),
+                               "axes": np.round(self.target.axes, 2).tolist(), "work_yaw": round(self.work_yaw(), 2)}
         if self.grasp_choice is None:
             raise SimError("ik_failed", f"no reachable grasp for {box.sku} at {box.location_id}")
-        self.grasp_roll = roll
-        self.last_grasp = {**self.last_grasp, "pitch": pitch, "drop": round(drop, 3), "roll": roll}
+        self.grasp_roll = self.grasp_choice["roll"]
+        self.last_grasp = {**self.last_grasp, **{k: round(float(self.grasp_choice[k]), 3) for k in ("yaw", "pitch", "roll")}}
         yield from self.gripper(0.04)
         yield from self.move_arm(pregrasp_joints, 70)
+
+    def blockers(self, box: Item) -> list[Item]:
+        work = np.array([math.cos(self.work_yaw()), math.sin(self.work_yaw()), 0.0])
+        lateral = np.array([-work[1], work[0], 0.0])
+        target = self.true_target(box)
+        width = target.extent_along(lateral)
+        found = []
+        for other in self.w.boxes_at(box.location_id, background=True):
+            if other is box:
+                continue
+            obb = self.true_target(other)
+            in_front = (target.center - obb.center) @ work > 0.03
+            overlap = abs((obb.center - target.center) @ lateral) < (width + obb.extent_along(lateral)) / 2
+            if in_front and overlap:
+                found.append(other)
+        return found
+
+    def push_aside(self, blocker: Item, target_box: Item):
+        work = np.array([math.cos(self.work_yaw()), math.sin(self.work_yaw()), 0.0])
+        lateral = np.array([-work[1], work[0], 0.0])
+        obb = self.true_target(blocker)
+        half = obb.extent_along(lateral) / 2
+        row = [self.true_target(o) for o in self.w.boxes_at(blocker.location_id, background=True)
+               if o is not blocker and o is not target_box and abs((self.true_target(o).center - obb.center) @ work) < 0.08]
+        location = self.w.locations[blocker.location_id]
+        bin_half = BIN_LENGTH / 2 - 0.05
+        free = {}
+        for side in (1.0, -1.0):
+            edge = float(location["y"]) * lateral[1] + float(location["x"]) * lateral[0] + side * bin_half
+            limit = abs(edge - obb.center @ lateral) - half
+            for other in row:
+                gap = side * ((other.center - obb.center) @ lateral) - half - other.extent_along(lateral) / 2
+                if gap > -0.01:
+                    limit = min(limit, gap)
+            free[side] = limit
+        side = max(free, key=free.get)
+        distance = half + self.true_target(target_box).extent_along(lateral) / 2 + PUSH_CLEARANCE
+        if free[side] < distance:
+            raise SimError("blocked", f"no room to push {blocker.ycb} aside at {blocker.location_id}")
+        yield from self.face_work()
+        yield from self.align_to(obb.center)
+        start = obb.center - side * lateral * (half + PUSH_CLEARANCE)
+        approach = None
+        for height in (PUSH_HEIGHT, PUSH_HEIGHT + 0.03):
+            start[2] = self.w.surface_z(blocker.location_id) + height
+            for roll in (math.pi / 2, -math.pi / 2, 0.0):
+                orientation = rot_matrix_to_quat(tool_rotation(self.work_yaw(), 0.0, roll))
+                try:
+                    approach = self.w.solve_ik(start - work * PUSH_STANDOFF, orientation)
+                    self.w.solve_ik(start + side * lateral * distance, orientation)
+                except SimError:
+                    continue
+                break
+            if approach is not None:
+                break
+        if approach is None:
+            raise SimError("ik_failed", f"no arm solution to push {blocker.ycb} at {blocker.location_id}")
+        yield from self.gripper(0.0)
+        yield from self.move_arm(approach, 70)
+        yield from self.reach_linear(start, orientation, 0.15)
+        yield from self.reach_linear(start + side * lateral * distance, orientation, 0.1)
+        yield from self.reach_linear(start + side * lateral * distance - work * PUSH_STANDOFF, orientation, 0.2)
+        yield from self.gripper(0.04)
+        yield from self.move_arm(self.w.side_home, 60)
+
+    def clear_blockers(self, box: Item):
+        for blocker in self.blockers(box):
+            yield from self.push_aside(blocker, box)
+            self.last_grasp = {**self.last_grasp, "pushed": [*self.last_grasp.get("pushed", []), blocker.ycb]}
 
     def hold_offset(self) -> np.ndarray:
         _, orientation = self.w.hand.get_world_pose()
@@ -1317,7 +1600,7 @@ class Commands:
 
     def set_down(self, box: Item, surface: np.ndarray, yaw: float, clearance: float):
         offset = self.hold_offset()
-        _, _, orientation = self.grasp_frame(self.true_target(box), self.grasp_roll, yaw=yaw)
+        orientation = self.carry_orientation(yaw)
         tip = self.tip_for(surface + np.array([0.0, 0.0, box.footprint[2] / 2 + SURFACE_LIFT]), orientation, offset)
         above = tip + np.array([0.0, 0.0, clearance])
         yield from self.move_arm(self.w.solve_ik(above, orientation), 80)
@@ -1337,10 +1620,10 @@ class Commands:
         yield from self.move_arm(self.w.side_home, 60)
 
     def take_from_deck(self, box: Item):
-        self.grasp_choice = None
-        self.grasp_roll = 0.0
         self.target = self.true_target(box)
-        position, _, orientation = self.grasp_frame(self.target, 0.0)
+        self.grasp_choice = next(o for o in self.grasp_options(self.target, self.target.center[2] - self.target.height / 2)
+                                 if o["pitch"] < 1.0)
+        position, orientation = self.grasp_choice["position"], self.grasp_choice["orientation"]
         above = position + np.array([0.0, 0.0, CARRY_CLEARANCE])
         yield from self.gripper(0.04)
         yield from self.move_arm(self.w.solve_ik(above, orientation), 80)
@@ -1348,17 +1631,21 @@ class Commands:
         self.w.finger_target = 0.0
         for _ in range(CLOSE_STEPS):
             yield
+        self.grasp_roll = self.grasp_choice["roll"]
         self.w.tote.remove(box)
         self.w.grab(box)
         yield from self.reach_linear(above, orientation, 0.2)
 
     def grasp_scripted(self, box: Item):
+        self.last_grasp = {}
+        if self.pose_source == "sim" and self.w.locations[box.location_id]["kind"] == "storage":
+            yield from self.clear_blockers(box)
         yield from self.prepare(box)
         yield from self.arm_grasp(box)
         return True
 
     def arm_grasp(self, box: Item):
-        position, direction, orientation = self.grasp_frame(self.target, self.grasp_roll)
+        position, direction, orientation = (self.grasp_choice[k] for k in ("position", "direction", "orientation"))
         pregrasp = position - direction * GRASP_STANDOFF
         yield from self.reach_linear(pregrasp, orientation)
         pregrasp_error = float(np.abs(self.w.robot.get_joint_positions()[self.w.arm_idx] - self.w.arm_target).max())
@@ -1375,16 +1662,24 @@ class Commands:
                            "moved": float(np.linalg.norm(self.w.sync(box) - position))}
 
     def lift(self, box: Item, start_z: float):
-        _, direction, orientation = self.grasp_frame(self.target, getattr(self, "grasp_roll", 0.0))
+        direction, orientation = self.grasp_choice["direction"], self.grasp_choice["orientation"]
         if args.grasp == "kinematic":
-            self.w.set_dynamic(box, False)
-            self.w.grab(box)
+            truth = self.true_target(box)
+            closing = quat_to_rot_matrix(self.w.hand.get_world_pose()[1])[:, 1]
+            between = bool(truth.contains(self.w.fingertip(), ATTACH_MARGIN) and truth.extent_along(closing) <= MAX_GRASP_WIDTH + 0.005)
+            self.last_grasp = {**self.last_grasp, "between_fingers": between}
+            if between:
+                self.w.set_dynamic(box, False)
+                self.w.grab(box)
         tip = self.w.fingertip()
         up = np.array([0, 0, 1.0])
         out = np.array([direction[0], direction[1], 0.0])
-        out /= max(float(np.linalg.norm(out)), 1e-6)
-        yield from self.reach_first([tip + up * 0.03], orientation, 0.1)
-        yield from self.reach_first([tip + up * 0.03 - out * RETRACT, tip + up * 0.03 - out * RETRACT / 2], orientation, 0.2)
+        if np.linalg.norm(out) < 0.2:
+            out = np.array([math.cos(self.work_yaw()), math.sin(self.work_yaw()), 0.0])
+        out /= float(np.linalg.norm(out))
+        rise = up * (TOP_DOWN_LIFT if self.grasp_choice["pitch"] > 1.0 else 0.03)
+        yield from self.reach_first([tip + rise], orientation, 0.1)
+        yield from self.reach_first([tip + rise - out * RETRACT, tip + rise - out * RETRACT / 2], orientation, 0.2)
         for _ in range(HOLD_STEPS):
             yield
         position = self.w.sync(box)
@@ -1393,6 +1688,7 @@ class Commands:
         return self.w.holding(box, start_z)
 
     def grasp_vla(self, box: Item, instruction: str):
+        self.last_grasp = {}
         yield from self.prepare(box)
         position = self.w.sync(box)
         self.w.finger_target = 0.04
@@ -1513,7 +1809,8 @@ class Commands:
             yield from self.stash(box)
             raise SimError("grasp_failed", f"stow of {sku} at {location_id} failed")
         offset = self.hold_offset()
-        _, direction, orientation = self.grasp_frame(self.true_target(box), self.grasp_roll, yaw=yaw)
+        orientation = self.carry_orientation(yaw)
+        direction = quat_to_rot_matrix(orientation)[:, 2]
         center = target + np.array([0.0, 0.0, box.footprint[2] / 2 + SURFACE_LIFT])
         tip = self.tip_for(center, orientation, offset)
         out = np.array([direction[0], direction[1], 0.0])
@@ -1651,11 +1948,11 @@ def encode_jpeg(frame: np.ndarray, quality: int = 90) -> str:
 def teleport_base(warehouse: Warehouse, pose: np.ndarray) -> None:
     positions = warehouse.robot.get_joint_positions()
     positions[warehouse.base_idx] = pose
-    positions[warehouse.arm_idx] = warehouse.arm_home
+    positions[warehouse.arm_idx] = warehouse.side_home
     positions[warehouse.finger_idx] = 0.04
     warehouse.robot.set_joint_positions(positions)
     warehouse.base_target = pose.copy()
-    warehouse.arm_target = warehouse.arm_home.copy()
+    warehouse.arm_target = warehouse.side_home.copy()
     warehouse.finger_target = 0.04
 
 
@@ -1766,8 +2063,8 @@ def run_trial(warehouse: Warehouse, commands: "Commands", pose: np.ndarray, box:
     for _ in range(20):
         step(warehouse)
     start = warehouse.sync(box).copy()
-    start_yaw = box.yaw
-    neighbours = [(b, warehouse.sync(b).copy(), b.yaw) for b in warehouse.boxes_at(box.location_id) if b is not box]
+    location_id = box.location_id
+    snapshot = [(b, b.prim.get_world_pose()) for b in warehouse.boxes_at(location_id, background=True)]
 
     def grasp_and_lift():
         commands.pose_source = "sim" if policy == "expert" else args.pose
@@ -1794,10 +2091,13 @@ def run_trial(warehouse: Warehouse, commands: "Commands", pose: np.ndarray, box:
     warehouse.finger_target = 0.04
     for _ in range(30):
         step(warehouse)
-    for item, position, yaw in [(box, start, start_yaw), *neighbours]:
+    for item, (position, orientation) in snapshot:
         warehouse.set_dynamic(item, False)
-        item.move(position, yaw)
+        item.location_id = location_id
+        item.prim.set_world_pose(position, orientation)
         warehouse.set_dynamic(item, True)
+    for _ in range(SETTLE_STEPS // 4):
+        step(warehouse)
     return {"success": result, "sim_seconds": ticks * PHYSICS_DT, "miss_m": miss, **getattr(commands, "last_grasp", {})}
 
 
@@ -1806,16 +2106,20 @@ def eval_grasps(warehouse: Warehouse, trials: int) -> None:
 
     rng = np.random.default_rng(args.seed)
     commands = Commands(warehouse)
+    for _ in range(SETTLE_STEPS):
+        step(warehouse)
+    scenes = {"toppled": {TOPPLE_BIN}, "tote": {TOTE_BIN}, "deep": {DEEP_BIN}, "hard": {TOPPLE_BIN, TOTE_BIN, DEEP_BIN}}
+    allowed = scenes.get(args.eval_scene)
     stocked = sorted({(b.location_id, b.sku) for b in warehouse.boxes if b.location_id and b.sku and warehouse.pickable(b.sku)
-                      and warehouse.locations[b.location_id]["kind"] == "storage"})
+                      and (b.location_id in allowed if allowed else warehouse.locations[b.location_id]["kind"] == "storage")})
     rows = []
     for trial in range(trials):
         location_id, sku = stocked[rng.integers(len(stocked))]
         jitter = np.array([rng.uniform(-0.06, 0.06), rng.uniform(-0.25, 0.25), rng.uniform(-0.08, 0.08)])
         pose = warehouse.approach_pose(location_id) + jitter
         candidates = [b for b in warehouse.boxes_at(location_id) if b.sku == sku]
-        box = min(candidates, key=lambda b: float(np.linalg.norm(warehouse.sync(b)[:2] - pose[:2])))
-        row = {"trial": trial, "location_id": location_id, "sku": sku}
+        box = candidates[rng.integers(len(candidates))]
+        row = {"trial": trial, "location_id": location_id, "sku": sku, "scene": next((k for k, v in scenes.items() if k != "hard" and location_id in v), "nominal")}
         for policy in args.policies:
             row[policy] = run_trial(warehouse, commands, pose, box, policy)
         rows.append(row)
@@ -1827,6 +2131,9 @@ def eval_grasps(warehouse: Warehouse, trials: int) -> None:
         for sku in sorted({r["sku"] for r in rows}):
             subset = [r for r in rows if r["sku"] == sku]
             summary[f"{policy}_success_{sku}"] = sum(r[policy]["success"] for r in subset) / len(subset)
+        for scene in sorted({r["scene"] for r in rows}):
+            subset = [r for r in rows if r["scene"] == scene]
+            summary[f"{policy}_success_{scene}"] = sum(r[policy]["success"] for r in subset) / len(subset)
     if {"scripted", "vla"} <= set(args.policies):
         summary["vla_or_fallback_success"] = sum(r["vla"]["success"] or r["scripted"]["success"] for r in rows) / trials
     out = Path(args.out)
