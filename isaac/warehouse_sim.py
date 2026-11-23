@@ -223,6 +223,7 @@ MARKER_COLOR = np.array([255, 0, 255], dtype=np.uint8)
 NUDGE_RANGE = (0.015, 0.03)
 NUDGE_TICKS = 12
 OFFSET_RANGE = (0.02, 0.035)
+STANCE_JITTER = (0.06, 0.2, 0.04)
 DEMO_SCENES = ("toppled", "tote", "deep", "shelf")
 
 
@@ -2157,6 +2158,11 @@ def run_silent(warehouse: Warehouse, generator):
         return stop.value
 
 
+def stance_jitter(rng: np.random.Generator) -> np.ndarray:
+    return np.array([rng.uniform(-STANCE_JITTER[0], 0.0), rng.uniform(-STANCE_JITTER[1], STANCE_JITTER[1]),
+                     rng.uniform(-STANCE_JITTER[2], STANCE_JITTER[2])])
+
+
 def scene_of(location_id: str) -> str:
     return {TOPPLE_BIN: "toppled", TOTE_BIN: "tote", DEEP_BIN: "deep"}.get(location_id, "shelf")
 
@@ -2197,7 +2203,7 @@ def collect_demos(warehouse: Warehouse, episodes: int) -> None:
         scene = DEMO_SCENES[rng.integers(len(DEMO_SCENES))]
         pool = [pair for pair in stocked if scene_of(pair[0]) == scene] or stocked
         location_id, sku = pool[rng.integers(len(pool))]
-        jitter = np.array([rng.uniform(-0.05, 0.05), rng.uniform(-0.2, 0.2), rng.uniform(-0.06, 0.06)])
+        jitter = stance_jitter(rng)
         teleport_base(warehouse, warehouse.approach_pose(location_id) + jitter)
         for _ in range(20):
             step(warehouse)
@@ -2302,7 +2308,7 @@ def eval_grasps(warehouse: Warehouse, trials: int) -> None:
     rows = []
     for trial in range(trials):
         location_id, sku = stocked[rng.integers(len(stocked))]
-        jitter = np.array([rng.uniform(-0.06, 0.06), rng.uniform(-0.25, 0.25), rng.uniform(-0.08, 0.08)])
+        jitter = stance_jitter(rng)
         pose = warehouse.approach_pose(location_id) + jitter
         candidates = [b for b in warehouse.boxes_at(location_id) if b.sku == sku]
         box = candidates[rng.integers(len(candidates))]
