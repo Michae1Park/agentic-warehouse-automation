@@ -1412,6 +1412,32 @@ class Commands:
         for _ in range(10):
             yield
 
+    def reach_blend(self, position: np.ndarray, orientation: np.ndarray, speed: float = 0.3):
+        start = self.w.fingertip()
+        start_orientation = np.asarray(self.w.hand.get_world_pose()[1], dtype=float)
+        end_orientation = np.asarray(orientation, dtype=float)
+        if start_orientation @ end_orientation < 0:
+            end_orientation = -end_orientation
+        segments = max(4, int(float(np.linalg.norm(position - start)) / LINEAR_STEP))
+        ticks = max(1, int(float(np.linalg.norm(position - start)) / segments / speed / PHYSICS_DT))
+        for i in range(1, segments + 1):
+            t = i / segments
+            blended = start_orientation * (1 - t) + end_orientation * t
+            goal = self.w.solve_ik(start + (position - start) * t, blended / np.linalg.norm(blended))
+            begin = self.w.arm_target.copy()
+            for k in range(1, ticks + 1):
+                self.w.arm_target = begin + (goal - begin) * k / ticks
+                yield
+
+    def go_to_pregrasp(self, joints: np.ndarray):
+        choice = self.grasp_choice
+        start_arm = self.w.arm_target.copy()
+        try:
+            yield from self.reach_blend(choice["approach"], choice["orientation"])
+        except SimError:
+            self.w.arm_target = start_arm
+            yield from self.move_arm(joints, 70)
+
     def reach_first(self, targets: list[np.ndarray], orientation: np.ndarray, speed: float):
         for target in targets:
             try:
@@ -1556,7 +1582,7 @@ class Commands:
         self.target = yield from self.locate(box)
         pregrasp_joints = self.choose_grasp(box)
         yield from self.gripper(0.04)
-        yield from self.move_arm(pregrasp_joints, 70)
+        yield from self.go_to_pregrasp(pregrasp_joints)
 
     def choose_grasp(self, box: Item) -> np.ndarray:
         self.grasp_choice = None
@@ -1564,12 +1590,17 @@ class Commands:
         top_down = box.location_id == TOTE_BIN and args.scenario == "hard"
         for option in self.grasp_options(self.target, self.w.surface_z(box.location_id), top_down):
             try:
-                self.w.solve_ik(option["position"] - option["direction"] * GRASP_STANDOFF, option["orientation"])
+                pregrasp_joints = self.w.solve_ik(option["position"] - option["direction"] * GRASP_STANDOFF, option["orientation"])
                 self.w.solve_ik(option["position"], option["orientation"])
-                pregrasp_joints = self.w.solve_ik(option["position"] - option["direction"] * (GRASP_STANDOFF + APPROACH_BACKOFF),
-                                                  option["orientation"])
             except SimError:
                 continue
+            option["approach"] = option["position"] - option["direction"] * GRASP_STANDOFF
+            try:
+                approach = option["position"] - option["direction"] * (GRASP_STANDOFF + APPROACH_BACKOFF)
+                pregrasp_joints = self.w.solve_ik(approach, option["orientation"])
+                option["approach"] = approach
+            except SimError:
+                pass
             self.grasp_choice = option
             break
         self.last_grasp = {**self.last_grasp, "target_upright": round(float(np.abs(self.true_target(box).axes[2]).max()), 2),
@@ -1592,7 +1623,7 @@ class Commands:
             lateral = rng.uniform(*OFFSET_RANGE) * rng.choice([-1.0, 1.0])
             self.target.center = self.target.center + np.array([0.0, lateral, 0.0])
         yield from self.gripper(0.04)
-        yield from self.move_arm(self.choose_grasp(box), 70)
+        yield from self.go_to_pregrasp(self.choose_grasp(box))
         if perturbation == "nudge":
             start = self.w.sync(box).copy()
             shift = np.append(rng.uniform(-1, 1, 2), 0.0)
@@ -1603,7 +1634,7 @@ class Commands:
                 yield
         if perturbation in ("offset", "nudge"):
             self.target = self.true_target(box)
-            yield from self.move_arm(self.choose_grasp(box), 50)
+            yield from self.go_to_pregrasp(self.choose_grasp(box))
         if perturbation == "regrasp":
             choice = dict(self.grasp_choice)
             miss = rng.uniform(*OFFSET_RANGE) * rng.choice([-1.0, 1.0])
@@ -1614,7 +1645,7 @@ class Commands:
             yield from self.reach_linear(self.grasp_choice["position"] - choice["direction"] * GRASP_STANDOFF,
                                          choice["orientation"], 0.2)
             self.target = self.true_target(box)
-            yield from self.move_arm(self.choose_grasp(box), 40)
+            yield from self.go_to_pregrasp(self.choose_grasp(box))
         self.last_grasp = {**self.last_grasp, "perturbation": perturbation}
         yield from self.arm_grasp(box)
 
@@ -1674,7 +1705,12 @@ class Commands:
         if approach is None:
             raise SimError("ik_failed", f"no arm solution to push {blocker.ycb} at {blocker.location_id}")
         yield from self.gripper(0.0)
-        yield from self.move_arm(approach, 70)
+        start_arm = self.w.arm_target.copy()
+        try:
+            yield from self.reach_blend(start - work * PUSH_STANDOFF, orientation)
+        except SimError:
+            self.w.arm_target = start_arm
+            yield from self.move_arm(approach, 70)
         yield from self.reach_linear(start, orientation, 0.15)
         yield from self.reach_linear(start + side * lateral * distance, orientation, 0.1)
         yield from self.reach_linear(start + side * lateral * distance - work * PUSH_STANDOFF, orientation, 0.2)
@@ -1835,6 +1871,7 @@ class Commands:
 
     def pick(self, sku: str, location_id: str, fail: bool = False, policy: str = "scripted",
              point: list[float] | None = None):
+        self.pose_source = "sim" if policy == "expert" else args.pose
         if point is None:
             box = self.target_box(sku, location_id)
         else:
