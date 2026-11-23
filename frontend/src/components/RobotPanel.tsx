@@ -8,6 +8,20 @@ function stepLabel(step: Task["steps"][number]) {
   return `${step.action} ${target}`;
 }
 
+function GraspDetail({ step }: { step: Task["steps"][number] }) {
+  const policies = step.result?.grasp_policies ?? [];
+  if (!policies.length) return null;
+  const instruction = step.result?.instructions?.at(-1);
+  return (
+    <div className="grasp-detail">
+      {policies.map((policy, i) => (
+        <span key={i} className={`badge policy-${policy}`}>{policy.replace("_", " ")}</span>
+      ))}
+      {instruction && <span className="instruction">“{instruction}”</span>}
+    </div>
+  );
+}
+
 function TaskProgress({ taskId }: { taskId: number }) {
   const task = useLive<Task>(`/api/tasks/${taskId}`, ["tasks", "task_steps"]);
   if (!task?.steps) return null;
@@ -17,6 +31,7 @@ function TaskProgress({ taskId }: { taskId: number }) {
         <li key={step.seq} className={step.status}>
           <span className="step-dot" />
           <span className="mono">{stepLabel(step)}</span>
+          <GraspDetail step={step} />
         </li>
       ))}
     </ol>

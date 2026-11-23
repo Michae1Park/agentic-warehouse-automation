@@ -203,6 +203,7 @@ class TaskExecutor:
         failed_attempts = 0
         policies: list[str] = []
         groundings: list[dict] = []
+        instructions: list[str] = []
         while picked < args["quantity"]:
             try:
                 point = None
@@ -223,9 +224,12 @@ class TaskExecutor:
                 await record_fault(task["id"], step["seq"], "vla_grasp_missed",
                                    f"VLA grasp of {args['sku']} missed", "fell back to scripted grasp")
             policies.append(outcome.get("policy_used", "scripted"))
+            if outcome.get("instruction"):
+                instructions.append(outcome["instruction"])
             await warehouse.record_pick(task["id"], step["id"], self.robot.robot_id, args["inventory_id"], task["order_id"])
             picked += 1
-        return {"picked": picked, "failed_attempts": failed_attempts, "grasp_policies": policies, "groundings": groundings}
+        return {"picked": picked, "failed_attempts": failed_attempts, "grasp_policies": policies, "groundings": groundings,
+                "instructions": instructions}
 
     async def _ground(self, sku: str, location_id: str) -> dict:
         product = await fetch_one("SELECT name, description FROM products WHERE sku = %s", sku)

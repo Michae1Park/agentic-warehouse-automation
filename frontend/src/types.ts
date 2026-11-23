@@ -59,6 +59,7 @@ export type TaskStep = {
   action: string;
   args: Record<string, unknown>;
   status: "pending" | "running" | "succeeded" | "failed" | "skipped";
+  result?: { grasp_policies?: string[]; instructions?: string[] } | null;
 };
 
 export type Task = {

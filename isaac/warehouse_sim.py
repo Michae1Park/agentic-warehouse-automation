@@ -1238,8 +1238,10 @@ class Commands:
         position, _ = box.prim.get_world_pose()
         used = "scripted"
         vla_success = None
+        instruction = None
         if policy in ("vla", "vla_with_fallback"):
-            vla_success = yield from self.grasp_vla(box, instruction_for(self.w, sku))
+            instruction = instruction_for(self.w, sku)
+            vla_success = yield from self.grasp_vla(box, instruction)
             used = "vla"
             if not vla_success:
                 yield from self.gripper(0.04)
@@ -1266,7 +1268,8 @@ class Commands:
         self.w.tote.append(box)
         yield from self.gripper(0.04)
         self.w.repack(location_id)
-        return {"picked": sku, "tote": [b.sku for b in self.w.tote], "policy_used": used, "vla_success": vla_success}
+        return {"picked": sku, "tote": [b.sku for b in self.w.tote], "policy_used": used, "vla_success": vla_success,
+                "instruction": instruction}
 
     def place(self, location_id: str):
         location = self.w.locations[location_id]
