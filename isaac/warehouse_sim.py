@@ -66,7 +66,21 @@ from pxr import Gf, Sdf, Usd, UsdGeom, UsdLux, UsdPhysics, UsdShade
 PHYSICS_DT = 1 / 60
 BASE_SPEED = 1.0
 BASE_TURN_SPEED = 1.6
-BOX_SIZE = np.array([0.10, 0.12, 0.08])
+YCB_ROOT = "/Isaac/Props/YCB/Axis_Aligned"
+YCB_SIZES = {
+    "002_master_chef_can": (0.102, 0.102, 0.140), "003_cracker_box": (0.164, 0.072, 0.213),
+    "004_sugar_box": (0.093, 0.045, 0.176), "005_tomato_soup_can": (0.068, 0.068, 0.102),
+    "006_mustard_bottle": (0.096, 0.058, 0.191), "008_pudding_box": (0.114, 0.038, 0.090),
+    "009_gelatin_box": (0.089, 0.030, 0.073), "010_potted_meat_can": (0.102, 0.058, 0.084),
+    "021_bleach_cleanser": (0.102, 0.068, 0.251), "025_mug": (0.117, 0.093, 0.081),
+    "036_wood_block": (0.090, 0.091, 0.206), "061_foam_brick": (0.078, 0.053, 0.051),
+}
+BIN_FRONT_BAND = 0.14
+BIN_MARGIN = 0.05
+ITEM_GAP = 0.025
+CATALOG_YAW = 0.35
+SURFACE_LIFT = 0.003
+SHELF_LIGHT_INTENSITY = 40000.0
 SHELF_DEPTH = 0.6
 SHELF_BOARD = 0.04
 BIN_LENGTH = 1.3
@@ -79,7 +93,6 @@ FRONT_GRASP = euler_angles_to_quat(np.array([0.0, math.pi / 2, 0.0]))
 STREAM_EVERY = 3
 INSPECT_RES = (896, 384)
 WAREHOUSE_PROPS = "/Isaac/Environments/Simple_Warehouse/Props"
-CARDBOX_SIZE = np.array([0.38, 0.25, 0.149])
 RACK_SHELF_SIZE = np.array([4.0, 1.076, 0.37])
 RACK_FRAME_SIZE = np.array([0.126, 1.0, 3.0])
 PALLET_SIZE = np.array([1.213, 1.003, 0.211])
@@ -109,12 +122,6 @@ GRASP_TOLERANCE = 0.05
 VLA_MAX_STEPS = 120
 VLA_EXECUTE_ACTIONS = 5
 
-COLORS = {
-    "red": (0.7, 0.0, 0.0), "blue": (0.0, 0.15, 0.85), "black": (0.03, 0.03, 0.03), "white": (0.9, 0.9, 0.9),
-    "yellow": (0.95, 0.88, 0.05), "green": (0.0, 0.5, 0.05), "orange": (1.0, 0.28, 0.0), "purple": (0.22, 0.0, 0.5),
-    "cyan": (0.0, 0.75, 0.8), "magenta": (1.0, 0.0, 0.45), "gray": (0.62, 0.64, 0.68), "brown": (0.35, 0.18, 0.05),
-}
-LABEL_COLORS = {**COLORS, "brown": (0.16, 0.07, 0.02), "orange": (0.85, 0.16, 0.0), "gray": (0.33, 0.34, 0.37)}
 
 
 def api_get(path: str):
@@ -128,20 +135,32 @@ class SimError(Exception):
         self.code = code
 
 
-class Box:
-    def __init__(self, prim: VisualCuboid, sku: str):
+class Item:
+    def __init__(self, prim: SingleXFormPrim, sku: str | None, ycb: str):
         self.prim = prim
         self.sku = sku
+        self.ycb = ycb
+        self.size = np.array(YCB_SIZES[ycb])
         self.location_id: str | None = None
         self.position = np.zeros(3)
+        self.yaw = 0.0
 
     @property
     def path(self) -> str:
         return self.prim.prim_path
 
-    def move(self, position, orientation=None) -> None:
+    @property
+    def radius(self) -> float:
+        return float(np.linalg.norm(self.size[:2])) / 2
+
+    def move(self, position, yaw: float | None = None) -> None:
         self.position = np.asarray(position, dtype=float)
-        self.prim.set_world_pose(self.position, orientation)
+        if yaw is not None:
+            self.yaw = float(yaw)
+        self.prim.set_world_pose(self.position, euler_angles_to_quat(np.array([-math.pi / 2, 0.0, self.yaw])))
+
+    def rest_on(self, surface: np.ndarray, yaw: float | None = None) -> None:
+        self.move(surface + np.array([0.0, 0.0, self.size[2] / 2 + SURFACE_LIFT]), yaw)
 
 
 class Warehouse:
@@ -150,12 +169,13 @@ class Warehouse:
         self.world = World(stage_units_in_meters=1.0, physics_dt=PHYSICS_DT, rendering_dt=PHYSICS_DT)
         self.stage = get_current_stage()
         self.locations = {l["id"]: l for l in api_get("/api/locations")}
-        self.colors = {r["sku"]: r["color"] for r in api_get("/api/products")}
-        self.boxes: list[Box] = []
+        self.products = {r["sku"]: r for r in api_get("/api/products")}
+        self.boxes: list[Item] = []
         self.box_counter = 0
-        self.held: Box | None = None
+        self.rng = np.random.default_rng(0)
+        self.held: Item | None = None
         self.held_offset = np.zeros(3)
-        self.tote: list[Box] = []
+        self.tote: list[Item] = []
         self.grasp_failure_next = False
         self._build_environment()
         self._build_conveyor()
@@ -195,6 +215,13 @@ class Warehouse:
                         position=np.array([x + side * (SHELF_DEPTH / 2 - 0.02), y, (max(levels) + 0.45) / 2]),
                         scale=np.array([0.04, 0.04, max(levels) + 0.45]), color=np.array([0.15, 0.3, 0.6]),
                     )
+            for i, z in enumerate(levels):
+                strip = UsdLux.RectLight.Define(self.stage, f"/World/Shelves/{aisle}/strip_{i}")
+                strip.CreateWidthAttr(0.06)
+                strip.CreateHeightAttr(y1 - y0)
+                strip.CreateIntensityAttr(SHELF_LIGHT_INTENSITY)
+                strip.CreateColorAttr(Gf.Vec3f(1.0, 0.96, 0.9))
+                UsdGeom.Xformable(strip).AddTranslateOp().Set(Gf.Vec3d(x - SHELF_DEPTH / 2 + 0.06, (y0 + y1) / 2, z + 0.4))
             FixedCuboid(
                 f"/World/Shelves/{aisle}/back", position=np.array([x + SHELF_DEPTH / 2, (y0 + y1) / 2, (max(levels) + 0.45) / 2]),
                 scale=np.array([0.01, y1 - y0, max(levels) + 0.45]), color=np.array([0.2, 0.22, 0.25]),
@@ -269,6 +296,8 @@ class Warehouse:
                 name = part.GetName()
                 if name == "back":
                     self._bind(str(part.GetPath()), backing)
+                    continue
+                if name.startswith("strip"):
                     continue
                 cube = UsdGeom.Xformable(part)
                 world = cube.ComputeLocalToWorldTransform(Usd.TimeCode.Default())
@@ -381,7 +410,7 @@ class Warehouse:
             self._add_prop(asset, f"/World/Outbound/carton_{i}", (outbound[0] + dx, outbound[1] + dy, 0.211 + dz), 0, (1, 1, 1))
         self.conveyor_end_y = end_y
         self.dispatch_totes: dict[str, str] = {}
-        self.shipping: list[tuple[str, list[Box]]] = []
+        self.shipping: list[tuple[str, list[Item]]] = []
         self.tote_counter = 0
         self.pending_totes: dict[str, float] = {}
         self.tote_material = self._material("ToteGrey", (0.3, 0.31, 0.33), 0.6)
@@ -419,7 +448,7 @@ class Warehouse:
             y = position[1] + step
             translate.Set(Gf.Vec3d(position[0], y, position[2]))
             for box, offset in boxes:
-                box.move(np.array([TOTE_X, y, 0.0]) + offset, np.array([1.0, 0, 0, 0]))
+                box.move(np.array([TOTE_X, y, 0.0]) + offset)
             if y > self.conveyor_end_y - TOTE_SIZE[1] / 2:
                 arrived.append((path, boxes))
         for path, boxes in arrived:
@@ -580,7 +609,7 @@ class Warehouse:
         self.apply_orbit()
         self.view = "overview"
 
-    def grab(self, box: Box) -> None:
+    def grab(self, box: Item) -> None:
         hand_position, hand_orientation = self.hand.get_world_pose()
         box_position, _ = box.prim.get_world_pose()
         self.held_offset = quat_to_rot_matrix(hand_orientation).T @ (box_position - hand_position)
@@ -613,13 +642,12 @@ class Warehouse:
         x, y, theta = self.base_pose()
         rotation = np.array([[math.cos(theta), -math.sin(theta)], [math.sin(theta), math.cos(theta)]])
         tote_xy = np.array([x, y]) + rotation @ TOTE_OFFSET[:2]
-        self.tote_prim.set_world_pose(np.array([tote_xy[0], tote_xy[1], TOTE_OFFSET[2] - BOX_SIZE[2] / 2 - 0.02]),
+        self.tote_prim.set_world_pose(np.array([tote_xy[0], tote_xy[1], TOTE_OFFSET[2] - 0.06]),
                                       euler_angles_to_quat(np.array([0, 0, theta])))
         for i, box in enumerate(self.tote):
             slot = np.array([(i % 2) * 0.12 - 0.06, (i // 2 % 3) * 0.14 - 0.14])
             xy = tote_xy + rotation @ slot
-            box.move(np.array([xy[0], xy[1], TOTE_OFFSET[2] + (i // 6) * BOX_SIZE[2]]),
-                     euler_angles_to_quat(np.array([0, 0, theta])))
+            box.rest_on(np.array([xy[0], xy[1], TOTE_OFFSET[2] - 0.04]), theta)
 
     def update_chase_camera(self) -> None:
         x, y, theta = self.base_pose()
@@ -627,61 +655,59 @@ class Warehouse:
         set_camera_view(eye=eye, target=np.array([x + 0.6 * math.cos(theta), y + 0.6 * math.sin(theta), 0.6]),
                         camera_prim_path="/World/ChaseCam")
 
-    def spawn_box(self, sku: str, location_id: str, position: np.ndarray) -> Box:
+    def spawn_item(self, sku: str | None, location_id: str | None, ycb: str | None = None) -> Item:
         self.box_counter += 1
-        color = self.colors.get(sku, "gray")
-        rgb = (LABEL_COLORS if args.graphics == "high" else COLORS).get(color, (0.5, 0.5, 0.5))
-        path = f"/World/Boxes/box_{self.box_counter}"
-        if args.graphics == "high":
-            prim = self._cardboard_box(path, position, rgb)
-        else:
-            prim = VisualCuboid(path, position=position, scale=BOX_SIZE, color=np.array(rgb))
-        box = Box(prim, sku)
+        path = f"/World/Items/item_{self.box_counter}"
+        ycb = ycb or self.products[sku]["ycb_object"]
+        add_reference_to_stage(f"{self.assets_root}{YCB_ROOT}/{ycb}.usd", path)
+        box = Item(SingleXFormPrim(path), sku, ycb)
         box.location_id = location_id
         self.boxes.append(box)
         return box
 
-    def _cardboard_box(self, path: str, position: np.ndarray, rgb) -> SingleXFormPrim:
-        UsdGeom.Xform.Define(self.stage, path)
-        self._add_prop("SM_CardBoxD_01", path + "/carton", (0, 0, -BOX_SIZE[2] / 2), 90,
-                       [BOX_SIZE[1] / CARDBOX_SIZE[0], BOX_SIZE[0] / CARDBOX_SIZE[1], BOX_SIZE[2] / CARDBOX_SIZE[2]])
-        VisualCuboid(path + "/label", translation=np.array([-BOX_SIZE[0] / 2 - 0.001, 0, 0]),
-                     scale=np.array([0.002, BOX_SIZE[1] * 0.7, BOX_SIZE[2] * 0.6]), color=np.array(rgb))
-        VisualCuboid(path + "/top_label", translation=np.array([0, 0, BOX_SIZE[2] / 2 + 0.001]),
-                     scale=np.array([BOX_SIZE[0] * 0.6, BOX_SIZE[1] * 0.7, 0.002]), color=np.array(rgb))
-        prim = SingleXFormPrim(path)
-        prim.set_world_pose(position)
-        return prim
+    def slot_surfaces(self, location_id: str, count: int) -> list[np.ndarray]:
+        location = self.locations[location_id]
+        x, y = float(location["x"]), float(location["y"])
+        if location["kind"] == "dispatch":
+            return [np.array([TOTE_X + (i % 2 - 0.5) * 0.13, y + (i // 2 % 4 - 1.5) * 0.11, ROLLER_TOP + 0.015])
+                    for i in range(count)]
+        columns, spacing = 4, 0.15
+        y0 = y - (columns - 1) * spacing / 2
+        return [np.array([x + 0.15 + (i // columns % 3) * 0.14, y0 + (i % columns) * spacing, 0.14])
+                for i in range(count)]
 
-    def slot_positions(self, location_id: str, count: int) -> list[np.ndarray]:
+    def free_spot(self, location_id: str, box: Item, front: bool) -> tuple[np.ndarray, float]:
         location = self.locations[location_id]
         x, y, z = float(location["x"]), float(location["y"]), float(location["z"])
-        if location["kind"] == "dispatch":
-            z = ROLLER_TOP + 0.015 + BOX_SIZE[2] / 2
-            return [np.array([TOTE_X + (i % 2 - 0.5) * 0.13, y + (i // 2 % 4 - 1.5) * 0.125,
-                              z + (i // 8) * BOX_SIZE[2]]) for i in range(count)]
-        if location["kind"] == "staging":
-            x, z = x + 0.35, 0.14
-            columns, rows, spacing_y = 4, 6, 0.15
-            y0 = y - (columns - 1) * spacing_y / 2
-            return [np.array([x - 0.2 + (i // columns % 3) * 0.14, y0 + (i % columns) * spacing_y,
-                              z + BOX_SIZE[2] / 2 + (i // (columns * 3)) * BOX_SIZE[2] + 0.005]) for i in range(count)]
-        columns = 7
-        spacing_y = (BIN_LENGTH - 0.2) / (columns - 1)
-        y0 = y - (BIN_LENGTH - 0.2) / 2
-        front_x = x - SHELF_DEPTH / 2 + BOX_SIZE[0] / 2 + 0.03
-        return [np.array([front_x + (i // columns) * (BOX_SIZE[0] + 0.03), y0 + (i % columns) * spacing_y,
-                          z + BOX_SIZE[2] / 2 + 0.005]) for i in range(count)]
+        front_x = x - SHELF_DEPTH / 2 + BIN_MARGIN
+        x_range = (front_x, front_x + BIN_FRONT_BAND) if front else (front_x + BIN_FRONT_BAND + 0.06, x + SHELF_DEPTH / 2 - BIN_MARGIN)
+        half = BIN_LENGTH / 2 - 0.1
+        others = [b for b in self.boxes_at(location_id, background=True) if b is not box]
+        for _ in range(200):
+            candidate = np.array([self.rng.uniform(*x_range) + (box.size[0] / 2 if front else 0.0),
+                                  self.rng.uniform(y - half + box.radius, y + half - box.radius), z])
+            if all(np.linalg.norm(candidate[:2] - o.position[:2]) > box.radius + o.radius + ITEM_GAP for o in others):
+                yaw = self.rng.uniform(-CATALOG_YAW, CATALOG_YAW) if front else self.rng.uniform(-math.pi, math.pi)
+                return candidate, yaw
+        raise SimError("bin_full", f"no free space in {location_id}")
 
-    def boxes_at(self, location_id: str) -> list[Box]:
-        return [b for b in self.boxes if b.location_id == location_id]
+    def shelve(self, box: Item, location_id: str) -> None:
+        surface, yaw = self.free_spot(location_id, box, front=box.sku is not None)
+        box.location_id = location_id
+        box.rest_on(surface, yaw)
+
+    def boxes_at(self, location_id: str, background: bool = False) -> list[Item]:
+        return [b for b in self.boxes if b.location_id == location_id and (background or b.sku)]
 
     def repack(self, location_id: str) -> None:
+        if self.locations[location_id]["kind"] == "storage":
+            return
         boxes = sorted(self.boxes_at(location_id), key=lambda b: (b.sku, b.path))
-        for box, position in zip(boxes, self.slot_positions(location_id, len(boxes))):
-            box.move(position, np.array([1.0, 0, 0, 0]))
+        for box, surface in zip(boxes, self.slot_surfaces(location_id, len(boxes))):
+            box.rest_on(surface, 0.0)
 
-    def reset_inventory(self, missing: list[dict]) -> dict:
+    def reset_inventory(self, missing: list[dict], seed: int = 0) -> dict:
+        self.rng = np.random.default_rng(seed)
         for box in self.boxes:
             self.stage.RemovePrim(box.path)
         for path, _ in self.shipping:
@@ -697,14 +723,30 @@ class Warehouse:
                 by_location.setdefault(row["location_id"], []).append((row["sku"], row["quantity"]))
         for location_id, items in by_location.items():
             skus = [sku for sku, qty in items for _ in range(qty)]
-            for sku, position in zip(skus, self.slot_positions(location_id, len(skus))):
-                self.spawn_box(sku, location_id, position)
+            if self.locations[location_id]["kind"] == "storage":
+                for sku in skus:
+                    self.shelve(self.spawn_item(sku, None), location_id)
+            else:
+                for sku, surface in zip(skus, self.slot_surfaces(location_id, len(skus))):
+                    self.spawn_item(sku, location_id).rest_on(surface, 0.0)
+        background = sorted(YCB_SIZES.keys() - {p["ycb_object"] for p in self.products.values()})
+        for location in self.locations.values():
+            if location["kind"] != "storage":
+                continue
+            stocked = location["id"] in by_location
+            for _ in range(self.rng.integers(1, 3) if stocked else self.rng.integers(2, 5)):
+                item = self.spawn_item(None, None, background[self.rng.integers(len(background))])
+                try:
+                    self.shelve(item, location["id"])
+                except SimError:
+                    self.stage.RemovePrim(item.path)
+                    self.boxes.remove(item)
         return self.counts()
 
     def counts(self) -> dict:
         result: dict[str, dict[str, int]] = {}
         for box in self.boxes:
-            if box.location_id:
+            if box.location_id and box.sku:
                 result.setdefault(box.location_id, {}).setdefault(box.sku, 0)
                 result[box.location_id][box.sku] += 1
         return result
@@ -734,6 +776,10 @@ class Warehouse:
         if not solutions:
             raise SimError("ik_failed", f"no arm solution for target {np.round(position, 2).tolist()}")
         return min(solutions, key=lambda joints: float(np.linalg.norm(joints - seed)))
+
+
+def instruction_for(warehouse: "Warehouse", sku: str) -> str:
+    return f"pick up the {warehouse.products[sku]['name'].lower()}"
 
 
 def wrap_angle(angle: float) -> float:
@@ -838,14 +884,14 @@ class Commands:
             counts[box.sku] = counts.get(box.sku, 0) + 1
         return {"location_id": location_id, "counts": counts, "image_jpeg_b64": base64.b64encode(buffer.getvalue()).decode()}
 
-    def target_box(self, sku: str, location_id: str) -> Box:
+    def target_box(self, sku: str, location_id: str) -> Item:
         candidates = [b for b in self.w.boxes_at(location_id) if b.sku == sku]
         if not candidates:
             raise SimError("item_not_found", f"no {sku} at {location_id}")
         base = self.w.base_pose()
         return min(candidates, key=lambda b: np.linalg.norm(b.prim.get_world_pose()[0][:2] - base[:2]))
 
-    def grasp_scripted(self, box: Box):
+    def grasp_scripted(self, box: Item):
         position, _ = box.prim.get_world_pose()
         yield from self.gripper(0.04)
         yield from self.reach(position + np.array([-0.16, 0, 0.02]))
@@ -853,7 +899,7 @@ class Commands:
         yield from self.gripper(0.0)
         return True
 
-    def grasp_vla(self, box: Box, instruction: str):
+    def grasp_vla(self, box: Item, instruction: str):
         position, _ = box.prim.get_world_pose()
         self.w.finger_target = 0.04
         self.last_vla_miss = None
@@ -890,8 +936,7 @@ class Commands:
         used = "scripted"
         vla_success = None
         if policy in ("vla", "vla_with_fallback"):
-            color = self.w.colors.get(sku, "")
-            vla_success = yield from self.grasp_vla(box, f"pick up the {color} box")
+            vla_success = yield from self.grasp_vla(box, instruction_for(self.w, sku))
             used = "vla"
             if not vla_success:
                 yield from self.gripper(0.04)
@@ -912,7 +957,7 @@ class Commands:
             yield from self.gripper(0.04)
             for _ in range(60):
                 yield
-            self.w.repack(location_id)
+            box.move(position)
             yield from self.move_arm(self.w.arm_home, 60)
             raise SimError("grasp_failed", f"{sku} slipped from gripper at {location_id}")
         yield from self.move_arm(self.w.arm_home, 70)
@@ -934,10 +979,13 @@ class Commands:
             yield from self.reach(drop, 80)
         placed = []
         existing = len(self.w.boxes_at(location_id))
-        for i, (box, position) in enumerate(zip(list(self.w.tote), self.w.slot_positions(location_id, existing + len(self.w.tote))[existing:])):
+        for i, (box, surface) in enumerate(zip(list(self.w.tote), self.w.slot_surfaces(location_id, existing + len(self.w.tote))[existing:])):
             self.w.tote.remove(box)
-            box.move(position + np.array([0, 0, 0.05]), np.array([1.0, 0, 0, 0]))
-            box.location_id = location_id
+            if dispatch:
+                box.rest_on(surface, 0.0)
+                box.location_id = location_id
+            else:
+                self.w.shelve(box, location_id)
             placed.append(box.sku)
             for _ in range(6):
                 yield
@@ -959,7 +1007,8 @@ class Commands:
         if not box:
             raise SimError("item_not_found", f"{sku} not in tote")
         location = self.w.locations[location_id]
-        target = self.w.slot_positions(location_id, len(self.w.boxes_at(location_id)) + 1)[-1]
+        target, yaw = self.w.free_spot(location_id, box, front=True)
+        target = target + np.array([0.0, 0.0, box.size[2] / 2])
         self.w.tote.remove(box)
         self.w.grab(box)
         yield from self.reach(np.array([target[0] - 0.12, target[1], target[2] + 0.03]), 80)
@@ -969,7 +1018,7 @@ class Commands:
             yield from self.move_arm(self.w.arm_home, 60)
             raise SimError("grasp_failed", f"stow of {sku} at {location_id} failed")
         self.w.held = None
-        box.move(target + np.array([0, 0, 0.02]), np.array([1.0, 0, 0, 0]))
+        box.move(target + np.array([0, 0, SURFACE_LIFT]), yaw)
         box.location_id = location_id
         yield from self.gripper(0.04)
         yield from self.move_arm(self.w.arm_home, 60)
@@ -1053,7 +1102,7 @@ class Server:
             positions[self.w.arm_idx] = self.w.arm_home
             self.w.robot.set_joint_positions(positions)
             self.w.arm_target = self.w.arm_home.copy()
-            return {"counts": self.w.reset_inventory(payload.get("missing", []))}
+            return {"counts": self.w.reset_inventory(payload.get("missing", []), int(payload.get("seed", 0)))}
         if name == "state":
             x, y, theta = self.w.base_pose()
             return {"x": float(x), "y": float(y), "theta": float(theta), "tote": [b.sku for b in self.w.tote],
@@ -1141,7 +1190,7 @@ def collect_demos(warehouse: Warehouse, episodes: int) -> None:
         if not success:
             log.write(json.dumps({"attempt": attempt, "skipped": "scripted grasp missed"}) + "\n")
             continue
-        instruction = f"pick up the {warehouse.colors.get(sku, '')} box"
+        instruction = instruction_for(warehouse, sku)
         state = np.stack(frames["state"])
         next_tip = np.concatenate([state[1:, :3], state[-1:, :3]])
         action = np.concatenate([next_tip, np.array(frames["finger_target"])[:, None]], axis=1).astype(np.float32)
@@ -1155,11 +1204,11 @@ def collect_demos(warehouse: Warehouse, episodes: int) -> None:
         saved += 1
 
 
-def run_trial(warehouse: Warehouse, commands: "Commands", pose: np.ndarray, box: Box, policy: str) -> dict:
+def run_trial(warehouse: Warehouse, commands: "Commands", pose: np.ndarray, box: Item, policy: str) -> dict:
     teleport_base(warehouse, pose)
     for _ in range(20):
         step(warehouse)
-    generator = commands.grasp_vla(box, f"pick up the {warehouse.colors.get(box.sku, '')} box") if policy == "vla" \
+    generator = commands.grasp_vla(box, instruction_for(warehouse, box.sku)) if policy == "vla" \
         else commands.grasp_scripted(box)
     ticks, result = 0, False
     try:
