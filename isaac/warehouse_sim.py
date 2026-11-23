@@ -24,6 +24,8 @@ parser.add_argument("--eval-grasp", type=int, default=0, help="compare grasp pol
 parser.add_argument("--policies", nargs="+", default=["scripted", "vla"])
 parser.add_argument("--grasp", choices=("kinematic", "physical"), default="kinematic",
                     help="kinematic attaches the item on close; physical lifts it through finger contact")
+parser.add_argument("--pose", choices=("depth", "sim"), default="depth",
+                    help="depth estimates the target pose from the head depth camera; sim reads the simulator (privileged expert)")
 args, _ = parser.parse_known_args()
 
 from isaacsim import SimulationApp
@@ -168,6 +170,11 @@ GRASP_TOLERANCE = 0.05
 VLA_MAX_STEPS = 120
 RESHUFFLE_EVERY = 10
 VLA_EXECUTE_ACTIONS = 5
+PERCEPTION_RES = (512, 512)
+HEAD_HEIGHT = 1.3
+HEAD_REACH = 0.8
+HEAD_LOOK_ABOVE = 0.08
+MIN_VISIBLE_POINTS = 40
 
 
 
@@ -217,6 +224,13 @@ class Item:
         self.move(surface + np.array([0.0, 0.0, self.footprint[2] / 2 + SURFACE_LIFT]), yaw)
 
 
+class Target:
+    def __init__(self, position: np.ndarray, yaw: float, height: float):
+        self.position = np.asarray(position, dtype=float)
+        self.yaw = float(yaw)
+        self.height = float(height)
+
+
 class Warehouse:
     def __init__(self, streaming: bool = True):
         self.streaming = streaming
@@ -232,6 +246,7 @@ class Warehouse:
         self.tote: list[Item] = []
         self.views: dict[str, tuple[np.ndarray, np.ndarray, float]] = {}
         self.grasp_failure_next = False
+        self.look_z = 0.38
         self._build_environment()
         self.grip_material = self._physics_material("/World/PhysicsMaterials/grip", GRIP_FRICTION)
         self._build_conveyor()
@@ -592,9 +607,13 @@ class Warehouse:
         camera.CreateHorizontalApertureAttr(20.955)
         camera.CreateVerticalApertureAttr(20.955)
         self.update_policy_cameras()
-        for name, path in (("head", "/World/HeadCam"),):
-            annotator = rep.AnnotatorRegistry.get_annotator("rgb")
-            annotator.attach([rep.create.render_product(path, POLICY_RES)])
+        annotator = rep.AnnotatorRegistry.get_annotator("rgb")
+        annotator.attach([rep.create.render_product("/World/HeadCam", POLICY_RES)])
+        self.annotators["head"] = annotator
+        perception = rep.create.render_product("/World/HeadCam", PERCEPTION_RES)
+        for name in ("distance_to_image_plane", "instance_id_segmentation_fast"):
+            annotator = rep.AnnotatorRegistry.get_annotator(name)
+            annotator.attach([perception])
             self.annotators[name] = annotator
 
     def base_rotation(self) -> np.ndarray:
@@ -632,10 +651,44 @@ class Warehouse:
 
     def update_policy_cameras(self) -> None:
         x, y, theta = self.base_pose()
-        forward = np.array([math.cos(theta), math.sin(theta), 0.0])
-        base = np.array([x, y, 0.0])
-        set_camera_view(eye=base + forward * 0.1 + np.array([0, 0, 1.25]),
-                        target=base + forward * 0.95 + np.array([0, 0, 0.38]), camera_prim_path="/World/HeadCam")
+        work_side = np.array([math.sin(theta), -math.cos(theta), 0.0])
+        mount = np.array([x, y, 0.0]) + np.array([math.cos(theta), math.sin(theta), 0.0]) * ARM_MOUNT
+        set_camera_view(eye=mount + np.array([0, 0, HEAD_HEIGHT]),
+                        target=mount + work_side * HEAD_REACH + np.array([0, 0, self.look_z]), camera_prim_path="/World/HeadCam")
+
+    def visible_points(self, box: Item) -> np.ndarray:
+        depth = np.asarray(self.annotators["distance_to_image_plane"].get_data(), dtype=float).squeeze()
+        segmentation = self.annotators["instance_id_segmentation_fast"].get_data()
+        labels = segmentation["info"]["idToLabels"]
+        ids = [int(i) for i, path in labels.items() if str(path) == box.path or str(path).startswith(box.path + "/")]
+        mask = np.isin(segmentation["data"], ids) & np.isfinite(depth) & (depth > 0)
+        rows, columns = np.nonzero(mask)
+        d = depth[rows, columns]
+        height, width = depth.shape
+        focal = width * HEAD_FOCAL / 20.955
+        camera = np.stack([(columns + 0.5 - width / 2) / focal * d, -(rows + 0.5 - height / 2) / focal * d, -d, np.ones_like(d)], axis=1)
+        transform = np.array(UsdGeom.Xformable(self.stage.GetPrimAtPath("/World/HeadCam")).ComputeLocalToWorldTransform(Usd.TimeCode.Default()))
+        return (camera @ transform)[:, :3]
+
+    def estimate_target(self, box: Item, surface_z: float) -> Target:
+        points = self.visible_points(box)
+        if len(points) < MIN_VISIBLE_POINTS:
+            raise SimError("not_visible", f"only {len(points)} depth points on {box.sku or box.ycb}")
+        height = float(np.percentile(points[:, 2], 98)) - surface_z
+        planar = points[:, :2] - points[:, :2].mean(axis=0)
+        eye = np.array(UsdGeom.Xformable(self.stage.GetPrimAtPath("/World/HeadCam")).ComputeLocalToWorldTransform(Usd.TimeCode.Default()))[3, :2]
+        view = points[:, :2].mean(axis=0) - eye
+        axes = np.linalg.eigh(np.cov(planar.T))[1].T
+        normal = max(axes, key=lambda axis: abs(float(axis @ view)))
+        normal = normal if normal @ view > 0 else -normal
+        face_axis = np.array([-normal[1], normal[0]])
+        along_normal, along_face = points[:, :2] @ normal, points[:, :2] @ face_axis
+        width = float(np.percentile(along_face, 98) - np.percentile(along_face, 2))
+        dims = list(box.size)
+        dims.remove(min(dims, key=lambda d: abs(d - height)))
+        dims.remove(min(dims, key=lambda d: abs(d - width)))
+        center_planar = (np.percentile(along_normal, 2) + dims[0] / 2) * normal + float(np.median(along_face)) * face_axis
+        return Target(np.array([*center_planar, surface_z + height / 2]), math.atan2(normal[1], normal[0]), height)
 
     def fingertip(self) -> np.ndarray:
         position, orientation = self.hand.get_world_pose()
@@ -1006,8 +1059,26 @@ def wrap_angle(angle: float) -> float:
 
 
 class Commands:
-    def __init__(self, warehouse: Warehouse):
+    def __init__(self, warehouse: Warehouse, pose_source: str | None = None):
         self.w = warehouse
+        self.pose_source = pose_source or args.pose
+        self.target: Target | None = None
+
+    def true_target(self, box: Item) -> Target:
+        return Target(self.w.sync(box).copy(), box.yaw, box.footprint[2])
+
+    def locate(self, box: Item):
+        truth = self.true_target(box)
+        if self.pose_source == "sim":
+            return truth
+        surface_z = float(self.w.locations[box.location_id]["z"])
+        self.w.look_z = surface_z + HEAD_LOOK_ABOVE
+        for _ in range(6):
+            yield
+        estimate = self.w.estimate_target(box, surface_z)
+        self.last_grasp = {**self.last_grasp, "pose_error_m": round(float(np.linalg.norm(estimate.position - truth.position)), 3),
+                           "yaw_error_deg": round(math.degrees(abs(wrap_angle(estimate.yaw - truth.yaw))), 1)}
+        return estimate
 
     def drive_to(self, target: np.ndarray):
         while True:
@@ -1182,22 +1253,22 @@ class Commands:
         base = self.w.base_pose()
         return min(candidates, key=lambda b: np.linalg.norm(b.prim.get_world_pose()[0][:2] - base[:2]))
 
-    def grasp_candidates(self, box: Item) -> list[tuple[float, float, float]]:
-        default_pitch = SHORT_GRASP_PITCH if box.size[2] < SHORT_ITEM else GRASP_PITCH
-        default_drop = max(GRASP_BELOW_TOP, box.size[2] * 0.3)
+    def grasp_candidates(self, height: float) -> list[tuple[float, float, float]]:
+        default_pitch = SHORT_GRASP_PITCH if height < SHORT_ITEM else GRASP_PITCH
+        default_drop = max(GRASP_BELOW_TOP, height * 0.3)
         pitches = [default_pitch] + [p for p in GRASP_PITCH_FALLBACKS if p != default_pitch]
-        drops = [default_drop] + ([box.size[2] / 2] if box.size[2] >= SHORT_ITEM else [])
+        drops = [default_drop] + ([height / 2] if height >= SHORT_ITEM else [])
         return [(pitch, drop, roll) for drop in drops for pitch in pitches for roll in (0.0, math.pi)]
 
-    def grasp_frame(self, box: Item, roll: float = 0.0, pitch: float | None = None,
+    def grasp_frame(self, target: Target, roll: float = 0.0, pitch: float | None = None,
                     drop: float | None = None, yaw: float | None = None) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         choice = getattr(self, "grasp_choice", None) or {}
         if pitch is None:
-            pitch = choice.get("pitch", SHORT_GRASP_PITCH if box.size[2] < SHORT_ITEM else GRASP_PITCH)
+            pitch = choice.get("pitch", SHORT_GRASP_PITCH if target.height < SHORT_ITEM else GRASP_PITCH)
         if drop is None:
-            drop = choice.get("drop", max(GRASP_BELOW_TOP, box.size[2] * 0.3))
-        yaw = box.yaw if yaw is None else yaw
-        position = self.w.sync(box) + np.array([0.0, 0.0, box.size[2] / 2 - drop])
+            drop = choice.get("drop", max(GRASP_BELOW_TOP, target.height * 0.3))
+        yaw = target.yaw if yaw is None else yaw
+        position = target.position + np.array([0.0, 0.0, target.height / 2 - drop])
         direction = np.array([math.cos(yaw) * math.cos(pitch), math.sin(yaw) * math.cos(pitch), -math.sin(pitch)])
         base = quat_to_rot_matrix(euler_angles_to_quat(np.array([0.0, math.pi / 2 + pitch, yaw])))
         spin = np.array([[math.cos(roll), -math.sin(roll), 0], [math.sin(roll), math.cos(roll), 0], [0, 0, 1]])
@@ -1219,9 +1290,10 @@ class Commands:
         self.last_grasp = {}
         yield from self.face_work()
         yield from self.align_to(self.w.sync(box))
+        self.target = yield from self.locate(box)
         self.grasp_choice = None
-        for pitch, drop, roll in self.grasp_candidates(box):
-            position, direction, orientation = self.grasp_frame(box, roll, pitch, drop)
+        for pitch, drop, roll in self.grasp_candidates(self.target.height):
+            position, direction, orientation = self.grasp_frame(self.target, roll, pitch, drop)
             try:
                 pregrasp_joints = self.w.solve_ik(position - direction * GRASP_STANDOFF, orientation)
                 self.w.solve_ik(position, orientation)
@@ -1232,7 +1304,7 @@ class Commands:
         if self.grasp_choice is None:
             raise SimError("ik_failed", f"no reachable grasp for {box.sku} at {box.location_id}")
         self.grasp_roll = roll
-        self.last_grasp = {"pitch": pitch, "drop": round(drop, 3), "roll": roll}
+        self.last_grasp = {**self.last_grasp, "pitch": pitch, "drop": round(drop, 3), "roll": roll}
         yield from self.gripper(0.04)
         yield from self.move_arm(pregrasp_joints, 70)
 
@@ -1245,7 +1317,7 @@ class Commands:
 
     def set_down(self, box: Item, surface: np.ndarray, yaw: float, clearance: float):
         offset = self.hold_offset()
-        _, _, orientation = self.grasp_frame(box, self.grasp_roll, yaw=yaw)
+        _, _, orientation = self.grasp_frame(self.true_target(box), self.grasp_roll, yaw=yaw)
         tip = self.tip_for(surface + np.array([0.0, 0.0, box.footprint[2] / 2 + SURFACE_LIFT]), orientation, offset)
         above = tip + np.array([0.0, 0.0, clearance])
         yield from self.move_arm(self.w.solve_ik(above, orientation), 80)
@@ -1267,7 +1339,8 @@ class Commands:
     def take_from_deck(self, box: Item):
         self.grasp_choice = None
         self.grasp_roll = 0.0
-        position, _, orientation = self.grasp_frame(box, 0.0)
+        self.target = self.true_target(box)
+        position, _, orientation = self.grasp_frame(self.target, 0.0)
         above = position + np.array([0.0, 0.0, CARRY_CLEARANCE])
         yield from self.gripper(0.04)
         yield from self.move_arm(self.w.solve_ik(above, orientation), 80)
@@ -1285,7 +1358,7 @@ class Commands:
         return True
 
     def arm_grasp(self, box: Item):
-        position, direction, orientation = self.grasp_frame(box, self.grasp_roll)
+        position, direction, orientation = self.grasp_frame(self.target, self.grasp_roll)
         pregrasp = position - direction * GRASP_STANDOFF
         yield from self.reach_linear(pregrasp, orientation)
         pregrasp_error = float(np.abs(self.w.robot.get_joint_positions()[self.w.arm_idx] - self.w.arm_target).max())
@@ -1302,7 +1375,7 @@ class Commands:
                            "moved": float(np.linalg.norm(self.w.sync(box) - position))}
 
     def lift(self, box: Item, start_z: float):
-        _, direction, orientation = self.grasp_frame(box, getattr(self, "grasp_roll", 0.0))
+        _, direction, orientation = self.grasp_frame(self.target, getattr(self, "grasp_roll", 0.0))
         if args.grasp == "kinematic":
             self.w.set_dynamic(box, False)
             self.w.grab(box)
@@ -1440,7 +1513,7 @@ class Commands:
             yield from self.stash(box)
             raise SimError("grasp_failed", f"stow of {sku} at {location_id} failed")
         offset = self.hold_offset()
-        _, direction, orientation = self.grasp_frame(box, self.grasp_roll, yaw=yaw)
+        _, direction, orientation = self.grasp_frame(self.true_target(box), self.grasp_roll, yaw=yaw)
         center = target + np.array([0.0, 0.0, box.footprint[2] / 2 + SURFACE_LIFT])
         tip = self.tip_for(center, orientation, offset)
         out = np.array([direction[0], direction[1], 0.0])
@@ -1629,7 +1702,7 @@ def collect_demos(warehouse: Warehouse, episodes: int) -> None:
     rng = np.random.default_rng(args.seed)
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
-    commands = Commands(warehouse)
+    commands = Commands(warehouse, pose_source="sim")
     log = open(out / "collect_log.jsonl", "a")
     saved = len(list(out.glob("episode_*.npz")))
     attempt = 0
@@ -1697,6 +1770,7 @@ def run_trial(warehouse: Warehouse, commands: "Commands", pose: np.ndarray, box:
     neighbours = [(b, warehouse.sync(b).copy(), b.yaw) for b in warehouse.boxes_at(box.location_id) if b is not box]
 
     def grasp_and_lift():
+        commands.pose_source = "sim" if policy == "expert" else args.pose
         if policy == "vla":
             yield from commands.grasp_vla(box, instruction_for(warehouse, box.sku))
         else:
