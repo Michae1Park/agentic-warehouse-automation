@@ -213,7 +213,7 @@ PUSH_HEIGHT = 0.05
 PUSH_STANDOFF = 0.15
 WIDTH_WEIGHT = 20.0
 STEEP_WEIGHT = 0.8
-APPROACH_BACKOFF = 0.15
+APPROACH_BACKOFF = 0.0
 WRIST_FOCAL = 10.0
 WRIST_OFFSET = np.array([-0.07, 0.0, 0.02])
 WRIST_LOOK = 0.06
@@ -292,6 +292,14 @@ class Target:
         along = min(1.0, float(projections[self.round_axis]))
         diameter = self.extents[(self.round_axis + 1) % 3]
         return along * self.extents[self.round_axis] + math.sqrt(1.0 - along ** 2) * diameter
+
+    def grasp_width(self, closing: np.ndarray, approach: np.ndarray) -> float:
+        along = int(np.argmax(np.abs(self.axes.T @ approach) / self.extents))
+        if self.round_axis is not None and along != self.round_axis:
+            return self.extent_along(closing)
+        projections = np.abs(self.axes.T @ closing)
+        projections[along] = 0.0
+        return float(projections @ self.extents)
 
     @property
     def height(self) -> float:
@@ -1546,7 +1554,7 @@ class Commands:
             for pitch in ((1.2, math.pi / 2) if top_down else (*GRASP_PITCH_FALLBACKS, 1.2, math.pi / 2)):
                 for roll in (0.0, math.pi / 2):
                     rotation = tool_rotation(yaw, pitch, roll)
-                    width = target.extent_along(rotation[:, 1])
+                    width = target.grasp_width(rotation[:, 1], rotation[:, 2])
                     if width > MAX_GRASP_WIDTH:
                         continue
                     if pitch > 1.0:
@@ -1804,8 +1812,9 @@ class Commands:
         direction, orientation = self.grasp_choice["direction"], self.grasp_choice["orientation"]
         if args.grasp == "kinematic":
             truth = self.true_target(box)
-            closing = quat_to_rot_matrix(self.w.hand.get_world_pose()[1])[:, 1]
-            between = bool(truth.contains(self.w.fingertip(), ATTACH_MARGIN) and truth.extent_along(closing) <= MAX_GRASP_WIDTH + 0.005)
+            hand = quat_to_rot_matrix(self.w.hand.get_world_pose()[1])
+            between = bool(truth.contains(self.w.fingertip(), ATTACH_MARGIN)
+                           and truth.grasp_width(hand[:, 1], hand[:, 2]) <= MAX_GRASP_WIDTH + 0.005)
             self.last_grasp = {**self.last_grasp, "between_fingers": between}
             if between:
                 self.w.set_dynamic(box, False)
