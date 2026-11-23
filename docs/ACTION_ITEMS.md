@@ -102,7 +102,7 @@ Plan: [YCB Pivot Plan](https://claude.ai/artifact/DEaQ4NEy4PeF2sDDCsHHaj). Decis
 - [x] M0 Stabilize baseline: soak fixes deployed, pre-pivot demo tagged `pre-ycb-pivot` (soak re-run skipped)
 - [x] M1 (prototype scope) YCB catalog + messy bins: 2 pickable SKUs (mustard bottle, tomato soup can) with descriptions; 10 other YCB objects as non-WMS background clutter; random positions/yaw (catalog items in the front band); under-shelf strip lights; agent resolves descriptions ("red soup cans"). Verified e2e in Isaac: #1042 fulfilled + tote audit passed, relocation by description. Kinematic grasp for now
 - [ ] M1 follow-ups: expand pickable set to 10–12 objects; misplaced-item fault
-- [ ] M2 Physical grasping: gripper friction/contact tuning, collision meshes, scripted grasp from true pose, per-object success over 100+ trials
+- [ ] M2 Physical grasping (in progress): YCB items are rigid bodies with convex-hull colliders and real mass; finger drives capped (stiffness 1e7 → 2e3, max force 1200 → 40 N) so they no longer crush through items; yaw-aligned grasp from the true pose with base alignment, base back-off, Cartesian approach and 180° roll fallback. 20 held-out trials, seed 3: `--grasp physical` 65%, `--grasp kinematic` (attach on close) 70%. Demo default stays kinematic until physical is ≥ 80%; remaining failures: mustard drops during lift, IK limits at bin edges. 100+ trial run pending
 - [ ] M3 Language + grounding: agent tools take descriptions, VLM locates bin and grounds the target among distractors, grounding accuracy benchmark
 - [ ] M4 Demonstrations: ~500 successful language-annotated episodes across objects (LeRobot format)
 - [ ] M5 Train SmolVLA (flow matching) and a diffusion policy on the same data (LLM stopped)

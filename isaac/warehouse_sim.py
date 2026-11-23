@@ -21,7 +21,10 @@ parser.add_argument("--seed", type=int, default=0)
 parser.add_argument("--policy-url", default="http://localhost:8030")
 parser.add_argument("--livestream", action="store_true", help="serve the viewport to the Isaac Sim WebRTC Streaming Client")
 parser.add_argument("--graphics", choices=("basic", "high"), default="basic")
-parser.add_argument("--eval-grasp", type=int, default=0, help="compare scripted vs VLA grasps on N randomized trials")
+parser.add_argument("--eval-grasp", type=int, default=0, help="compare grasp policies on N randomized trials")
+parser.add_argument("--policies", nargs="+", default=["scripted", "vla"])
+parser.add_argument("--grasp", choices=("kinematic", "physical"), default="kinematic",
+                    help="kinematic attaches the item on close; physical lifts it through finger contact")
 args, _ = parser.parse_known_args()
 
 from isaacsim import SimulationApp
@@ -32,6 +35,8 @@ if args.livestream:
 
     app.set_setting("/app/window/drawMouse", True)
     enable_extension("omni.kit.livestream.webrtc")
+app.set_setting("/physics/updateToUsd", True)
+app.set_setting("/physics/outputVelocitiesLocalSpace", False)
 if args.graphics == "high":
     for key, value in {
         "/rtx/rendermode": "RaytracedLighting",
@@ -50,7 +55,7 @@ import omni.replicator.core as rep
 from isaacsim.core.api import World
 from isaacsim.core.api.objects import FixedCuboid, VisualCuboid
 from isaacsim.core.prims import SingleArticulation, SingleXFormPrim
-from isaacsim.core.utils.rotations import euler_angles_to_quat, quat_to_rot_matrix
+from isaacsim.core.utils.rotations import euler_angles_to_quat, quat_to_rot_matrix, rot_matrix_to_quat
 from isaacsim.core.utils.stage import add_reference_to_stage, get_current_stage
 from isaacsim.core.utils.types import ArticulationAction
 from isaacsim.core.utils.viewports import set_camera_view
@@ -61,7 +66,7 @@ from isaacsim.robot_motion.motion_generation import (
 )
 from isaacsim.storage.native import get_assets_root_path
 from PIL import Image
-from pxr import Gf, Sdf, Usd, UsdGeom, UsdLux, UsdPhysics, UsdShade
+from pxr import Gf, PhysxSchema, Sdf, Usd, UsdGeom, UsdLux, UsdPhysics, UsdShade
 
 PHYSICS_DT = 1 / 60
 BASE_SPEED = 1.0
@@ -81,6 +86,26 @@ ITEM_GAP = 0.025
 CATALOG_YAW = 0.35
 SURFACE_LIFT = 0.003
 SHELF_LIGHT_INTENSITY = 40000.0
+GRIP_FRICTION = 1.2
+BACKGROUND_MASS = 0.3
+GRASP_STANDOFF = 0.16
+GRASP_DEPTH = 0.0
+GRASP_PITCH = 0.0
+SHORT_GRASP_PITCH = 0.2
+GRASP_BELOW_TOP = 0.035
+SHORT_ITEM = 0.15
+LINEAR_STEP = 0.01
+CLEARANCE_X = 0.05
+BACK_OFF = 0.08
+LIFT_HEIGHT = 0.08
+RETRACT = 0.2
+HOLD_STEPS = 60
+HOLD_TOLERANCE = 0.08
+CLOSE_STEPS = 40
+FINGER_STIFFNESS = 2000.0
+FINGER_DAMPING = 100.0
+FINGER_MAX_FORCE = 40.0
+ITEM_SOLVER_ITERATIONS = 16
 SHELF_DEPTH = 0.6
 SHELF_BOARD = 0.04
 BIN_LENGTH = 1.3
@@ -178,6 +203,7 @@ class Warehouse:
         self.tote: list[Item] = []
         self.grasp_failure_next = False
         self._build_environment()
+        self.grip_material = self._physics_material("/World/PhysicsMaterials/grip", GRIP_FRICTION)
         self._build_conveyor()
         if args.graphics == "high":
             self._build_high_quality_environment()
@@ -241,6 +267,20 @@ class Warehouse:
                     position=np.array([float(location["x"]) + 0.35, float(location["y"]), 0.07]),
                     scale=np.array([0.6, 0.9, 0.14]), color=np.array([0.6, 0.45, 0.28]),
                 )
+
+    def _physics_material(self, path: str, friction: float) -> UsdShade.Material:
+        material = UsdShade.Material.Define(self.stage, path)
+        api = UsdPhysics.MaterialAPI.Apply(material.GetPrim())
+        api.CreateStaticFrictionAttr(friction)
+        api.CreateDynamicFrictionAttr(friction)
+        api.CreateRestitutionAttr(0.0)
+        return material
+
+    def _bind_physics_material(self, root: str, material: UsdShade.Material) -> None:
+        for prim in Usd.PrimRange(self.stage.GetPrimAtPath(root)):
+            if prim.HasAPI(UsdPhysics.CollisionAPI):
+                UsdShade.MaterialBindingAPI.Apply(prim).Bind(
+                    material, UsdShade.Tokens.strongerThanDescendants, "physics")
 
     def _material(self, name: str, color, roughness: float, metallic: float = 0.0) -> UsdShade.Material:
         path = f"/World/Looks/{name}"
@@ -488,6 +528,16 @@ class Warehouse:
         config = interface_config_loader.load_supported_lula_kinematics_solver_config("Franka")
         self.ik = LulaKinematicsSolver(**config)
         self.ik_articulation = ArticulationKinematicsSolver(self.robot, self.ik, "right_gripper")
+        for finger in ("panda_leftfinger", "panda_rightfinger"):
+            self._bind_physics_material(f"/World/Robot/{finger}", self.grip_material)
+        for prim in Usd.PrimRange(self.stage.GetPrimAtPath("/World/Robot")):
+            if prim.GetName() in ("panda_finger_joint1", "panda_finger_joint2"):
+                drive = UsdPhysics.DriveAPI.Get(prim, "linear")
+                print("FINGER_DRIVE", prim.GetPath(), drive.GetStiffnessAttr().Get(), drive.GetDampingAttr().Get(),
+                      drive.GetMaxForceAttr().Get(), flush=True)
+                drive.GetStiffnessAttr().Set(FINGER_STIFFNESS)
+                drive.GetDampingAttr().Set(FINGER_DAMPING)
+                drive.GetMaxForceAttr().Set(FINGER_MAX_FORCE)
         self.link0 = SingleXFormPrim("/World/Robot/panda_link0")
         self.hand = SingleXFormPrim("/World/Robot/panda_hand")
         dock = self.locations.get("DOCK-1")
@@ -625,6 +675,8 @@ class Warehouse:
             "link0": [v.tolist() for v in self.link0.get_world_pose()],
             "hand": [v.tolist() for v in self.hand.get_world_pose()],
             "joints": dict(zip(self.robot.dof_names, self.robot.get_joint_positions().tolist())),
+            "items": [{"sku": b.sku, "location_id": b.location_id, "position": np.round(b.prim.get_world_pose()[0], 3).tolist()}
+                      for b in self.boxes if b.sku],
         }
 
     def base_pose(self) -> np.ndarray:
@@ -660,6 +712,19 @@ class Warehouse:
         path = f"/World/Items/item_{self.box_counter}"
         ycb = ycb or self.products[sku]["ycb_object"]
         add_reference_to_stage(f"{self.assets_root}{YCB_ROOT}/{ycb}.usd", path)
+        root = self.stage.GetPrimAtPath(path)
+        body = UsdPhysics.RigidBodyAPI.Apply(root)
+        body.CreateKinematicEnabledAttr(False)
+        body.CreateRigidBodyEnabledAttr(False)
+        physx_body = PhysxSchema.PhysxRigidBodyAPI.Apply(root)
+        physx_body.CreateSolverPositionIterationCountAttr(ITEM_SOLVER_ITERATIONS)
+        physx_body.CreateEnableCCDAttr(True)
+        UsdPhysics.MassAPI.Apply(root).CreateMassAttr(float(self.products[sku]["weight_kg"]) if sku else BACKGROUND_MASS)
+        for prim in Usd.PrimRange(root):
+            if prim.IsA(UsdGeom.Mesh):
+                UsdPhysics.CollisionAPI.Apply(prim).CreateCollisionEnabledAttr(False)
+                UsdPhysics.MeshCollisionAPI.Apply(prim).CreateApproximationAttr("convexHull")
+        self._bind_physics_material(path, self.grip_material)
         box = Item(SingleXFormPrim(path), sku, ycb)
         box.location_id = location_id
         self.boxes.append(box)
@@ -695,6 +760,24 @@ class Warehouse:
         surface, yaw = self.free_spot(location_id, box, front=box.sku is not None)
         box.location_id = location_id
         box.rest_on(surface, yaw)
+        self.set_dynamic(box, True)
+
+    def set_dynamic(self, box: Item, dynamic: bool) -> None:
+        body = UsdPhysics.RigidBodyAPI(self.stage.GetPrimAtPath(box.path))
+        body.GetRigidBodyEnabledAttr().Set(dynamic)
+        body.GetKinematicEnabledAttr().Set(False)
+        for prim in Usd.PrimRange(self.stage.GetPrimAtPath(box.path)):
+            if prim.HasAPI(UsdPhysics.CollisionAPI):
+                UsdPhysics.CollisionAPI(prim).GetCollisionEnabledAttr().Set(dynamic)
+
+    def sync(self, box: Item) -> np.ndarray:
+        position, orientation = box.prim.get_world_pose()
+        box.position = np.array(position)
+        return box.position
+
+    def holding(self, box: Item, start_z: float) -> bool:
+        position = self.sync(box)
+        return position[2] - start_z > LIFT_HEIGHT / 2 and float(np.linalg.norm(self.fingertip() - position)) < HOLD_TOLERANCE
 
     def boxes_at(self, location_id: str, background: bool = False) -> list[Item]:
         return [b for b in self.boxes if b.location_id == location_id and (background or b.sku)]
@@ -728,7 +811,9 @@ class Warehouse:
                     self.shelve(self.spawn_item(sku, None), location_id)
             else:
                 for sku, surface in zip(skus, self.slot_surfaces(location_id, len(skus))):
-                    self.spawn_item(sku, location_id).rest_on(surface, 0.0)
+                    item = self.spawn_item(sku, location_id)
+                    item.rest_on(surface, 0.0)
+                    self.set_dynamic(item, self.locations[location_id]["kind"] == "staging")
         background = sorted(YCB_SIZES.keys() - {p["ycb_object"] for p in self.products.values()})
         for location in self.locations.values():
             if location["kind"] != "storage":
@@ -846,6 +931,26 @@ class Commands:
         joints = self.w.solve_ik(position, orientation)
         yield from self.move_arm(joints, steps)
 
+    def reach_linear(self, position: np.ndarray, orientation: np.ndarray, speed: float = 0.25):
+        start = self.w.fingertip()
+        distance = float(np.linalg.norm(position - start))
+        segments = max(1, int(distance / LINEAR_STEP))
+        ticks = max(1, int(distance / segments / speed / PHYSICS_DT))
+        for i in range(1, segments + 1):
+            point = start + (position - start) * i / segments
+            try:
+                goal = self.w.solve_ik(point, orientation)
+            except SimError:
+                if i == segments:
+                    raise
+                continue
+            begin = self.w.arm_target.copy()
+            for k in range(1, ticks + 1):
+                self.w.arm_target = begin + (goal - begin) * k / ticks
+                yield
+        for _ in range(10):
+            yield
+
     def reach_any(self, position: np.ndarray, steps: int, orientations: list[np.ndarray]):
         for orientation in orientations:
             try:
@@ -891,13 +996,69 @@ class Commands:
         base = self.w.base_pose()
         return min(candidates, key=lambda b: np.linalg.norm(b.prim.get_world_pose()[0][:2] - base[:2]))
 
+    def grasp_frame(self, box: Item, roll: float = 0.0) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        pitch = SHORT_GRASP_PITCH if box.size[2] < SHORT_ITEM else GRASP_PITCH
+        position = self.w.sync(box) + np.array([0.0, 0.0, box.size[2] / 2 - max(GRASP_BELOW_TOP, box.size[2] * 0.3)])
+        direction = np.array([math.cos(box.yaw) * math.cos(pitch), math.sin(box.yaw) * math.cos(pitch), -math.sin(pitch)])
+        base = quat_to_rot_matrix(euler_angles_to_quat(np.array([0.0, math.pi / 2 + pitch, box.yaw])))
+        spin = np.array([[math.cos(roll), -math.sin(roll), 0], [math.sin(roll), math.cos(roll), 0], [0, 0, 1]])
+        return position, direction, rot_matrix_to_quat(base @ spin)
+
+    def align(self, box: Item, back: float = 0.0):
+        base = self.w.base_target.copy()
+        target = self.w.to_world_frame(np.array([-back, self.w.to_base_frame(self.w.sync(box))[1], 0.0]))
+        yield from self.drive_to(np.array([target[0], target[1], base[2]]))
+
     def grasp_scripted(self, box: Item):
-        position, _ = box.prim.get_world_pose()
+        self.last_grasp = {}
+        yield from self.align(box, BACK_OFF)
+        heading = self.w.base_rotation() @ np.array([1.0, 0.0, 0.0])
+        for roll in (0.0, math.pi):
+            position, direction, orientation = self.grasp_frame(box, roll)
+            pregrasp = position - direction * GRASP_STANDOFF
+            clear = pregrasp - heading * CLEARANCE_X
+            try:
+                self.w.solve_ik(clear - heading * BACK_OFF, orientation)
+                self.w.solve_ik(position, orientation)
+                break
+            except SimError:
+                continue
+        self.grasp_roll = roll
         yield from self.gripper(0.04)
-        yield from self.reach(position + np.array([-0.16, 0, 0.02]))
-        yield from self.reach(position + np.array([-0.02, 0, 0.0]), 50)
-        yield from self.gripper(0.0)
+        yield from self.reach(clear - heading * BACK_OFF, 90, orientation)
+        yield from self.drive_to(self.w.base_target + np.append(heading[:2] * BACK_OFF, 0.0))
+        yield from self.reach_linear(pregrasp, orientation)
+        pregrasp_error = float(np.abs(self.w.robot.get_joint_positions()[self.w.arm_idx] - self.w.arm_target).max())
+        yield from self.reach_linear(position - direction * GRASP_DEPTH, orientation, 0.1)
+        reach_error = (self.w.fingertip() - position).round(3).tolist()
+        joint_error = float(np.abs(self.w.robot.get_joint_positions()[self.w.arm_idx] - self.w.arm_target).max())
+        self.w.finger_target = 0.0
+        for _ in range(CLOSE_STEPS):
+            yield
+        self.last_grasp = {"reach_error": reach_error, "joint_error": round(joint_error, 3),
+                           "pregrasp_error": round(pregrasp_error, 3),
+                           "hand": np.round(self.w.hand.get_world_pose()[0], 3).tolist(), "target": np.round(position, 3).tolist(),
+                           "opening": float(self.w.robot.get_joint_positions()[self.w.finger_idx].mean()),
+                           "moved": float(np.linalg.norm(self.w.sync(box) - position))}
         return True
+
+    def lift(self, box: Item, start_z: float):
+        _, direction, orientation = self.grasp_frame(box, getattr(self, "grasp_roll", 0.0))
+        if args.grasp == "kinematic":
+            self.w.set_dynamic(box, False)
+            self.w.grab(box)
+        tip = self.w.fingertip()
+        yield from self.reach_linear(tip + np.array([0, 0, LIFT_HEIGHT]) - direction * LIFT_HEIGHT, orientation, 0.1)
+        try:
+            yield from self.reach_linear(tip + np.array([0, 0, LIFT_HEIGHT]) - direction * RETRACT, orientation)
+        except SimError:
+            pass
+        for _ in range(HOLD_STEPS):
+            yield
+        position = self.w.sync(box)
+        self.last_grasp = {**getattr(self, "last_grasp", {}), "lift_dz": round(float(position[2] - start_z), 3),
+                           "lift_tip_dist": round(float(np.linalg.norm(self.w.fingertip() - position)), 3)}
+        return self.w.holding(box, start_z)
 
     def grasp_vla(self, box: Item, instruction: str):
         position, _ = box.prim.get_world_pose()
@@ -947,19 +1108,17 @@ class Commands:
                 yield from self.grasp_scripted(box)
         else:
             yield from self.grasp_scripted(box)
-        self.w.grab(box)
-        box.location_id = None
-        yield from self.reach(position + np.array([-0.06, 0, 0.04]), 30)
-        yield from self.reach(position + np.array([-0.22, 0, 0.04]), 50)
-        if fail:
+        held = yield from self.lift(box, position[2])
+        if fail or not held:
             self.w.held = None
-            box.location_id = location_id
+            self.w.set_dynamic(box, True)
             yield from self.gripper(0.04)
-            for _ in range(60):
-                yield
-            box.move(position)
             yield from self.move_arm(self.w.arm_home, 60)
-            raise SimError("grasp_failed", f"{sku} slipped from gripper at {location_id}")
+            reason = "slipped from gripper" if held else "was not lifted"
+            raise SimError("grasp_failed", f"{sku} {reason} at {location_id}")
+        box.location_id = None
+        self.w.set_dynamic(box, False)
+        self.w.grab(box)
         yield from self.move_arm(self.w.arm_home, 70)
         self.w.held = None
         self.w.tote.append(box)
@@ -1020,6 +1179,7 @@ class Commands:
         self.w.held = None
         box.move(target + np.array([0, 0, SURFACE_LIFT]), yaw)
         box.location_id = location_id
+        self.w.set_dynamic(box, True)
         yield from self.gripper(0.04)
         yield from self.move_arm(self.w.arm_home, 60)
         self.w.repack(location_id)
@@ -1152,7 +1312,7 @@ def collect_demos(warehouse: Warehouse, episodes: int) -> None:
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     commands = Commands(warehouse)
-    stocked = sorted({(b.location_id, b.sku) for b in warehouse.boxes if b.location_id
+    stocked = sorted({(b.location_id, b.sku) for b in warehouse.boxes if b.location_id and b.sku
                       and warehouse.locations[b.location_id]["kind"] == "storage"})
     log = open(out / "collect_log.jsonl", "a")
     saved = 0
@@ -1208,8 +1368,17 @@ def run_trial(warehouse: Warehouse, commands: "Commands", pose: np.ndarray, box:
     teleport_base(warehouse, pose)
     for _ in range(20):
         step(warehouse)
-    generator = commands.grasp_vla(box, instruction_for(warehouse, box.sku)) if policy == "vla" \
-        else commands.grasp_scripted(box)
+    start = warehouse.sync(box).copy()
+    start_yaw = box.yaw
+
+    def grasp_and_lift():
+        if policy == "vla":
+            yield from commands.grasp_vla(box, instruction_for(warehouse, box.sku))
+        else:
+            yield from commands.grasp_scripted(box)
+        return (yield from commands.lift(box, start[2]))
+
+    generator = grasp_and_lift()
     ticks, result = 0, False
     try:
         while True:
@@ -1217,16 +1386,19 @@ def run_trial(warehouse: Warehouse, commands: "Commands", pose: np.ndarray, box:
             step(warehouse)
             ticks += 1
     except StopIteration as stop:
-        result = stop.value
-    except SimError:
+        result = bool(stop.value)
+    except SimError as err:
         result = False
-    if policy == "scripted":
-        for _ in range(15):
-            step(warehouse)
-        result = bool(np.linalg.norm(warehouse.fingertip() - box.prim.get_world_pose()[0]) < GRASP_TOLERANCE)
-    miss = getattr(commands, "last_vla_miss", None) if policy == "vla" else \
-        float(np.linalg.norm(warehouse.fingertip() - box.prim.get_world_pose()[0]))
-    return {"success": bool(result), "sim_seconds": ticks * PHYSICS_DT, "miss_m": miss}
+        commands.last_grasp = {**getattr(commands, "last_grasp", {}), "error": str(err)}
+    miss = float(np.linalg.norm(warehouse.fingertip() - warehouse.sync(box)))
+    warehouse.held = None
+    warehouse.finger_target = 0.04
+    for _ in range(30):
+        step(warehouse)
+    warehouse.set_dynamic(box, False)
+    box.move(start, start_yaw)
+    warehouse.set_dynamic(box, True)
+    return {"success": result, "sim_seconds": ticks * PHYSICS_DT, "miss_m": miss, **getattr(commands, "last_grasp", {})}
 
 
 def eval_grasps(warehouse: Warehouse, trials: int) -> None:
@@ -1234,27 +1406,29 @@ def eval_grasps(warehouse: Warehouse, trials: int) -> None:
 
     rng = np.random.default_rng(args.seed)
     commands = Commands(warehouse)
-    stocked = sorted({(b.location_id, b.sku) for b in warehouse.boxes if b.location_id
+    stocked = sorted({(b.location_id, b.sku) for b in warehouse.boxes if b.location_id and b.sku
                       and warehouse.locations[b.location_id]["kind"] == "storage"})
     rows = []
     for trial in range(trials):
         location_id, sku = stocked[rng.integers(len(stocked))]
         jitter = np.array([rng.uniform(-0.06, 0.06), rng.uniform(-0.25, 0.25), rng.uniform(-0.08, 0.08)])
         pose = warehouse.approach_pose(location_id) + jitter
-        box = commands.target_box(sku, location_id)
+        candidates = [b for b in warehouse.boxes_at(location_id) if b.sku == sku]
+        box = min(candidates, key=lambda b: float(np.linalg.norm(warehouse.sync(b)[:2] - pose[:2])))
         row = {"trial": trial, "location_id": location_id, "sku": sku}
-        for policy in ("scripted", "vla"):
+        for policy in args.policies:
             row[policy] = run_trial(warehouse, commands, pose, box, policy)
         rows.append(row)
         print(json.dumps(row), flush=True)
-    summary = {
-        "trials": trials,
-        "scripted_success": sum(r["scripted"]["success"] for r in rows) / trials,
-        "vla_success": sum(r["vla"]["success"] for r in rows) / trials,
-        "vla_or_fallback_success": sum(r["vla"]["success"] or r["scripted"]["success"] for r in rows) / trials,
-        "scripted_mean_s": float(np.mean([r["scripted"]["sim_seconds"] for r in rows])),
-        "vla_mean_s": float(np.mean([r["vla"]["sim_seconds"] for r in rows])),
-    }
+    summary = {"trials": trials}
+    for policy in args.policies:
+        summary[f"{policy}_success"] = sum(r[policy]["success"] for r in rows) / trials
+        summary[f"{policy}_mean_s"] = float(np.mean([r[policy]["sim_seconds"] for r in rows]))
+        for sku in sorted({r["sku"] for r in rows}):
+            subset = [r for r in rows if r["sku"] == sku]
+            summary[f"{policy}_success_{sku}"] = sum(r[policy]["success"] for r in subset) / len(subset)
+    if {"scripted", "vla"} <= set(args.policies):
+        summary["vla_or_fallback_success"] = sum(r["vla"]["success"] or r["scripted"]["success"] for r in rows) / trials
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     (out / "grasp_eval.json").write_text(json.dumps({"summary": summary, "trials": rows}, indent=2))
@@ -1318,7 +1492,7 @@ def make_handler(server: Server):
 
 def main() -> None:
     warehouse = Warehouse(streaming=not (args.collect or args.eval_grasp))
-    warehouse.reset_inventory([])
+    warehouse.reset_inventory([], args.seed)
     if args.collect:
         collect_demos(warehouse, args.collect)
         app.close()
