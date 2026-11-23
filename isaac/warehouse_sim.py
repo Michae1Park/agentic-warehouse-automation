@@ -88,6 +88,7 @@ CLUSTER_GAP = 0.02
 CLUSTER_JITTER = 0.01
 CLUSTER_YAW = 0.12
 TOPPLE_RATE = 0.12
+TOPPLE_MAX_CLUSTER = 6
 STAGING_HEIGHT = 0.3
 STAGING_STANDOFF = 0.75
 SURFACE_LIFT = 0.003
@@ -907,8 +908,10 @@ class Warehouse:
             if location["kind"] != "storage":
                 continue
             groups = [[self.spawn_item(sku, None) for _ in range(qty)] for sku, qty in by_location.get(location["id"], [])]
-            for item in (item for group in groups for item in group):
-                item.toppled = not self.products[item.sku]["robot_pickable"] and bool(self.rng.random() < TOPPLE_RATE)
+            for group in groups:
+                for item in group:
+                    item.toppled = (len(group) <= TOPPLE_MAX_CLUSTER and not self.products[item.sku]["robot_pickable"]
+                                    and bool(self.rng.random() < TOPPLE_RATE))
             if groups:
                 self.layout_bin(location["id"], groups)
         return self.counts()
