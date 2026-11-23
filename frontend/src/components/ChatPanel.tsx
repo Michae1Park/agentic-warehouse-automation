@@ -17,15 +17,28 @@ const SUGGESTIONS = [
   "Are there any open exceptions?",
 ];
 
+function newId() {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") return crypto.randomUUID();
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
+}
+
+function toolArgs(raw: string) {
+  try {
+    return Object.values(JSON.parse(raw || "{}")).join(", ");
+  } catch {
+    return raw;
+  }
+}
+
 function conversationId() {
   try {
     const existing = localStorage.getItem("conversation_id");
     if (existing) return existing;
-    const created = crypto.randomUUID();
+    const created = newId();
     localStorage.setItem("conversation_id", created);
     return created;
   } catch {
-    return crypto.randomUUID();
+    return newId();
   }
 }
 
@@ -35,21 +48,50 @@ function renderInline(text: string) {
   );
 }
 
+function cells(line: string) {
+  return line.trim().replace(/^\||\|$/g, "").split("|").map((cell) => cell.trim());
+}
+
+function renderBlocks(text: string) {
+  const lines = text.split("\n");
+  const blocks: JSX.Element[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i].trim().startsWith("|")) {
+      const rows: string[] = [];
+      while (i < lines.length && lines[i].trim().startsWith("|")) rows.push(lines[i++]);
+      i--;
+      const body = rows.filter((row) => !/^\s*\|[\s|:-]+\|\s*$/.test(row));
+      const [header, ...data] = body.map(cells);
+      blocks.push(
+        <table key={i} className="msg-table">
+          <thead>
+            <tr>{header?.map((cell, c) => <th key={c}>{renderInline(cell)}</th>)}</tr>
+          </thead>
+          <tbody>
+            {data.map((row, r) => (
+              <tr key={r}>{row.map((cell, c) => <td key={c}>{renderInline(cell)}</td>)}</tr>
+            ))}
+          </tbody>
+        </table>,
+      );
+    } else {
+      blocks.push(<div key={i}>{lines[i] ? renderInline(lines[i]) : " "}</div>);
+    }
+  }
+  return blocks;
+}
+
 function MessageView({ message }: { message: Message }) {
   if (message.role === "tool") return null;
   const isEvent = message.role === "user" && message.content.startsWith("[SYSTEM EVENT]");
   return (
     <div className={`msg ${isEvent ? "event" : message.role}`}>
       {message.content && (
-        <div className="msg-text">
-          {message.content.split("\n").map((line, i) => (
-            <div key={i}>{line ? renderInline(line) : " "}</div>
-          ))}
-        </div>
+        <div className="msg-text">{renderBlocks(message.content)}</div>
       )}
       {message.tool_calls?.map((call) => (
         <code key={call.id} className="tool-chip" title={call.function.arguments}>
-          {call.function.name}({Object.values(JSON.parse(call.function.arguments || "{}")).join(", ")})
+          {call.function.name}({toolArgs(call.function.arguments)})
         </code>
       ))}
     </div>
@@ -68,7 +110,7 @@ export default function ChatPanel() {
     const load = () =>
       fetch(base)
         .then((res) => res.json())
-        .then(setMessages)
+        .then((data) => setMessages(Array.isArray(data) ? data : []))
         .catch(() => undefined);
     load();
     return onEvent((event) => {
@@ -96,7 +138,7 @@ export default function ChatPanel() {
   };
 
   const reset = () => {
-    const fresh = crypto.randomUUID();
+    const fresh = newId();
     try {
       localStorage.setItem("conversation_id", fresh);
     } catch {}
