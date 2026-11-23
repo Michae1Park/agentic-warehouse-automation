@@ -5,7 +5,7 @@ cd "$(dirname "$0")/.."
 CPUS="${CPUS:-16-31}"
 GRASP_POLICY="${GRASP_POLICY:-scripted}"
 GRAPHICS="${GRAPHICS:-high}"
-CHECKPOINT="vla/outputs/smolvla_grasp/checkpoints/last/pretrained_model"
+CHECKPOINT="${CHECKPOINT:-vla/outputs/smolvla_ycb/checkpoints/last/pretrained_model}"
 VLA_PYTHON="${VLA_PYTHON:-$HOME/workspace/robo-learning/.venv/bin/python}"
 
 LLM_SETTINGS=$(grep -E "^LLM_(WEIGHTS|MODEL|GPU_UTIL|ARGS)=" .env 2>/dev/null || true)
