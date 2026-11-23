@@ -117,6 +117,7 @@ TOTE_OFFSET = np.array([-0.3, 0.0, 0.46])
 FRONT_GRASP = euler_angles_to_quat(np.array([0.0, math.pi / 2, 0.0]))
 STREAM_EVERY = 3
 INSPECT_RES = (896, 384)
+INSPECT_APERTURE = 20.955
 WAREHOUSE_PROPS = "/Isaac/Environments/Simple_Warehouse/Props"
 RACK_SHELF_SIZE = np.array([4.0, 1.076, 0.37])
 RACK_FRAME_SIZE = np.array([0.126, 1.0, 3.0])
@@ -201,6 +202,7 @@ class Warehouse:
         self.held: Item | None = None
         self.held_offset = np.zeros(3)
         self.tote: list[Item] = []
+        self.views: dict[str, tuple[np.ndarray, np.ndarray, float]] = {}
         self.grasp_failure_next = False
         self._build_environment()
         self.grip_material = self._physics_material("/World/PhysicsMaterials/grip", GRIP_FRICTION)
@@ -611,8 +613,8 @@ class Warehouse:
         chase.CreateFocalLengthAttr(16.0)
         inspect = UsdGeom.Camera.Define(self.stage, "/World/InspectCam")
         inspect.CreateFocalLengthAttr(11.0)
-        inspect.CreateHorizontalApertureAttr(20.955)
-        inspect.CreateVerticalApertureAttr(20.955 * INSPECT_RES[1] / INSPECT_RES[0])
+        inspect.CreateHorizontalApertureAttr(INSPECT_APERTURE)
+        inspect.CreateVerticalApertureAttr(INSPECT_APERTURE * INSPECT_RES[1] / INSPECT_RES[0])
         self.view = "overview"
         self.products_rp = {
             "overview": rep.create.render_product("/World/OverviewCam", (args.width, args.height)),
@@ -975,8 +977,9 @@ class Commands:
             set_camera_view(eye=np.array([TOTE_X - 0.92, y, ROLLER_TOP + 1.34]), target=np.array([TOTE_X, y, ROLLER_TOP + 0.03]),
                             camera_prim_path="/World/InspectCam")
         else:
-            set_camera_view(eye=np.array([x - distance, y, z + height]), target=np.array([x, y, z + 0.06]),
-                            camera_prim_path="/World/InspectCam")
+            eye, target = np.array([x - distance, y, z + height]), np.array([x, y, z + 0.06])
+            set_camera_view(eye=eye, target=target, camera_prim_path="/World/InspectCam")
+            self.w.views[location_id] = (eye, target, focal)
         for _ in range(8):
             yield
         frame = self.w.annotators["inspect"].get_data()
@@ -988,6 +991,33 @@ class Commands:
         for box in self.w.boxes_at(location_id):
             counts[box.sku] = counts.get(box.sku, 0) + 1
         return {"location_id": location_id, "counts": counts, "image_jpeg_b64": base64.b64encode(buffer.getvalue()).decode()}
+
+    def project(self, location_id: str, point: np.ndarray) -> np.ndarray:
+        eye, target, focal = self.w.views[location_id]
+        forward = (target - eye) / np.linalg.norm(target - eye)
+        right = np.cross(forward, np.array([0.0, 0.0, 1.0]))
+        right /= np.linalg.norm(right)
+        up = np.cross(right, forward)
+        relative = point - eye
+        depth = float(relative @ forward)
+        pixels_per_unit = INSPECT_RES[0] * focal / INSPECT_APERTURE
+        return np.array([INSPECT_RES[0] / 2 + pixels_per_unit * float(relative @ right) / depth,
+                         INSPECT_RES[1] / 2 - pixels_per_unit * float(relative @ up) / depth])
+
+    def grounded_box(self, location_id: str, point: list[float]) -> Item:
+        if location_id not in self.w.views:
+            raise SimError("not_inspected", f"{location_id} has no inspection image to ground against")
+        pixel = np.array(point, dtype=float) / 1000.0 * np.array(INSPECT_RES)
+        items = self.w.boxes_at(location_id, background=True)
+        if not items:
+            raise SimError("item_not_found", f"nothing at {location_id}")
+        return min(items, key=lambda b: float(np.linalg.norm(self.project(location_id, self.w.sync(b)) - pixel)))
+
+    def resolve(self, location_id: str, point: list[float]):
+        box = self.grounded_box(location_id, point)
+        yield
+        return {"sku": box.sku, "object": box.ycb,
+                "pixel": (self.project(location_id, box.position) / np.array(INSPECT_RES) * 1000).round().tolist()}
 
     def target_box(self, sku: str, location_id: str) -> Item:
         candidates = [b for b in self.w.boxes_at(location_id) if b.sku == sku]
@@ -1091,8 +1121,14 @@ class Commands:
                     return self.last_vla_miss < GRASP_TOLERANCE
         return False
 
-    def pick(self, sku: str, location_id: str, fail: bool = False, policy: str = "scripted"):
-        box = self.target_box(sku, location_id)
+    def pick(self, sku: str, location_id: str, fail: bool = False, policy: str = "scripted",
+             point: list[float] | None = None):
+        if point is None:
+            box = self.target_box(sku, location_id)
+        else:
+            box = self.grounded_box(location_id, point)
+            if box.sku != sku:
+                raise SimError("wrong_object", f"grounded point at {location_id} is a {box.ycb[4:].replace('_', ' ')}, not {sku}")
         position, _ = box.prim.get_world_pose()
         used = "scripted"
         vla_success = None
@@ -1483,7 +1519,7 @@ def make_handler(server: Server):
             length = int(self.headers.get("content-length", 0))
             payload = json.loads(self.rfile.read(length) or b"{}")
             name = self.path.strip("/").split("?")[0]
-            if name not in ("navigate", "inspect", "pick", "place", "stow", "reset", "view", "camera", "release"):
+            if name not in ("navigate", "inspect", "pick", "place", "stow", "reset", "view", "camera", "release", "resolve"):
                 return self._json(404, {"error": "unknown_command"})
             self._json(*server.submit(name, payload))
 
