@@ -131,12 +131,21 @@ Baseline tagged `baseline-side-stance`: scripted grasp is the production path, l
 
 Decision: the VLA must earn its place. Three hard scenes, a fair perception-only baseline, and a privileged sim-only expert for demos. No ablations; the reasoning goes in the README.
 
-- [ ] Fair baseline: deployed scripted planner uses a pose estimated from the depth camera (segment + fit), never the simulator pose
+- [x] Fair baseline: deployed scripted planner uses a pose estimated from the depth camera (segment + fit), never the simulator pose (`--pose depth`). Easy scene, 20 trials physical: depth 75% vs simulator-pose expert 55% (`eval/results/grasp_depth_phys/`). Target mask still comes from simulator instance ids
 - [ ] Privileged expert: demo generator uses simulator poses (only possible in sim), with perturbations (mid-approach nudge, grasp offset, partial slip) and recorded corrections
-- [ ] Physical grasping as default in all three scenes
-- [ ] Scene 1 — Toppled shelf items: pickable targets lying on their side, leaning or upside down among upright neighbours
-- [ ] Scene 2 — Cluttered bin picking: 6–10 mixed YCB items piled in a tote, target named by description, partial occlusion
-- [ ] Scene 3 — Mixed-SKU deep shelving: target behind a different SKU ("the mustard behind the cracker box"); expert uses a scripted push primitive to clear the blocker, then grasps
-- [ ] Collect demos per scene, retrain SmolVLA + diffusion
+- [x] Grasp success: kinematic attach, but only when the fingertip is inside the item's box and the closing width fits (physical grasping dropped as a requirement)
+- [x] Scene 1 — Toppled shelf items (B-01-1, 25% elsewhere): soup cans lying at random yaw. Mustard stays upright: lying flat it is 9.6 cm wide (> 8 cm gripper) and upside down it falls over
+- [x] Scene 2 — Cluttered receiving tote (STAGING-1): 0.74 × 0.50 m tote, 8 pickables + 8 clutter items dropped in layers with random tilt, top-down grasps. Background pallets with filled and stacked totes for realism
+- [x] Shelf realism: items at varied yaw (pickables ±57°, others ±29°; mustard capped because side-on it is 9.6 cm, wider than the gripper)
+- [x] Scene 3 — Mixed-SKU deep shelving (C-04-1): mustard behind a cracker box, soup can behind a sugar box; expert pushes the blocker sideways (`push_aside`), scripted baseline has no push. Smoke test: expert pushes and lifts the mustard, scripted fails
+- [ ] Full eval per scene (scripted vs expert) once the smoke-test fixes are in (arm reset between trials, any-yaw top-down)
+- [ ] Demo collection upgrades (`collect_demos`), scoped to what makes the demo:
+  - [ ] Push primitive and grasp recorded as one episode (deep shelving)
+  - [ ] Perturbations with recorded recovery: mid-approach object nudge, grasp offset, partial slip
+  - [ ] VLM grounding point drawn as a marker on the head image (unambiguous target in clutter)
+  - [ ] Wrist camera as a second image stream (occlusion in deep shelving, close-in tote grasps)
+  - [ ] Plumbing: episodes start from the home pose, not the scripted pregrasp, so the VLA replaces pose estimation; 7-D action with tool roll
+  - Dropped: scene-aware instructions (marker covers it)
+- [ ] Collect demos per scene, retrain SmolVLA + diffusion (head camera now faces the work side)
 - [ ] Eval per scene: depth-based scripted vs SmolVLA vs diffusion
 - [ ] README: why each scene breaks the scripted planner; FIFO/expiry rotation as a further real-world reason for back-row picks; deformables (bags, pouches) as future work
