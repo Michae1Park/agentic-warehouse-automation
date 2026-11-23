@@ -211,6 +211,9 @@ TOP_DOWN_LIFT = 0.15
 PUSH_CLEARANCE = 0.03
 PUSH_HEIGHT = 0.05
 PUSH_STANDOFF = 0.15
+WIDTH_WEIGHT = 20.0
+STEEP_WEIGHT = 0.8
+APPROACH_BACKOFF = 0.15
 WRIST_FOCAL = 10.0
 WRIST_OFFSET = np.array([-0.07, 0.0, 0.02])
 WRIST_LOOK = 0.06
@@ -1071,7 +1074,7 @@ class Warehouse:
         front_x = self.face_x(location_id) + BIN_MARGIN
         z = float(location["z"])
         targets = [b for b in items if self.pickable(b.sku)]
-        blockers = sorted((b for b in items if not self.pickable(b.sku)), key=lambda b: -b.size[0])
+        blockers = sorted((b for b in items if not self.pickable(b.sku)), key=lambda b: (abs(b.size[0] - b.size[1]) < 0.003, -b.size[0]))
         for slot, target, blocker in zip(DEEP_PAIR_SLOTS, targets, blockers):
             blocker.location_id = target.location_id = location_id
             blocker.rest_on(np.array([front_x + blocker.size[1] / 2, y + slot, z]), math.pi / 2)
@@ -1512,7 +1515,8 @@ class Commands:
             for pitch in ((1.2, math.pi / 2) if top_down else (*GRASP_PITCH_FALLBACKS, 1.2, math.pi / 2)):
                 for roll in (0.0, math.pi / 2, math.pi):
                     rotation = tool_rotation(yaw, pitch, roll)
-                    if target.extent_along(rotation[:, 1]) > MAX_GRASP_WIDTH:
+                    width = target.extent_along(rotation[:, 1])
+                    if width > MAX_GRASP_WIDTH:
                         continue
                     if pitch > 1.0:
                         drop = min(0.03, height / 2)
@@ -1522,7 +1526,8 @@ class Commands:
                     if position[2] - abs(rotation[2, 1]) * FINGER_REACH < surface_z + 0.005:
                         continue
                     preferred = SHORT_GRASP_PITCH if height < SHORT_ITEM else GRASP_PITCH
-                    score = abs(wrap_angle(yaw - work)) + abs(pitch - preferred) * 0.5 + (roll % math.pi > 0) * 0.2
+                    score = (abs(wrap_angle(yaw - work)) + abs(pitch - preferred) * (0.5 if top_down else STEEP_WEIGHT)
+                             + (roll % math.pi > 0) * 0.2 + width * WIDTH_WEIGHT)
                     options.append({"yaw": yaw, "pitch": pitch, "roll": roll, "position": position,
                                     "direction": rotation[:, 2], "orientation": rot_matrix_to_quat(rotation), "score": score})
         return sorted(options, key=lambda o: o["score"])
@@ -1559,8 +1564,10 @@ class Commands:
         top_down = box.location_id == TOTE_BIN and args.scenario == "hard"
         for option in self.grasp_options(self.target, self.w.surface_z(box.location_id), top_down):
             try:
-                pregrasp_joints = self.w.solve_ik(option["position"] - option["direction"] * GRASP_STANDOFF, option["orientation"])
+                self.w.solve_ik(option["position"] - option["direction"] * GRASP_STANDOFF, option["orientation"])
                 self.w.solve_ik(option["position"], option["orientation"])
+                pregrasp_joints = self.w.solve_ik(option["position"] - option["direction"] * (GRASP_STANDOFF + APPROACH_BACKOFF),
+                                                  option["orientation"])
             except SimError:
                 continue
             self.grasp_choice = option
