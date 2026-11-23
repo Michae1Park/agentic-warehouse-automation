@@ -19,14 +19,16 @@ class Policy:
         config = PreTrainedConfig.from_pretrained(checkpoint)
         self.kind = config.type
         self.policy = get_policy_class(config.type).from_pretrained(checkpoint).to(device).eval()
-        self.image_key = next(iter(self.policy.config.image_features))
+        self.image_keys = {key: ("wrist" if "wrist" in key or key.endswith("camera2") else "head")
+                           for key in self.policy.config.image_features}
         self.preprocess, self.postprocess = make_pre_post_processors(self.policy.config, pretrained_path=checkpoint)
         self.lock = Lock()
 
-    def act(self, instruction: str, state: list[float], head_jpeg_b64: str) -> np.ndarray:
-        image = np.asarray(Image.open(io.BytesIO(base64.b64decode(head_jpeg_b64))).convert("RGB"))
+    def act(self, instruction: str, state: list[float], images: dict[str, str]) -> np.ndarray:
+        decoded = {name: np.asarray(Image.open(io.BytesIO(base64.b64decode(data))).convert("RGB")) for name, data in images.items()}
         batch = {
-            self.image_key: torch.from_numpy(image).permute(2, 0, 1).float().unsqueeze(0) / 255.0,
+            **{key: torch.from_numpy(decoded[camera]).permute(2, 0, 1).float().unsqueeze(0) / 255.0
+               for key, camera in self.image_keys.items()},
             "observation.state": torch.tensor([state], dtype=torch.float32),
             "task": [instruction],
         }
@@ -58,7 +60,7 @@ def make_handler(policy: Policy):
         def do_POST(self):
             payload = json.loads(self.rfile.read(int(self.headers.get("content-length", 0))))
             started = time.perf_counter()
-            actions = policy.act(payload["instruction"], payload["state"], payload["head_jpeg_b64"])
+            actions = policy.act(payload["instruction"], payload["state"], payload["images"])
             self._json(200, {"actions": actions.tolist(), "latency_ms": int((time.perf_counter() - started) * 1000)})
 
     return Handler

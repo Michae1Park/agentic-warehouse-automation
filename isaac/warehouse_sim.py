@@ -27,6 +27,8 @@ parser.add_argument("--grasp", choices=("kinematic", "physical"), default="kinem
 parser.add_argument("--scenario", choices=("nominal", "hard"), default="hard",
                     help="hard adds toppled pickables, a cluttered receiving tote and mixed-SKU deep shelving")
 parser.add_argument("--eval-scene", choices=("nominal", "toppled", "tote", "deep", "hard"), default="hard")
+parser.add_argument("--perturb-rate", type=float, default=0.0,
+                    help="share of demo episodes with an injected perturbation (nudge, offset, regrasp) and recorded recovery")
 parser.add_argument("--pose", choices=("depth", "sim"), default="depth",
                     help="depth estimates the target pose from the head depth camera; sim reads the simulator (privileged expert)")
 args, _ = parser.parse_known_args()
@@ -209,6 +211,16 @@ TOP_DOWN_LIFT = 0.15
 PUSH_CLEARANCE = 0.03
 PUSH_HEIGHT = 0.05
 PUSH_STANDOFF = 0.15
+WRIST_FOCAL = 10.0
+WRIST_OFFSET = np.array([-0.07, 0.0, 0.02])
+WRIST_LOOK = 0.06
+MARKER_NOISE = 0.01
+MARKER_RADIUS = 6
+MARKER_COLOR = np.array([255, 0, 255], dtype=np.uint8)
+NUDGE_RANGE = (0.015, 0.03)
+NUDGE_TICKS = 12
+OFFSET_RANGE = (0.02, 0.035)
+DEMO_SCENES = ("toppled", "tote", "deep", "shelf")
 
 
 
@@ -309,6 +321,7 @@ class Warehouse:
         self.views: dict[str, tuple[np.ndarray, np.ndarray, float]] = {}
         self.grasp_failure_next = False
         self.look_z = 0.38
+        self.marker: np.ndarray | None = None
         self._build_environment()
         self.grip_material = self._physics_material("/World/PhysicsMaterials/grip", GRIP_FRICTION)
         self._build_conveyor()
@@ -671,10 +684,18 @@ class Warehouse:
         camera.CreateFocalLengthAttr(HEAD_FOCAL)
         camera.CreateHorizontalApertureAttr(20.955)
         camera.CreateVerticalApertureAttr(20.955)
-        self.update_policy_cameras()
         annotator = rep.AnnotatorRegistry.get_annotator("rgb")
         annotator.attach([rep.create.render_product("/World/HeadCam", POLICY_RES)])
         self.annotators["head"] = annotator
+        wrist = UsdGeom.Camera.Define(self.stage, "/World/WristCam")
+        wrist.CreateFocalLengthAttr(WRIST_FOCAL)
+        wrist.CreateHorizontalApertureAttr(20.955)
+        wrist.CreateVerticalApertureAttr(20.955)
+        wrist.CreateClippingRangeAttr(Gf.Vec2f(0.01, 100.0))
+        annotator = rep.AnnotatorRegistry.get_annotator("rgb")
+        annotator.attach([rep.create.render_product("/World/WristCam", POLICY_RES)])
+        self.annotators["wrist"] = annotator
+        self.update_policy_cameras()
         perception = rep.create.render_product("/World/HeadCam", PERCEPTION_RES)
         for name in ("distance_to_image_plane", "instance_id_segmentation_fast"):
             annotator = rep.AnnotatorRegistry.get_annotator(name)
@@ -695,21 +716,44 @@ class Warehouse:
 
     def tool_pose(self) -> np.ndarray:
         _, orientation = self.hand.get_world_pose()
-        approach = self.base_rotation().T @ quat_to_rot_matrix(orientation)[:, 2]
+        rotation = quat_to_rot_matrix(orientation)
+        approach = self.base_rotation().T @ rotation[:, 2]
         yaw = math.atan2(approach[1], approach[0])
         pitch = math.asin(float(np.clip(-approach[2], -1.0, 1.0)))
-        return np.concatenate([self.to_base_frame(self.fingertip()), [yaw, pitch]])
+        spin = tool_rotation(yaw + self.base_pose()[2], pitch, 0.0).T @ rotation
+        roll = math.atan2(spin[1, 0], spin[0, 0])
+        return np.concatenate([self.to_base_frame(self.fingertip()), [yaw, pitch, roll]])
 
     def tool_orientation(self, yaw: float, pitch: float, roll: float = 0.0) -> np.ndarray:
         rotation = quat_to_rot_matrix(euler_angles_to_quat(np.array([0.0, math.pi / 2 + pitch, self.base_pose()[2] + yaw])))
         spin = np.array([[math.cos(roll), -math.sin(roll), 0], [math.sin(roll), math.cos(roll), 0], [0, 0, 1]])
         return rot_matrix_to_quat(rotation @ spin)
 
+    def head_pixel(self, point: np.ndarray) -> np.ndarray | None:
+        transform = self.prim_transform("/World/HeadCam")
+        camera = (point - transform[3, :3]) @ transform[:3, :3].T
+        if camera[2] >= 0:
+            return None
+        focal = POLICY_RES[0] * HEAD_FOCAL / 20.955
+        return np.array([POLICY_RES[0] / 2 + focal * camera[0] / -camera[2], POLICY_RES[1] / 2 - focal * camera[1] / -camera[2]])
+
+    def draw_marker(self, image: np.ndarray) -> np.ndarray:
+        if self.marker is None:
+            return image
+        pixel = self.head_pixel(self.marker)
+        if pixel is None:
+            return image
+        rows, columns = np.ogrid[:image.shape[0], :image.shape[1]]
+        distance = np.sqrt((columns - pixel[0]) ** 2 + (rows - pixel[1]) ** 2)
+        image[(distance > MARKER_RADIUS - 1.5) & (distance < MARKER_RADIUS + 1.0)] = MARKER_COLOR
+        return image
+
     def policy_observation(self) -> dict:
         opening = float(self.robot.get_joint_positions()[self.finger_idx].mean())
         state = np.concatenate([self.tool_pose(), [opening]]).astype(np.float32)
         return {
-            "head": self.annotators["head"].get_data()[..., :3].copy(),
+            "head": self.draw_marker(self.annotators["head"].get_data()[..., :3].copy()),
+            "wrist": self.annotators["wrist"].get_data()[..., :3].copy(),
             "state": state,
             "finger_target": np.float32(self.finger_target),
         }
@@ -720,6 +764,11 @@ class Warehouse:
         mount = np.array([x, y, 0.0]) + np.array([math.cos(theta), math.sin(theta), 0.0]) * ARM_MOUNT
         set_camera_view(eye=mount + np.array([0, 0, HEAD_HEIGHT]),
                         target=mount + work_side * HEAD_REACH + np.array([0, 0, self.look_z]), camera_prim_path="/World/HeadCam")
+        hand_position, hand_orientation = self.hand.get_world_pose()
+        hand = quat_to_rot_matrix(hand_orientation)
+        tip = hand_position + hand @ FINGERTIP_OFFSET
+        set_camera_view(eye=hand_position + hand @ WRIST_OFFSET, target=tip + hand[:, 2] * WRIST_LOOK,
+                        camera_prim_path="/World/WristCam")
 
     def visible_points(self, box: Item) -> np.ndarray:
         depth = np.asarray(self.annotators["distance_to_image_plane"].get_data(), dtype=float).squeeze()
@@ -1500,6 +1549,12 @@ class Commands:
         coarse = yield from self.locate(box)
         yield from self.align_to(coarse.center)
         self.target = yield from self.locate(box)
+        pregrasp_joints = self.choose_grasp(box)
+        yield from self.gripper(0.04)
+        yield from self.move_arm(pregrasp_joints, 70)
+
+    def choose_grasp(self, box: Item) -> np.ndarray:
+        self.grasp_choice = None
         pregrasp_joints = None
         top_down = box.location_id == TOTE_BIN and args.scenario == "hard"
         for option in self.grasp_options(self.target, self.w.surface_z(box.location_id), top_down):
@@ -1519,8 +1574,42 @@ class Commands:
             raise SimError("ik_failed", f"no reachable grasp for {box.sku} at {box.location_id}")
         self.grasp_roll = self.grasp_choice["roll"]
         self.last_grasp = {**self.last_grasp, **{k: round(float(self.grasp_choice[k]), 3) for k in ("yaw", "pitch", "roll")}}
+        return pregrasp_joints
+
+    def expert_episode(self, box: Item, perturbation: str | None, rng: np.random.Generator):
+        self.last_grasp = {}
+        if self.w.locations[box.location_id]["kind"] == "storage":
+            yield from self.clear_blockers(box)
+        self.target = self.true_target(box)
+        if perturbation == "offset":
+            lateral = rng.uniform(*OFFSET_RANGE) * rng.choice([-1.0, 1.0])
+            self.target.center = self.target.center + np.array([0.0, lateral, 0.0])
         yield from self.gripper(0.04)
-        yield from self.move_arm(pregrasp_joints, 70)
+        yield from self.move_arm(self.choose_grasp(box), 70)
+        if perturbation == "nudge":
+            start = self.w.sync(box).copy()
+            shift = np.append(rng.uniform(-1, 1, 2), 0.0)
+            shift *= rng.uniform(*NUDGE_RANGE) / max(float(np.linalg.norm(shift)), 1e-6)
+            position, orientation = box.prim.get_world_pose()
+            for i in range(1, NUDGE_TICKS + 1):
+                box.prim.set_world_pose(start + shift * i / NUDGE_TICKS, orientation)
+                yield
+        if perturbation in ("offset", "nudge"):
+            self.target = self.true_target(box)
+            yield from self.move_arm(self.choose_grasp(box), 50)
+        if perturbation == "regrasp":
+            choice = dict(self.grasp_choice)
+            miss = rng.uniform(*OFFSET_RANGE) * rng.choice([-1.0, 1.0])
+            rotation = quat_to_rot_matrix(choice["orientation"])
+            self.grasp_choice = {**choice, "position": choice["position"] + rotation[:, 1] * miss}
+            yield from self.arm_grasp(box)
+            yield from self.gripper(0.04)
+            yield from self.reach_linear(self.grasp_choice["position"] - choice["direction"] * GRASP_STANDOFF,
+                                         choice["orientation"], 0.2)
+            self.target = self.true_target(box)
+            yield from self.move_arm(self.choose_grasp(box), 40)
+        self.last_grasp = {**self.last_grasp, "perturbation": perturbation}
+        yield from self.arm_grasp(box)
 
     def blockers(self, box: Item) -> list[Item]:
         work = np.array([math.cos(self.work_yaw()), math.sin(self.work_yaw()), 0.0])
@@ -1561,7 +1650,6 @@ class Commands:
         if free[side] < distance:
             raise SimError("blocked", f"no room to push {blocker.ycb} aside at {blocker.location_id}")
         yield from self.face_work()
-        yield from self.align_to(obb.center)
         start = obb.center - side * lateral * (half + PUSH_CLEARANCE)
         approach = None
         for height in (PUSH_HEIGHT, PUSH_HEIGHT + 0.03):
@@ -1638,6 +1726,9 @@ class Commands:
 
     def grasp_scripted(self, box: Item):
         self.last_grasp = {}
+        yield from self.face_work()
+        coarse = yield from self.locate(box)
+        yield from self.align_to(coarse.center)
         if self.pose_source == "sim" and self.w.locations[box.location_id]["kind"] == "storage":
             yield from self.clear_blockers(box)
         yield from self.prepare(box)
@@ -1687,38 +1778,53 @@ class Commands:
                            "lift_tip_dist": round(float(np.linalg.norm(self.w.fingertip() - position)), 3)}
         return self.w.holding(box, start_z)
 
+    def set_marker(self, box: Item, rng: np.random.Generator | None = None) -> np.ndarray:
+        rng = rng or np.random.default_rng()
+        self.w.marker = self.true_target(box).center + np.append(rng.normal(0.0, MARKER_NOISE, 2), 0.0)
+        return self.w.marker
+
     def grasp_vla(self, box: Item, instruction: str):
         self.last_grasp = {}
-        yield from self.prepare(box)
+        yield from self.face_work()
+        yield from self.align_to(self.set_marker(box))
+        self.w.look_z = self.w.surface_z(box.location_id) + HEAD_LOOK_ABOVE
+        yield from self.gripper(0.04)
         position = self.w.sync(box)
-        self.w.finger_target = 0.04
         self.last_vla_miss = None
-        for _ in range(VLA_MAX_STEPS):
-            obs = self.w.policy_observation()
-            body = json.dumps({
-                "instruction": instruction, "state": obs["state"].tolist(),
-                "head_jpeg_b64": encode_jpeg(obs["head"]),
-            }).encode()
-            request = urllib.request.Request(args.policy_url + "/act", data=body, headers={"content-type": "application/json"})
-            with urllib.request.urlopen(request, timeout=30) as response:
-                actions = np.array(json.loads(response.read())["actions"], dtype=float)
-            for action in actions[:VLA_EXECUTE_ACTIONS]:
-                start_arm, start_finger = self.w.arm_target.copy(), self.w.finger_target
-                try:
-                    goal_arm = self.w.solve_ik(self.w.to_world_frame(action[:3]), self.w.tool_orientation(action[3], action[4], self.grasp_roll))
-                except SimError:
-                    goal_arm = start_arm
-                for i in range(1, CONTROL_EVERY + 1):
-                    t = i / CONTROL_EVERY
-                    self.w.arm_target = start_arm + (goal_arm - start_arm) * t
-                    self.w.finger_target = float(np.clip(start_finger + (action[5] - start_finger) * t, 0.0, 0.04))
-                    yield
-                if self.w.finger_target < 0.015:
-                    for _ in range(CLOSE_STEPS):
+        try:
+            for _ in range(VLA_MAX_STEPS):
+                obs = self.w.policy_observation()
+                body = json.dumps({
+                    "instruction": instruction, "state": obs["state"].tolist(),
+                    "images": {"head": encode_jpeg(obs["head"]), "wrist": encode_jpeg(obs["wrist"])},
+                }).encode()
+                request = urllib.request.Request(args.policy_url + "/act", data=body, headers={"content-type": "application/json"})
+                with urllib.request.urlopen(request, timeout=30) as response:
+                    actions = np.array(json.loads(response.read())["actions"], dtype=float)
+                for action in actions[:VLA_EXECUTE_ACTIONS]:
+                    start_arm, start_finger = self.w.arm_target.copy(), self.w.finger_target
+                    try:
+                        goal_arm = self.w.solve_ik(self.w.to_world_frame(action[:3]), self.w.tool_orientation(action[3], action[4], action[5]))
+                    except SimError:
+                        goal_arm = start_arm
+                    for i in range(1, CONTROL_EVERY + 1):
+                        t = i / CONTROL_EVERY
+                        self.w.arm_target = start_arm + (goal_arm - start_arm) * t
+                        self.w.finger_target = float(np.clip(start_finger + (action[6] - start_finger) * t, 0.0, 0.04))
                         yield
-                    self.last_vla_miss = float(np.linalg.norm(self.w.fingertip() - position))
-                    return self.last_vla_miss < HOLD_TOLERANCE
-        return False
+                    if self.w.finger_target < 0.015:
+                        for _ in range(CLOSE_STEPS):
+                            yield
+                        _, orientation = self.w.hand.get_world_pose()
+                        rotation = quat_to_rot_matrix(orientation)
+                        self.grasp_choice = {"direction": rotation[:, 2], "orientation": orientation, "roll": 0.0,
+                                             "pitch": float(self.w.tool_pose()[4])}
+                        self.grasp_roll = 0.0
+                        self.last_vla_miss = float(np.linalg.norm(self.w.fingertip() - position))
+                        return self.last_vla_miss < HOLD_TOLERANCE
+            return False
+        finally:
+            self.w.marker = None
 
     def pick(self, sku: str, location_id: str, fail: bool = False, policy: str = "scripted",
              point: list[float] | None = None):
@@ -1993,6 +2099,24 @@ def run_silent(warehouse: Warehouse, generator):
         return stop.value
 
 
+def scene_of(location_id: str) -> str:
+    return {TOPPLE_BIN: "toppled", TOTE_BIN: "tote", DEEP_BIN: "deep"}.get(location_id, "shelf")
+
+
+def snapshot_location(warehouse: Warehouse, location_id: str) -> list:
+    return [(b, b.prim.get_world_pose()) for b in warehouse.boxes_at(location_id, background=True)]
+
+
+def restore_location(warehouse: Warehouse, location_id: str, snapshot: list) -> None:
+    for item, (position, orientation) in snapshot:
+        warehouse.set_dynamic(item, False)
+        item.location_id = location_id
+        item.prim.set_world_pose(position, orientation)
+        warehouse.set_dynamic(item, True)
+    for _ in range(SETTLE_STEPS // 4):
+        step(warehouse)
+
+
 def collect_demos(warehouse: Warehouse, episodes: int) -> None:
     from pathlib import Path
 
@@ -2006,24 +2130,35 @@ def collect_demos(warehouse: Warehouse, episodes: int) -> None:
     while saved < episodes and attempt < episodes * 3:
         if attempt % RESHUFFLE_EVERY == 0:
             warehouse.reset_inventory([], int(rng.integers(1_000_000)))
-            for _ in range(30):
+            for _ in range(SETTLE_STEPS):
                 step(warehouse)
         attempt += 1
         stocked = sorted({(b.location_id, b.sku) for b in warehouse.boxes if b.location_id and b.sku and warehouse.pickable(b.sku)
-                          and warehouse.locations[b.location_id]["kind"] == "storage"})
-        location_id, sku = stocked[rng.integers(len(stocked))]
+                          and warehouse.locations[b.location_id]["kind"] in ("storage", "staging")
+                          and (b.location_id != TOTE_BIN or args.scenario == "hard")})
+        scene = DEMO_SCENES[rng.integers(len(DEMO_SCENES))]
+        pool = [pair for pair in stocked if scene_of(pair[0]) == scene] or stocked
+        location_id, sku = pool[rng.integers(len(pool))]
         jitter = np.array([rng.uniform(-0.05, 0.05), rng.uniform(-0.2, 0.2), rng.uniform(-0.06, 0.06)])
         teleport_base(warehouse, warehouse.approach_pose(location_id) + jitter)
         for _ in range(20):
             step(warehouse)
         candidates = [b for b in warehouse.boxes_at(location_id) if b.sku == sku]
         box = candidates[rng.integers(len(candidates))]
+        snapshot = snapshot_location(warehouse, location_id)
         start = warehouse.sync(box).copy()
-        start_yaw = box.yaw
-        frames = {"head": [], "state": [], "finger_target": []}
+        perturbation = None
+        if rng.random() < args.perturb_rate:
+            perturbation = ("nudge", "offset", "regrasp")[rng.integers(3)]
+        frames = {"head": [], "wrist": [], "state": [], "finger_target": []}
+        held = False
         try:
-            run_silent(warehouse, commands.prepare(box))
-            run_recorded(warehouse, commands.arm_grasp(box), frames)
+            run_silent(warehouse, commands.face_work())
+            run_silent(warehouse, commands.align_to(commands.set_marker(box, rng)))
+            warehouse.look_z = warehouse.surface_z(location_id) + HEAD_LOOK_ABOVE
+            for _ in range(6):
+                step(warehouse)
+            run_recorded(warehouse, commands.expert_episode(box, perturbation, rng), frames)
             for i in range(3 * CONTROL_EVERY):
                 step(warehouse)
                 if i % CONTROL_EVERY == 0:
@@ -2031,27 +2166,27 @@ def collect_demos(warehouse: Warehouse, episodes: int) -> None:
                         frames[key].append(value)
             held = run_silent(warehouse, commands.lift(box, start[2]))
         except SimError as err:
-            held = False
             log.write(json.dumps({"attempt": attempt, "skipped": str(err)}) + "\n")
+        warehouse.marker = None
         warehouse.held = None
         warehouse.finger_target = 0.04
         for _ in range(20):
             step(warehouse)
-        warehouse.set_dynamic(box, False)
-        box.move(start, start_yaw)
-        warehouse.set_dynamic(box, True)
+        restore_location(warehouse, location_id, snapshot)
         if not held or len(frames["state"]) < 2:
-            log.write(json.dumps({"attempt": attempt, "skipped": "grasp not held"}) + "\n")
+            log.write(json.dumps({"attempt": attempt, "skipped": "grasp not held", "scene": scene_of(location_id)}) + "\n")
             continue
         instruction = instruction_variants(warehouse, sku)[rng.integers(3)]
         state = np.stack(frames["state"])
-        next_pose = np.concatenate([state[1:, :5], state[-1:, :5]])
+        state[:, 5] = np.unwrap(state[:, 5])
+        next_pose = np.concatenate([state[1:, :6], state[-1:, :6]])
         action = np.concatenate([next_pose, np.array(frames["finger_target"])[:, None]], axis=1).astype(np.float32)
         np.savez_compressed(
-            out / f"episode_{saved:04d}.npz", instruction=instruction,
-            head=np.stack(frames["head"]), state=state, action=action,
+            out / f"episode_{saved:04d}.npz", instruction=instruction, head=np.stack(frames["head"]),
+            wrist=np.stack(frames["wrist"]), state=state, action=action,
         )
-        log.write(json.dumps({"episode": saved, "location_id": location_id, "sku": sku,
+        log.write(json.dumps({"episode": saved, "location_id": location_id, "scene": scene_of(location_id), "sku": sku,
+                              "perturbation": perturbation, "pushed": commands.last_grasp.get("pushed"),
                               "frames": len(frames["state"]), "instruction": instruction}) + "\n")
         log.flush()
         saved += 1
@@ -2064,7 +2199,7 @@ def run_trial(warehouse: Warehouse, commands: "Commands", pose: np.ndarray, box:
         step(warehouse)
     start = warehouse.sync(box).copy()
     location_id = box.location_id
-    snapshot = [(b, b.prim.get_world_pose()) for b in warehouse.boxes_at(location_id, background=True)]
+    snapshot = snapshot_location(warehouse, location_id)
 
     def grasp_and_lift():
         commands.pose_source = "sim" if policy == "expert" else args.pose
@@ -2091,13 +2226,7 @@ def run_trial(warehouse: Warehouse, commands: "Commands", pose: np.ndarray, box:
     warehouse.finger_target = 0.04
     for _ in range(30):
         step(warehouse)
-    for item, (position, orientation) in snapshot:
-        warehouse.set_dynamic(item, False)
-        item.location_id = location_id
-        item.prim.set_world_pose(position, orientation)
-        warehouse.set_dynamic(item, True)
-    for _ in range(SETTLE_STEPS // 4):
-        step(warehouse)
+    restore_location(warehouse, location_id, snapshot)
     return {"success": result, "sim_seconds": ticks * PHYSICS_DT, "miss_m": miss, **getattr(commands, "last_grasp", {})}
 
 
