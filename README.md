@@ -143,6 +143,8 @@ Exact counts are limited by boxes hidden behind the front row, so cycle counts u
 
 ### Grasping: scripted vs SmolVLA vs diffusion (`--eval-grasp`)
 
+> Measured before the side-stance rework (base facing the shelf). The current baseline runs the scripted grasp; both learned policies need new demos from the side stance and are disabled until retrained.
+
 YCB objects on realistic shelves (same-product clusters, some toppled background items). 30 randomized trials per
 policy, attach-on-grasp, `--graphics basic` (`eval/results/grasp_ycb_smolvla/`, `eval/results/grasp_ycb_diffusion/`).
 Both learned policies were trained on the same 400 successful scripted demonstrations.
@@ -179,6 +181,7 @@ This is a portfolio demo, so the simplifications are stated plainly:
 - **Grasp physics.** YCB objects are rigid bodies with convex-hull colliders, but the demo uses attach-on-grasp: once
   the fingers close on the item it is attached to the hand. Physical grasping (`--grasp physical`) reaches 65% and
   stays experimental until it passes 80%.
+- **Side-stance manipulation.** The base parks parallel to the shelf, receiving pallet or conveyor and slides to line the arm up with the item; the arm grasps with a horizontal gripper, backs straight out and sets the item down in a tote on a raised stand behind it (a horizontal gripper cannot reach the deck itself). Dispatch and stow are the reverse transfer. The scripted grasp plans from the simulator's object pose; the VLM decides which object.
 - **Two pickable products.** Mustard bottle and tomato soup can are robot-pickable; the other 10 YCB products are
   real WMS SKUs flagged `robot_pickable = false`, which the agent refuses and routes to manual handling.
 - **Navigation.** A corridor waypoint planner inside the simulator drives the holonomic base. ROS2 / Nav2 and MoveIt2
