@@ -36,20 +36,33 @@ if (( NEED_MB > FREE_MB )); then
   exit 1
 fi
 
+pin_containers() {
+  for container in $(docker compose --profile isaac ps -q); do
+    docker update --cpuset-cpus "$CPUS" "$container" > /dev/null
+  done
+}
+
+taskset -c "$CPUS" docker compose up -d
+pin_containers
+
+echo "Waiting for the LLM (first start ~3-5 min, cached restarts ~1 min)..."
+until curl -sf "http://localhost:8001/v1/models" > /dev/null; do
+  if [[ "$(docker inspect -f '{{.State.Status}}' "$(docker compose ps -aq llm)")" != running ]]; then
+    echo "LLM container stopped during startup:" >&2
+    docker compose logs --tail 20 llm >&2
+    exit 1
+  fi
+  sleep 5
+done
+
 if [[ "$GRASP_POLICY" != scripted ]]; then
   taskset -c "$CPUS" nohup "$VLA_PYTHON" vla/policy_server.py --checkpoint "$CHECKPOINT" > vla/policy_server.log 2>&1 &
 fi
 
-taskset -c "$CPUS" docker compose --profile isaac up -d
 taskset -c "$CPUS" docker compose --profile isaac up -d --force-recreate --no-deps isaac
-for container in $(docker compose --profile isaac ps -q); do
-  docker update --cpuset-cpus "$CPUS" "$container" > /dev/null
-done
-
-echo "Waiting for the LLM (first start ~3-5 min, cached restarts ~1 min)..."
-until curl -sf "http://localhost:8001/v1/models" > /dev/null; do sleep 5; done
+pin_containers
 echo "Waiting for Isaac Sim..."
-until curl -sf "http://localhost:8020/" > /dev/null || docker compose logs isaac 2>&1 | grep -q "app ready"; do sleep 5; done
+until curl -sf "http://localhost:8020/health" > /dev/null; do sleep 5; done
 
 IP=$(hostname -I | awk '{print $1}')
 cat <<EOF
