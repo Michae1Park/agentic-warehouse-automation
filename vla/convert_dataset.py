@@ -5,14 +5,14 @@ from pathlib import Path
 import numpy as np
 from lerobot.datasets.lerobot_dataset import LeRobotDataset
 
-JOINTS = ["tip_x", "tip_y", "tip_z", "gripper"]
+JOINTS = ["tip_x", "tip_y", "tip_z", "yaw", "pitch", "gripper"]
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Convert raw Isaac grasp demos into a LeRobot dataset")
-    parser.add_argument("--raw", default="vla/data/raw")
-    parser.add_argument("--root", default="vla/data/lerobot")
-    parser.add_argument("--repo-id", default="local/warehouse_shelf_grasp")
+    parser.add_argument("--raw", default="vla/data/raw_ycb")
+    parser.add_argument("--root", default="vla/data/lerobot_ycb")
+    parser.add_argument("--repo-id", default="local/warehouse_ycb_grasp")
     parser.add_argument("--fps", type=int, default=10)
     args = parser.parse_args()
 
