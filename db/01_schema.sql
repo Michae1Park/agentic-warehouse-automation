@@ -13,7 +13,8 @@ CREATE TABLE products (
     size_cm     NUMERIC(5, 1)[] NOT NULL,
     color       TEXT NOT NULL,
     description TEXT NOT NULL DEFAULT '',
-    ycb_object  TEXT
+    ycb_object  TEXT,
+    robot_pickable BOOLEAN NOT NULL DEFAULT true
 );
 
 CREATE TABLE locations (

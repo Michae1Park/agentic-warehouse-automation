@@ -108,6 +108,13 @@ async def _allocate(conn: AsyncConnection, sku: str, needed: int) -> tuple[list[
     return allocations, needed
 
 
+async def _ensure_pickable(conn: AsyncConnection, sku: str) -> None:
+    cur = await conn.execute("SELECT name, robot_pickable FROM products WHERE sku = %s", (sku,))
+    product = await cur.fetchone()
+    if product and not product["robot_pickable"]:
+        raise WarehouseError(f"{sku} ({product['name']}) is not robot-pickable; it must be handled manually")
+
+
 async def plan_fulfillment(
     order_id: int, robot_id: str, dispatch_location: str | None, conversation_id: str | None
 ) -> dict[str, Any]:
@@ -136,6 +143,7 @@ async def plan_fulfillment(
         )
         allocations, shortages = [], []
         for line in await cur.fetchall():
+            await _ensure_pickable(conn, line["sku"])
             allocated, short = await _allocate(conn, line["sku"], line["needed"])
             allocations += allocated
             if short:
@@ -406,6 +414,7 @@ async def plan_relocation(
     if quantity <= 0:
         raise WarehouseError("quantity must be positive")
     async with pool.connection() as conn, conn.transaction():
+        await _ensure_pickable(conn, sku)
         cur = await conn.execute(
             "SELECT * FROM locations WHERE id = %s AND kind IN ('storage', 'staging')", (to_location,)
         )

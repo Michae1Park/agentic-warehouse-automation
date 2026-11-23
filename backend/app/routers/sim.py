@@ -46,7 +46,7 @@ async def reset(request: ResetRequest, http_request: Request):
         if request.generated_orders:
             rng = random.Random(request.seed)
             await conn.execute("DELETE FROM orders")
-            cur = await conn.execute("SELECT sku FROM products ORDER BY sku")
+            cur = await conn.execute("SELECT sku FROM products WHERE robot_pickable ORDER BY sku")
             skus = [r["sku"] for r in await cur.fetchall()]
             for order_id, customer, priority, dispatch, lines in _generate_orders(rng, request.generated_orders, skus):
                 await conn.execute(
