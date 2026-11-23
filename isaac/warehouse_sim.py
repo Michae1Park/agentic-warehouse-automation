@@ -1053,7 +1053,7 @@ class Warehouse:
             layer = order // TOTE_LAYER
             box = items[item]
             box.location_id = location_id
-            box.toppled = bool(self.rng.random() < 0.5)
+            box.toppled = bool(self.rng.random() < 0.5) and box.size[0] <= MAX_GRASP_WIDTH
             offset = self.rng.uniform(-inner, inner)
             box.move(base + np.array([offset[0], offset[1], 0.08 + 0.06 * layer]), self.rng.uniform(-math.pi, math.pi))
             tilt = euler_angles_to_quat(np.array([*self.rng.uniform(-0.6, 0.6, 2), 0.0]))
@@ -1423,7 +1423,12 @@ class Commands:
         for i in range(1, segments + 1):
             t = i / segments
             blended = start_orientation * (1 - t) + end_orientation * t
-            goal = self.w.solve_ik(start + (position - start) * t, blended / np.linalg.norm(blended))
+            try:
+                goal = self.w.solve_ik(start + (position - start) * t, blended / np.linalg.norm(blended))
+            except SimError:
+                if i == segments:
+                    raise
+                continue
             begin = self.w.arm_target.copy()
             for k in range(1, ticks + 1):
                 self.w.arm_target = begin + (goal - begin) * k / ticks
@@ -1531,7 +1536,7 @@ class Commands:
         for axis in target.axes.T:
             if np.linalg.norm(axis[:2]) > 0.3:
                 for angle in (math.atan2(axis[1], axis[0]), math.atan2(-axis[1], -axis[0])):
-                    if top_down or abs(wrap_angle(angle - work)) < 0.8:
+                    if top_down or abs(wrap_angle(angle - work)) < 1.1:
                         yaws.append(angle)
                         yaws.append(angle + math.pi / 2)
         height = target.height
@@ -1539,7 +1544,7 @@ class Commands:
         options = []
         for yaw in yaws:
             for pitch in ((1.2, math.pi / 2) if top_down else (*GRASP_PITCH_FALLBACKS, 1.2, math.pi / 2)):
-                for roll in (0.0, math.pi / 2, math.pi):
+                for roll in (0.0, math.pi / 2):
                     rotation = tool_rotation(yaw, pitch, roll)
                     width = target.extent_along(rotation[:, 1])
                     if width > MAX_GRASP_WIDTH:
