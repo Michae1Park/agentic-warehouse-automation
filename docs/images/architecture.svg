@@ -1,0 +1,164 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1240" width="1600" height="1240" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#334155"/>
+    </marker>
+    <style>
+      .title{font-size:38px;font-weight:800;fill:#0f172a}
+      .subtitle{font-size:20px;fill:#475569}
+      .tag{font-size:17px;font-weight:800;fill:#fff;letter-spacing:1px}
+      .layer{font-size:27px;font-weight:800}
+      .speed{font-size:18px;font-weight:600;fill:#475569}
+      .h{font-size:21px;font-weight:700;fill:#0f172a}
+      .t{font-size:18px;fill:#334155}
+      .flow{font-size:18px;font-weight:700;fill:#0f172a}
+      .kpi{font-size:40px;font-weight:800}
+      .kpil{font-size:18px;fill:#334155}
+      .note{font-size:15px;fill:#64748b}
+      .card{fill:#fff;stroke:#cbd5e1;stroke-width:1.5}
+    </style>
+  </defs>
+
+  <rect width="1600" height="1240" fill="#f8fafc"/>
+
+  <text x="40" y="62" class="title">Agentic Warehouse Automation</text>
+  <text x="40" y="96" class="subtitle">A tool-calling AI agent whose tools are robots</text>
+
+  <!-- UI -->
+  <rect x="40" y="122" width="1100" height="70" rx="12" fill="#fff" stroke="#94a3b8" stroke-width="1.5"/>
+  <text x="64" y="166" class="h">Operations dashboard</text>
+  <text x="300" y="166" class="t">Chat with tool trace · live KPIs · orders · Isaac stream · floor map</text>
+  <path d="M590,192 L590,226" stroke="#334155" stroke-width="2" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
+
+  <!-- SYSTEM 2 -->
+  <rect x="40" y="230" width="1100" height="250" rx="16" fill="#f5f3ff" stroke="#7c3aed" stroke-width="2.5"/>
+  <rect x="40" y="230" width="190" height="40" rx="10" fill="#7c3aed"/>
+  <text x="60" y="257" class="tag">SYSTEM 2</text>
+  <text x="250" y="260" class="layer" fill="#5b21b6">Reasoning agent · decides what to do</text>
+  <text x="1118" y="260" class="speed" text-anchor="end">seconds</text>
+
+  <rect x="64" y="290" width="330" height="168" rx="10" class="card"/>
+  <text x="88" y="326" class="h">Qwen3.8-27B · vLLM</text>
+  <text x="88" y="362" class="t">Open weights, self-hosted</text>
+  <text x="88" y="392" class="t">One model: agent + vision</text>
+  <text x="88" y="422" class="t">No agent framework</text>
+
+  <rect x="414" y="290" width="330" height="168" rx="10" class="card"/>
+  <text x="438" y="326" class="h">16 typed tools</text>
+  <text x="438" y="362" class="t">Each wraps a SQL transaction</text>
+  <text x="438" y="392" class="t">plan_fulfillment</text>
+  <text x="438" y="422" class="t">dispatch_task → robots</text>
+
+  <rect x="764" y="290" width="352" height="168" rx="10" class="card"/>
+  <text x="788" y="326" class="h">Business judgment</text>
+  <text x="788" y="362" class="t">Blocks orders it can't fill</text>
+  <text x="788" y="392" class="t">Chains restock → fulfill</text>
+  <text x="788" y="422" class="t">Reports results unprompted</text>
+
+  <!-- 2 <-> 1 -->
+  <path d="M330,482 L330,538" stroke="#334155" stroke-width="2.2" marker-end="url(#arrow)"/>
+  <text x="346" y="517" class="flow">dispatch_task(plan)</text>
+  <path d="M760,538 L760,482" stroke="#334155" stroke-width="2.2" marker-end="url(#arrow)"/>
+  <text x="776" y="517" class="flow">result / exception event</text>
+
+  <!-- SYSTEM 1 -->
+  <rect x="40" y="540" width="1100" height="270" rx="16" fill="#eff6ff" stroke="#2563eb" stroke-width="2.5"/>
+  <rect x="40" y="540" width="190" height="40" rx="10" fill="#2563eb"/>
+  <text x="60" y="567" class="tag">SYSTEM 1</text>
+  <text x="250" y="570" class="layer" fill="#1e40af">Skills &amp; perception · does it reliably</text>
+  <text x="1118" y="570" class="speed" text-anchor="end">0.1 – 1 s</text>
+
+  <rect x="64" y="600" width="252" height="188" rx="10" class="card"/>
+  <text x="86" y="636" class="h">Task executor</text>
+  <text x="86" y="672" class="t">State machine</text>
+  <text x="86" y="700" class="t">stored in Postgres</text>
+  <text x="86" y="736" class="t">Resumes after restart</text>
+
+  <rect x="332" y="600" width="252" height="188" rx="10" class="card"/>
+  <text x="354" y="636" class="h">VLM inspection</text>
+  <text x="354" y="672" class="t">Checks bins &amp; totes</text>
+  <text x="354" y="700" class="t">against the WMS</text>
+  <text x="354" y="736" class="t">Grounds “the red can”</text>
+
+  <rect x="600" y="600" width="252" height="188" rx="10" class="card"/>
+  <text x="622" y="636" class="h">VLA grasping</text>
+  <text x="622" y="672" class="t">SmolVLA fine-tuned</text>
+  <text x="622" y="700" class="t">on 400 YCB sim demos</text>
+  <text x="622" y="736" class="t">Scripted IK fallback</text>
+
+  <rect x="868" y="600" width="248" height="188" rx="10" class="card"/>
+  <text x="890" y="636" class="h">Self-recovery</text>
+  <text x="890" y="672" class="t">Regrasp · replan</text>
+  <text x="890" y="700" class="t">Recount + reroute</text>
+  <text x="890" y="736" class="t">Else escalate ↑</text>
+
+  <!-- 1 <-> 0 -->
+  <path d="M330,812 L330,868" stroke="#334155" stroke-width="2.2" marker-end="url(#arrow)"/>
+  <text x="346" y="847" class="flow">gripper &amp; base targets</text>
+  <path d="M760,868 L760,812" stroke="#334155" stroke-width="2.2" marker-end="url(#arrow)"/>
+  <text x="776" y="847" class="flow">joint state · camera frames</text>
+
+  <!-- SYSTEM 0 -->
+  <rect x="40" y="870" width="1100" height="250" rx="16" fill="#f0fdf4" stroke="#16a34a" stroke-width="2.5"/>
+  <rect x="40" y="870" width="190" height="40" rx="10" fill="#16a34a"/>
+  <text x="60" y="897" class="tag">SYSTEM 0</text>
+  <text x="250" y="900" class="layer" fill="#166534">Control &amp; physics · moves the robot</text>
+  <text x="1118" y="900" class="speed" text-anchor="end">60 Hz</text>
+
+  <rect x="64" y="930" width="330" height="168" rx="10" class="card"/>
+  <text x="88" y="966" class="h">Robot gateway</text>
+  <text x="88" y="1002" class="t">Mock robot for fast evals</text>
+  <text x="88" y="1032" class="t">Isaac Sim robot</text>
+  <text x="88" y="1062" class="t">Ready for ROS 2 / hardware</text>
+
+  <rect x="414" y="930" width="330" height="168" rx="10" class="card"/>
+  <text x="438" y="966" class="h">Isaac Sim 5.1</text>
+  <text x="438" y="1002" class="t">Ridgeback + Franka arm</text>
+  <text x="438" y="1032" class="t">Scene built from the WMS</text>
+  <text x="438" y="1062" class="t">Seeded fault injection</text>
+
+  <rect x="764" y="930" width="352" height="168" rx="10" class="card"/>
+  <text x="788" y="966" class="h">Low-level control</text>
+  <text x="788" y="1002" class="t">Lula inverse kinematics</text>
+  <text x="788" y="1032" class="t">Joint controllers</text>
+  <text x="788" y="1062" class="t">Waypoint base planner</text>
+
+  <!-- System of record -->
+  <rect x="1180" y="122" width="380" height="430" rx="16" fill="#fff7ed" stroke="#ea580c" stroke-width="2.5"/>
+  <rect x="1180" y="122" width="250" height="40" rx="10" fill="#ea580c"/>
+  <text x="1200" y="149" class="tag">SYSTEM OF RECORD</text>
+  <text x="1204" y="204" class="h">Postgres WMS</text>
+  <text x="1204" y="238" class="t">Orders, stock, tasks,</text>
+  <text x="1204" y="266" class="t">exceptions, audit log</text>
+  <text x="1204" y="316" class="h">Transactional</text>
+  <text x="1204" y="350" class="t">Row-locked reservations</text>
+  <text x="1204" y="378" class="t">One transaction per pick</text>
+  <text x="1204" y="428" class="h">Live everywhere</text>
+  <text x="1204" y="462" class="t">DB change → NOTIFY →</text>
+  <text x="1204" y="490" class="t">WebSocket → dashboard</text>
+  <text x="1204" y="530" class="note">Every robot step writes back</text>
+  <path d="M1180,355 L1144,355" stroke="#ea580c" stroke-width="2.2" stroke-dasharray="6 5" marker-end="url(#arrow)"/>
+  <path d="M1180,520 L1144,690" stroke="#ea580c" stroke-width="2.2" stroke-dasharray="6 5" marker-end="url(#arrow)"/>
+
+  <!-- Results -->
+  <rect x="1180" y="580" width="380" height="540" rx="16" fill="#fff" stroke="#0f172a" stroke-width="2"/>
+  <rect x="1180" y="580" width="250" height="40" rx="10" fill="#0f172a"/>
+  <text x="1200" y="607" class="tag">MEASURED RESULTS</text>
+
+  <text x="1204" y="680" class="kpi" fill="#16a34a">75% <tspan font-size="24" fill="#64748b">vs 42%</tspan></text>
+  <text x="1204" y="710" class="kpil">orders filled despite faults</text>
+
+  <text x="1204" y="780" class="kpi" fill="#2563eb">94% <tspan font-size="24" fill="#64748b">vs 77%</tspan></text>
+  <text x="1204" y="810" class="kpil">inventory accuracy, faults</text>
+
+  <text x="1204" y="880" class="kpi" fill="#7c3aed">100%</text>
+  <text x="1204" y="910" class="kpil">orders filled, nominal</text>
+
+  <text x="1204" y="980" class="kpi" fill="#ea580c">96–100%</text>
+  <text x="1204" y="1010" class="kpil">VLM shelf-check accuracy</text>
+
+  <text x="1204" y="1058" class="note">Agent vs scripted baseline · 72 sim orders</text>
+  <text x="1204" y="1080" class="note">3 seeds · sim only · agent: Qwen3.8-27B</text>
+
+  <text x="40" y="1180" class="subtitle">Python · FastAPI · Postgres · React · vLLM · Isaac Sim · LeRobot · Docker · single NVIDIA L40S</text>
+</svg>
