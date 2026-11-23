@@ -4,6 +4,7 @@ cd "$(dirname "$0")/.."
 
 CPUS="${CPUS:-16-31}"
 GRASP_POLICY="${GRASP_POLICY:-scripted}"
+GRAPHICS="${GRAPHICS:-high}"
 CHECKPOINT="vla/outputs/smolvla_grasp/checkpoints/last/pretrained_model"
 VLA_PYTHON="${VLA_PYTHON:-$HOME/workspace/robo-learning/.venv/bin/python}"
 
@@ -13,7 +14,7 @@ BACKEND_PORT=8010
 LLM_PORT=8001
 ROBOT_BACKEND=isaac
 SIM_URL=http://localhost:8020
-ISAAC_ARGS="--livestream --graphics high"
+ISAAC_ARGS="--livestream --graphics $GRAPHICS"
 GRASP_POLICY=$GRASP_POLICY
 $LLM_SETTINGS
 EOF

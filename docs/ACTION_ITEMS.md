@@ -93,13 +93,13 @@ Running checklist for the Agentic Warehouse Automation demo.
 - [x] Agent tools resolve product names (agent had hit its step limit on "Move 2 units of Wireless Mouse …"); verified: relocation queued on the first try
 - [x] Label colors tuned for the high-graphics lighting (brown, orange) + prompt hint; verified brown/orange totes pass. Grey still reads as white (open, superseded by the YCB pivot)
 - [ ] Known: grey labels read as white or as a non-existent SKU (low contrast under bright lighting); superseded by the YCB pivot
-- [ ] Re-run soak after fixes; cold-start `scripts/demo.sh`; one `--graphics basic` launch
+- [x] Cold-start `scripts/demo.sh` (LLM before Isaac, `/health` wait, 1m45s cached) and `GRAPHICS=basic` launch with #1042 fulfilled. Soak re-run skipped: superseded by the YCB pivot
 
 ## Step 10 — YCB pivot: language-conditioned grasping
 
 Plan: [YCB Pivot Plan](https://claude.ai/artifact/DEaQ4NEy4PeF2sDDCsHHaj). Decisions: Isaac YCB objects, mixed bins with random poses, physical contact grasping, SmolVLA + diffusion policy vs scripted, descriptions and SKUs in chat, affordances learned implicitly.
 
-- [ ] M0 Stabilize baseline: soak fixes deployed, soak re-run clean, pre-pivot demo tagged
+- [x] M0 Stabilize baseline: soak fixes deployed, pre-pivot demo tagged `pre-ycb-pivot` (soak re-run skipped)
 - [ ] M1 YCB catalog + messy bins: 10–12 objects, SKU → object + description, 2–3 products per bin, random poses, a few misplaced items
 - [ ] M2 Physical grasping: gripper friction/contact tuning, collision meshes, scripted grasp from true pose, per-object success over 100+ trials
 - [ ] M3 Language + grounding: agent tools take descriptions, VLM locates bin and grounds the target among distractors, grounding accuracy benchmark
