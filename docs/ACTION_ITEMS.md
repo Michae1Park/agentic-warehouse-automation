@@ -168,7 +168,7 @@ Goal: three realistic warehouse tasks, each showing one applied AI technology.
    - Recorded episode = ready pose → approach → push → retrace → ready pose (142 frames at 0.08 m/s); head image carries the magenta target marker, wrist camera sees the paddle blade and the blocker
    - [ ] Push across blocker orientations (random yaw): rotated boxes pivot instead of sliding the full distance
    - [ ] Collect `push_v1` (200 episodes, seed 21, 0.08 m/s, 6-D rotation): running. Old 11 Euler episodes kept in `vla/data/push_v0_euler/`
-   - [ ] Train SmolVLA + diffusion on push demos (`TASK=push vla/train.sh`), eval push success per object type and orientation
+   - [ ] Train SmolVLA + diffusion on push demos (`TASK=push vla/train.sh`; SmolVLA queued to start automatically once collection finishes with ≥150 episodes), eval push success per object type and orientation
    - [ ] Separate fetch action after the push: post-push grasp currently fails (fingertip 0.6–0.7 m off the grasp-ready pose, `eval/results/push_stream/`)
 2. **Cycle count with discrepancies (VLM)**: the agent counts bins by camera, finds short and misplaced stock, corrects the record and relocates the stock
    - [ ] E2E run with `misplaced_stock_rate` and missing stock: discrepancies raised, records corrected, relocation task planned and executed
