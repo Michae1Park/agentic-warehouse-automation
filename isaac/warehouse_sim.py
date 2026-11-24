@@ -361,30 +361,21 @@ class Target:
         return bool(np.all(np.abs(local) <= self.extents / 2 + margin))
 
 
-def rotation_to_vector(rotation: np.ndarray) -> np.ndarray:
-    angle = math.acos(float(np.clip((np.trace(rotation) - 1) / 2, -1.0, 1.0)))
-    if angle < 1e-6:
-        return np.zeros(3)
-    axis = np.array([rotation[2, 1] - rotation[1, 2], rotation[0, 2] - rotation[2, 0], rotation[1, 0] - rotation[0, 1]])
-    return axis / (2 * math.sin(angle)) * angle
+def rotation_to_6d(rotation: np.ndarray) -> np.ndarray:
+    return rotation[:, :2].T.reshape(6)
 
 
-def vector_to_rotation(vector: np.ndarray) -> np.ndarray:
-    angle = float(np.linalg.norm(vector))
-    if angle < 1e-6:
-        return np.eye(3)
-    k = np.asarray(vector) / angle
-    skew = np.array([[0, -k[2], k[1]], [k[2], 0, -k[0]], [-k[1], k[0], 0]])
-    return np.eye(3) + math.sin(angle) * skew + (1 - math.cos(angle)) * skew @ skew
+def rotation_from_6d(features: np.ndarray) -> np.ndarray:
+    first = features[:3] / np.linalg.norm(features[:3])
+    second = features[3:] - first * float(first @ features[3:])
+    second = second / np.linalg.norm(second)
+    return np.stack([first, second, np.cross(first, second)], axis=1)
 
 
 def tool_rotation(yaw: float, pitch: float, roll: float) -> np.ndarray:
     base = quat_to_rot_matrix(euler_angles_to_quat(np.array([0.0, math.pi / 2 + pitch, yaw])))
     spin = np.array([[math.cos(roll), -math.sin(roll), 0], [math.sin(roll), math.cos(roll), 0], [0, 0, 1]])
     return base @ spin
-
-
-PUSH_REFERENCE = tool_rotation(0.0, 0.0, 0.0)
 
 
 class Warehouse:
@@ -889,11 +880,11 @@ class Warehouse:
 
     def push_pose(self) -> np.ndarray:
         _, orientation = self.hand.get_world_pose()
-        relative = PUSH_REFERENCE.T @ self.base_rotation().T @ quat_to_rot_matrix(orientation)
-        return np.concatenate([self.to_base_frame(self.fingertip()), rotation_to_vector(relative)])
+        rotation = self.base_rotation().T @ quat_to_rot_matrix(orientation)
+        return np.concatenate([self.to_base_frame(self.fingertip()), rotation_to_6d(rotation)])
 
-    def push_orientation(self, vector: np.ndarray) -> np.ndarray:
-        return rot_matrix_to_quat(self.base_rotation() @ PUSH_REFERENCE @ vector_to_rotation(vector))
+    def push_orientation(self, features: np.ndarray) -> np.ndarray:
+        return rot_matrix_to_quat(self.base_rotation() @ rotation_from_6d(np.asarray(features)))
 
     def tool_orientation(self, yaw: float, pitch: float, roll: float = 0.0) -> np.ndarray:
         rotation = quat_to_rot_matrix(euler_angles_to_quat(np.array([0.0, math.pi / 2 + pitch, self.base_pose()[2] + yaw])))
@@ -2745,7 +2736,8 @@ def collect_push_demos(warehouse: Warehouse, episodes: int) -> None:
         instruction = (f"push the {name} to the {direction}", f"slide the {name} {direction} out of the way",
                        f"clear the {name} by pushing it {direction}")[rng.integers(3)]
         state = np.stack(frames["state"])
-        next_pose = np.concatenate([state[1:, :6], state[-1:, :6]])
+        pose_size = state.shape[1] - 1
+        next_pose = np.concatenate([state[1:, :pose_size], state[-1:, :pose_size]])
         action = np.concatenate([next_pose, np.array(frames["finger_target"])[:, None]], axis=1).astype(np.float32)
         np.savez_compressed(out / f"episode_{saved:04d}.npz", instruction=instruction, head=np.stack(frames["head"]),
                             wrist=np.stack(frames["wrist"]), state=state, action=action)

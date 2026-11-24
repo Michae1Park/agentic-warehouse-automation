@@ -5,7 +5,7 @@ from pathlib import Path
 import numpy as np
 from lerobot.datasets.lerobot_dataset import LeRobotDataset
 
-ORIENTATION_NAMES = {"euler": ["yaw", "pitch", "roll"], "rotvec": ["rot_x", "rot_y", "rot_z"]}
+ORIENTATION_NAMES = {"euler": ["yaw", "pitch", "roll"], "rot6d": ["r11", "r21", "r31", "r12", "r22", "r32"]}
 CAMERAS = ("head", "wrist")
 
 

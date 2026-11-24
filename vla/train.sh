@@ -9,7 +9,7 @@ STEPS="${STEPS:-8000}"
 TASK="${TASK:-scenes}"
 OUTPUT="${OUTPUT:-vla/outputs/${POLICY}_${TASK}}"
 if [[ "$TASK" == push ]]; then
-  RAW=vla/data/push_v1 ROOT=vla/data/lerobot_push REPO=local/warehouse_push ORIENTATION=rotvec
+  RAW=vla/data/push_v1 ROOT=vla/data/lerobot_push REPO=local/warehouse_push ORIENTATION=rot6d
 else
   RAW=vla/data/raw_scenes ROOT=vla/data/lerobot_scenes REPO=local/warehouse_scenes_grasp ORIENTATION=euler
 fi
