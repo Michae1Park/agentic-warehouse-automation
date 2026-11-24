@@ -5,7 +5,7 @@ from pathlib import Path
 import numpy as np
 from lerobot.datasets.lerobot_dataset import LeRobotDataset
 
-JOINTS = ["tip_x", "tip_y", "tip_z", "yaw", "pitch", "roll", "gripper"]
+ORIENTATION_NAMES = {"euler": ["yaw", "pitch", "roll"], "rotvec": ["rot_x", "rot_y", "rot_z"]}
 CAMERAS = ("head", "wrist")
 
 
@@ -15,8 +15,10 @@ def main() -> None:
     parser.add_argument("--root", default="vla/data/lerobot_scenes")
     parser.add_argument("--repo-id", default="local/warehouse_scenes_grasp")
     parser.add_argument("--fps", type=int, default=10)
+    parser.add_argument("--orientation", choices=sorted(ORIENTATION_NAMES), default="euler")
     args = parser.parse_args()
 
+    joints = ["tip_x", "tip_y", "tip_z", *ORIENTATION_NAMES[args.orientation], "gripper"]
     root = Path(args.root)
     if root.exists():
         shutil.rmtree(root)
@@ -29,8 +31,8 @@ def main() -> None:
         features={
             **{f"observation.images.{camera}": {"dtype": "image", "shape": (height, width, 3),
                                                 "names": ["height", "width", "channel"]} for camera in CAMERAS},
-            "observation.state": {"dtype": "float32", "shape": (len(JOINTS),), "names": JOINTS},
-            "action": {"dtype": "float32", "shape": (len(JOINTS),), "names": JOINTS},
+            "observation.state": {"dtype": "float32", "shape": (len(joints),), "names": joints},
+            "action": {"dtype": "float32", "shape": (len(joints),), "names": joints},
         },
     )
     for path in episodes:
