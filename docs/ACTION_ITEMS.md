@@ -150,3 +150,18 @@ Decision: the VLA must earn its place. Three hard scenes, a fair perception-only
 - [ ] Collect demos per scene, retrain SmolVLA + diffusion (head camera now faces the work side)
 - [ ] Eval per scene: depth-based scripted vs SmolVLA vs diffusion
 - [ ] README: why each scene breaks the scripted planner; FIFO/expiry rotation as a further real-world reason for back-row picks; deformables (bags, pouches) as future work
+
+
+## Step 13 — Unseen inbound items (scripted, no VLA)
+
+Decision: two hard scenarios. Deep shelving (push then grasp) is the only one that justifies the VLA. Unseen items break perception and the product catalog, not the motion, so this task stays scripted.
+
+Task: an inbound tote at STAGING-1 holds known SKUs mixed with items that are not in the catalog. Qwen identifies each item, registers the unknown ones, chooses an empty bin that fits, and the robot moves them from the tote to the shelf.
+
+- [ ] Sim: inbound tote stocked with non-catalog props; item sizes read from USD bounds instead of `YCB_SIZES`
+- [ ] Sim: `inspect_inbound` returns one detection per item (instance id, image crop, size measured from depth)
+- [ ] Prior-free grasping: `estimate_target` fits extents from depth alone when the item has no catalog size
+- [ ] Backend: `products.needs_review`, `register_product` (new SKU, size from depth, receipt recorded at STAGING-1), sim item linked to the new SKU
+- [ ] Agent: `inspect_inbound` tool (VLM matches each detection to the catalog or describes it), bin choice by size, then `replenish_stock` + `dispatch_task`
+- [ ] Gripper limit: items wider than 8 cm on every axis are registered but flagged not robot-pickable
+- [ ] E2E: "a delivery arrived at receiving, put it away" with 2 known + 2 unseen items; eval identification accuracy and put-away success
