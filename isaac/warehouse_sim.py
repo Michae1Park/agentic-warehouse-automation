@@ -361,10 +361,30 @@ class Target:
         return bool(np.all(np.abs(local) <= self.extents / 2 + margin))
 
 
+def rotation_to_vector(rotation: np.ndarray) -> np.ndarray:
+    angle = math.acos(float(np.clip((np.trace(rotation) - 1) / 2, -1.0, 1.0)))
+    if angle < 1e-6:
+        return np.zeros(3)
+    axis = np.array([rotation[2, 1] - rotation[1, 2], rotation[0, 2] - rotation[2, 0], rotation[1, 0] - rotation[0, 1]])
+    return axis / (2 * math.sin(angle)) * angle
+
+
+def vector_to_rotation(vector: np.ndarray) -> np.ndarray:
+    angle = float(np.linalg.norm(vector))
+    if angle < 1e-6:
+        return np.eye(3)
+    k = np.asarray(vector) / angle
+    skew = np.array([[0, -k[2], k[1]], [k[2], 0, -k[0]], [-k[1], k[0], 0]])
+    return np.eye(3) + math.sin(angle) * skew + (1 - math.cos(angle)) * skew @ skew
+
+
 def tool_rotation(yaw: float, pitch: float, roll: float) -> np.ndarray:
     base = quat_to_rot_matrix(euler_angles_to_quat(np.array([0.0, math.pi / 2 + pitch, yaw])))
     spin = np.array([[math.cos(roll), -math.sin(roll), 0], [math.sin(roll), math.cos(roll), 0], [0, 0, 1]])
     return base @ spin
+
+
+PUSH_REFERENCE = tool_rotation(0.0, 0.0, 0.0)
 
 
 class Warehouse:
@@ -712,6 +732,7 @@ class Warehouse:
 
     def _build_tools(self) -> None:
         self.tool: str | None = None
+        self.push_encoding = False
         self.trail: list[np.ndarray] | None = None
         self.toolbox = VisualCuboid("/World/Toolbox", position=np.array([0.0, 0.0, 0.3]), scale=TOOLBOX_SIZE,
                                     color=np.array([0.62, 0.1, 0.08]))
@@ -866,6 +887,14 @@ class Warehouse:
         roll = math.atan2(spin[1, 0], spin[0, 0])
         return np.concatenate([self.to_base_frame(self.fingertip()), [yaw, pitch, roll]])
 
+    def push_pose(self) -> np.ndarray:
+        _, orientation = self.hand.get_world_pose()
+        relative = PUSH_REFERENCE.T @ self.base_rotation().T @ quat_to_rot_matrix(orientation)
+        return np.concatenate([self.to_base_frame(self.fingertip()), rotation_to_vector(relative)])
+
+    def push_orientation(self, vector: np.ndarray) -> np.ndarray:
+        return rot_matrix_to_quat(self.base_rotation() @ PUSH_REFERENCE @ vector_to_rotation(vector))
+
     def tool_orientation(self, yaw: float, pitch: float, roll: float = 0.0) -> np.ndarray:
         rotation = quat_to_rot_matrix(euler_angles_to_quat(np.array([0.0, math.pi / 2 + pitch, self.base_pose()[2] + yaw])))
         spin = np.array([[math.cos(roll), -math.sin(roll), 0], [math.sin(roll), math.cos(roll), 0], [0, 0, 1]])
@@ -892,7 +921,8 @@ class Warehouse:
 
     def policy_observation(self) -> dict:
         opening = float(self.robot.get_joint_positions()[self.finger_idx].mean())
-        state = np.concatenate([self.tool_pose(), [opening]]).astype(np.float32)
+        pose = self.push_pose() if self.push_encoding else self.tool_pose()
+        state = np.concatenate([pose, [opening]]).astype(np.float32)
         return {
             "head": self.draw_marker(self.annotators["head"].get_data()[..., :3].copy()),
             "wrist": self.annotators["wrist"].get_data()[..., :3].copy(),
@@ -2658,6 +2688,7 @@ def collect_push_demos(warehouse: Warehouse, episodes: int) -> None:
     out.mkdir(parents=True, exist_ok=True)
     commands = Commands(warehouse, pose_source="sim")
     commands.base_carry = False
+    warehouse.push_encoding = True
     log = open(out / "collect_log.jsonl", "a")
     saved = len(list(out.glob("episode_*.npz")))
     attempt = 0
@@ -2714,7 +2745,6 @@ def collect_push_demos(warehouse: Warehouse, episodes: int) -> None:
         instruction = (f"push the {name} to the {direction}", f"slide the {name} {direction} out of the way",
                        f"clear the {name} by pushing it {direction}")[rng.integers(3)]
         state = np.stack(frames["state"])
-        state[:, 5] = np.unwrap(state[:, 5])
         next_pose = np.concatenate([state[1:, :6], state[-1:, :6]])
         action = np.concatenate([next_pose, np.array(frames["finger_target"])[:, None]], axis=1).astype(np.float32)
         np.savez_compressed(out / f"episode_{saved:04d}.npz", instruction=instruction, head=np.stack(frames["head"]),
