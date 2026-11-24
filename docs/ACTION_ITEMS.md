@@ -138,7 +138,8 @@ Decision: the VLA must earn its place. Three hard scenes, a fair perception-only
 - [x] Scene 2 — Cluttered receiving tote (STAGING-1): 0.74 × 0.50 m tote, 8 pickables + 8 clutter items dropped in layers with random tilt, top-down grasps. Background pallets with filled and stacked totes for realism
 - [x] Shelf realism: items at varied yaw (pickables ±57°, others ±29°; mustard capped because side-on it is 9.6 cm, wider than the gripper)
 - [x] Scene 3 — Mixed-SKU deep shelving (C-04-1): mustard behind a cracker box, soup can behind a sugar box; expert pushes the blocker sideways (`push_aside`), scripted baseline has no push. Smoke test: expert pushes and lifts the mustard, scripted fails
-- [ ] Full eval per scene (scripted vs expert) once the smoke-test fixes are in (arm reset between trials, any-yaw top-down)
+- [x] Full eval per scene, scripted vs expert (`eval/results/grasp_hard_v4/`, 30 trials): toppled 82% vs 64%, tote 58% vs 58% (all scripted tote failures are `no reachable grasp`, a reach limit, not perception), deep 0% vs 14%
+- [x] Decision: the depth-based scripted planner handles toppled and tote, so only deep shelving needs the VLA. Toppled and tote stay as generalisation scenes; the expert's push-then-grasp (1/7) is the bottleneck for demos
 - [ ] Demo collection upgrades (`collect_demos`), scoped to what makes the demo:
   - [ ] Push primitive and grasp recorded as one episode (deep shelving)
   - [ ] Perturbations with recorded recovery: mid-approach object nudge, grasp offset, partial slip
