@@ -156,9 +156,20 @@ Decision: the VLA must earn its place. Three hard scenes, a fair perception-only
 
 Goal: three realistic warehouse tasks, each showing one applied AI technology.
 
-1. **Order fulfillment with a deep-shelving pick (VLA)**: the agent plans and fulfills an order; the target sits behind a blocker, so the VLA pushes it aside and grasps
-   - [ ] Expert push lands on the blocker (fingertip tracks the commanded path in contact) and the grasp follows
-   - [ ] Demos, training and eval as in Step 12
+1. **Order fulfillment with a deep-shelving pick (VLA)**: the agent plans and fulfills an order; the target sits behind a blocker, so a scripted step picks up the paddle, the VLA pushes the blocker aside, and the fetch is a separate scripted action
+   - [x] Scope: the VLA is trained only for the push; paddle pickup/return and the fetch are scripted actions, and the VLM orchestrates pickup → push → return → fetch
+   - [x] Pickup stays scripted: the toolbox is mounted on the robot, so the motion never varies. Push episodes all start from the same ready pose (fingertip std ≤ 0.004 m over 15 episodes), so the handoff to the VLA is seamless
+   - [x] Expert push lands on the blocker (closed-loop, exact retrace): in `push_v1`, 22/22 blockers upright, target never disturbed
+   - [x] Faster push: sweep 0.03 / 0.05 / 0.08 m/s (seed 11, `eval/results/push_speed/`) gave identical outcomes (15/22 saved, 4 short, 3 skipped) with episodes 246 → 142 frames; 0.08 m/s is now the default stroke for all blockers (rotated-box slow speed removed)
+   - [ ] Push across object types, not just cans: cans 7/7 saved; boxes fall 1–3 cm short of the goal and get rejected. Fix on `feat/box-push`: up to 4 cm extra stroke (capped by free room), stops at the goal as before. Seed 11: 15/17 saved (88%) vs 15/22 (68%); pudding 3/3, sugar 4/6, potted meat 4/4; 1 short (sugar box, 3 mm under), 1 no-room skip (`push_boxfix/`)
+   - [ ] (coded on `feat/box-push`, untested) Push to the other side when the preferred side has no room (3/22 skipped, mostly pudding box). Needed for coverage: skipped scenes are tight bins the VLA would otherwise never see. Safe since the target is behind the blocker; `target_moved` still rejects any contact
+   - [ ] (coded on `feat/box-push`, untested) Assert the scripted pickup ends at the push ready pose
+   - [ ] Fix the orientation encoding: at the ready pose the paddle hangs straight down (pitch ≈ 1.54 rad), where `tool_pose` yaw/roll are singular, so the same start pose is logged as (1.87, −1.26) or (−1.90, 1.23). The push stroke itself is clean (ypr = 0, 0, 0); the problem is the first/last ~10 frames of each episode. Needs a singularity-free encoding (orientation relative to the ready pose, or 6-D rotation)
+   - Recorded episode = ready pose → approach → push → retrace → ready pose (142 frames at 0.08 m/s); head image carries the magenta target marker, wrist camera sees the paddle blade and the blocker
+   - [ ] Push across blocker orientations (random yaw): rotated boxes pivot instead of sliding the full distance
+   - [ ] Collect `push_v1` (200 episodes): interrupted at 11/200 by a host freeze; ~40% attempt yield, ~38 MB/episode
+   - [ ] Train SmolVLA + diffusion on push demos, eval push success per object type and orientation
+   - [ ] Separate fetch action after the push: post-push grasp currently fails (fingertip 0.6–0.7 m off the grasp-ready pose, `eval/results/push_stream/`)
 2. **Cycle count with discrepancies (VLM)**: the agent counts bins by camera, finds short and misplaced stock, corrects the record and relocates the stock
    - [ ] E2E run with `misplaced_stock_rate` and missing stock: discrepancies raised, records corrected, relocation task planned and executed
 3. **Shortage handled from receiving (agent)**: an order is short on the shelf; the agent finds the stock in the cluttered receiving tote, replenishes, waits, then fulfills and the tote is verified at dispatch
