@@ -150,3 +150,17 @@ Decision: the VLA must earn its place. Three hard scenes, a fair perception-only
 - [ ] Collect demos per scene, retrain SmolVLA + diffusion (head camera now faces the work side)
 - [ ] Eval per scene: depth-based scripted vs SmolVLA vs diffusion
 - [ ] README: why each scene breaks the scripted planner; FIFO/expiry rotation as a further real-world reason for back-row picks; deformables (bags, pouches) as future work
+
+
+## Step 13 — Three portfolio demos
+
+Goal: three realistic warehouse tasks, each showing one applied AI technology.
+
+1. **Order fulfillment with a deep-shelving pick (VLA)**: the agent plans and fulfills an order; the target sits behind a blocker, so the VLA pushes it aside and grasps
+   - [ ] Expert push lands on the blocker (fingertip tracks the commanded path in contact) and the grasp follows
+   - [ ] Demos, training and eval as in Step 12
+2. **Cycle count with discrepancies (VLM)**: the agent counts bins by camera, finds short and misplaced stock, corrects the record and relocates the stock
+   - [ ] E2E run with `misplaced_stock_rate` and missing stock: discrepancies raised, records corrected, relocation task planned and executed
+3. **Shortage handled from receiving (agent)**: an order is short on the shelf; the agent finds the stock in the cluttered receiving tote, replenishes, waits, then fulfills and the tote is verified at dispatch
+   - [ ] Tote pick inside a replenishment task (grounded by the VLM, top-down grasp)
+   - [ ] E2E run: shortage → replenish → wait_for_task → fulfill → verify_tote
