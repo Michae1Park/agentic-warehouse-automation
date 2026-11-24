@@ -235,7 +235,7 @@ YAW_SPREAD_OTHER = 0.5
 SETTLE_STEPS = 120
 TOP_DOWN_LIFT = 0.15
 PUSH_CLEARANCE = 0.04
-PUSH_HEIGHT = 0.09
+PUSH_HEIGHT = 0.075
 PUSH_STANDOFF = 0.08
 PUSH_ENTRY = 0.0
 PUSH_BACKOFF = 0.0
@@ -246,6 +246,8 @@ PUSH_SPEED = 0.03
 PUSH_GOAL_CLEARANCE = 0.07
 PUSH_OVERSHOOT = 0.02
 PUSH_MAX_CARRY = 0.12
+PUSH_SLOW_SPEED = 0.02
+PUSH_SLOW_YAW = math.radians(17)
 UPRIGHT_COS = 0.9
 PUSH_STEP = 0.02
 PUSH_PLAN_STEP = 0.01
@@ -1885,7 +1887,10 @@ class Commands:
         trace["target_debug"] = {"ycb": target_box.ycb, "center": np.round(target.center, 3).tolist(), "extents": np.round(target.extents, 3).tolist(),
                                  "axes": np.round(target.axes, 2).tolist(), "round": target.round_axis, "travel": round(travel, 3)}
         reached = start.copy()
-        ticks = max(1, int(PUSH_PLAN_STEP / PUSH_SPEED / PHYSICS_DT))
+        squareness = abs(math.sin(2 * (blocker.yaw - math.pi / 2)))
+        speed = PUSH_SLOW_SPEED if squareness > math.sin(2 * PUSH_SLOW_YAW) and blocker.size[0] != blocker.size[1] else PUSH_SPEED
+        trace["push_speed"] = speed
+        ticks = max(1, int(PUSH_PLAN_STEP / speed / PHYSICS_DT))
         for k, (point, joints) in enumerate(plan):
             if k % int(PUSH_STEP / PUSH_PLAN_STEP) == 0 and side * (float((self.w.sync(blocker) - origin) @ lateral) - goal_lateral) >= 0:
                 break
@@ -2003,7 +2008,12 @@ class Commands:
         orientation = rot_matrix_to_quat(rotation @ TOOL_MOUNTS[name].T)
         up = np.array([0.0, 0.0, TOOL_HOVER])
         yield from self.gripper(0.04)
-        yield from self.move_arm(self.w.solve_ik(slot + up, orientation), 90)
+        try:
+            hover = self.w.solve_ik(slot + up, orientation)
+        except SimError:
+            yield from self.move_arm(self.w.work_home, 60)
+            hover = self.w.solve_ik(slot + up, orientation, self.w.work_home)
+        yield from self.move_arm(hover, 90)
         yield from self.reach_linear(slot, orientation, TOOL_SPEED)
         self.check_tracking(slot, f"{name} slot")
         self.w.tool = name
