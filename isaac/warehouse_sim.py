@@ -1850,8 +1850,10 @@ class Commands:
         travel = target.extent_along(lateral) + half + PUSH_GOAL_CLEARANCE
         origin = obb.center.copy()
         up_axis = int(np.argmax(np.abs(obb.axes[2, :])))
-        goal_lateral = side * travel
         distance = travel + PUSH_CLEARANCE + PUSH_OVERSHOOT
+        if free[side] < distance <= free[-side]:
+            side = -side
+        goal_lateral = side * travel
         if free[side] < distance:
             raise SimError("blocked", f"no room to push {blocker.ycb} aside at {blocker.location_id}")
         distance = min(free[side], distance + PUSH_SLIP_MARGIN)
@@ -2615,6 +2617,7 @@ BLOCKER_NAMES = {"002_master_chef_can": "coffee can", "010_potted_meat_can": "po
                  "009_gelatin_box": "gelatin box", "061_foam_brick": "foam brick", "004_sugar_box": "sugar box"}
 PUSH_MAX_DEPTH_SHIFT = 0.03
 TARGET_MAX_SHIFT = 0.01
+READY_POSE_TOLERANCE = 0.02
 
 
 def restock_blockers(warehouse: Warehouse, rng: np.random.Generator) -> None:
@@ -2678,6 +2681,9 @@ def collect_push_demos(warehouse: Warehouse, episodes: int) -> None:
         record = {"attempt": attempt, "blocker": blocker.ycb, "yaw": round(blocker.yaw, 2)}
         try:
             run_silent(warehouse, commands.take_tool("paddle"))
+            ready_error = float(np.abs(warehouse.robot.get_joint_positions()[warehouse.arm_idx] - warehouse.work_home).max())
+            if ready_error > READY_POSE_TOLERANCE:
+                raise SimError("ready", f"paddle pickup ended {ready_error:.3f} rad off the push ready pose")
             warehouse.marker = commands.true_target(blocker).center.copy()
             run_gated(warehouse, commands, commands.push_aside(blocker, box), frames)
             trace = commands.push_trace
