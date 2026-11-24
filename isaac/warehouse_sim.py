@@ -252,6 +252,7 @@ PUSH_INSERT_SPEED = 0.06
 PUSH_SPEED = 0.03
 PUSH_GOAL_CLEARANCE = 0.07
 PUSH_OVERSHOOT = 0.02
+PUSH_SLIP_MARGIN = 0.04
 PUSH_MAX_CARRY = 0.12
 PUSH_STROKE_SPEED = 0.08
 UPRIGHT_COS = 0.9
@@ -1853,6 +1854,7 @@ class Commands:
         distance = travel + PUSH_CLEARANCE + PUSH_OVERSHOOT
         if free[side] < distance:
             raise SimError("blocked", f"no room to push {blocker.ycb} aside at {blocker.location_id}")
+        distance = min(free[side], distance + PUSH_SLIP_MARGIN)
         yield from self.face_work()
         yield from self.align_to(obb.center + side * lateral * travel / 2)
         blade = TOOL_PARTS["paddle"][-1][1][1] / 2
