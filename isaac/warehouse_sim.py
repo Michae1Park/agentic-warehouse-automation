@@ -62,7 +62,7 @@ if args.graphics == "high":
 import numpy as np
 import omni.replicator.core as rep
 from isaacsim.core.api import World
-from isaacsim.core.api.objects import FixedCuboid, VisualCuboid
+from isaacsim.core.api.objects import FixedCuboid, VisualCuboid, VisualCylinder
 from isaacsim.core.prims import SingleArticulation, SingleXFormPrim
 from isaacsim.core.utils.rotations import euler_angles_to_quat, quat_to_rot_matrix, rot_matrix_to_quat
 from isaacsim.core.utils.stage import add_reference_to_stage, get_current_stage
@@ -184,6 +184,12 @@ FINGERTIP_OFFSET = np.array([0.0, 0.0, 0.1034])
 TOOLBOX_OFFSET = np.array([0.42, -0.30])
 TOOLBOX_SIZE = np.array([0.10, 0.12, 0.12])
 TOOLBOX_TOP = 0.62
+BRACKET_METAL = np.array([0.55, 0.56, 0.58])
+BOLT_METAL = np.array([0.82, 0.82, 0.84])
+TOOLBOX_BRACKET = [((0.0, 0.0), 0.494, (0.12, 0.14, 0.012))] + [
+    ((dx, dy), 0.45, (0.018, 0.018, 0.088)) for dx in (-0.045, 0.045) for dy in (-0.055, 0.055)] + [
+    ((0.0, 0.0), 0.405, (0.16, 0.18, 0.01))]
+TOOLBOX_BOLTS = [(dx, dy) for dx in (-0.068, 0.068) for dy in (-0.078, 0.078)]
 TOOL_SLOTS = {"paddle": np.array([0.0, 0.0])}
 TOOL_HOVER = 0.08
 TOOL_SPEED = 0.08
@@ -708,7 +714,11 @@ class Warehouse:
         self.tool: str | None = None
         self.trail: list[np.ndarray] | None = None
         self.toolbox = VisualCuboid("/World/Toolbox", position=np.array([0.0, 0.0, 0.3]), scale=TOOLBOX_SIZE,
-                                    color=np.array([0.15, 0.15, 0.17]))
+                                    color=np.array([0.62, 0.1, 0.08]))
+        self.bracket_parts = [VisualCuboid(f"/World/ToolboxBracket/part_{i}", position=np.zeros(3), scale=np.array(size), color=BRACKET_METAL)
+                              for i, (_, _, size) in enumerate(TOOLBOX_BRACKET)]
+        self.bracket_bolts = [VisualCylinder(f"/World/ToolboxBracket/bolt_{i}", position=np.zeros(3), radius=0.008, height=0.008,
+                                             color=BOLT_METAL) for i in range(len(TOOLBOX_BOLTS))]
         self.toolbox_stand = VisualCuboid(
             "/World/ToolboxStand", position=np.array([0.0, 0.0, 0.3]),
             scale=np.array([0.05, 0.05, TOOLBOX_TOP - TOOLBOX_SIZE[2] - DECK_HEIGHT]), color=np.array([0.25, 0.25, 0.28]))
@@ -755,6 +765,13 @@ class Warehouse:
         box_xy = np.array([x, y]) + turn @ TOOLBOX_OFFSET
         self.toolbox.set_world_pose(np.array([box_xy[0], box_xy[1], TOOLBOX_TOP - TOOLBOX_SIZE[2] / 2]),
                                     euler_angles_to_quat(np.array([0, 0, theta])))
+        heading = euler_angles_to_quat(np.array([0, 0, theta]))
+        for prim, ((dx, dy), z, _) in zip(self.bracket_parts, TOOLBOX_BRACKET):
+            xy = box_xy + turn @ np.array([dx, dy])
+            prim.set_world_pose(np.array([xy[0], xy[1], z]), heading)
+        for prim, (dx, dy) in zip(self.bracket_bolts, TOOLBOX_BOLTS):
+            xy = box_xy + turn @ np.array([dx, dy])
+            prim.set_world_pose(np.array([xy[0], xy[1], 0.414]), heading)
         self.toolbox_stand.set_world_pose(np.array([box_xy[0], box_xy[1], (TOOLBOX_TOP - TOOLBOX_SIZE[2] + DECK_HEIGHT) / 2]),
                                           euler_angles_to_quat(np.array([0, 0, theta])))
         for name, parts in TOOL_PARTS.items():
