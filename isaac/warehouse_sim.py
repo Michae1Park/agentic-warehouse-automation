@@ -16,6 +16,7 @@ parser.add_argument("--width", type=int, default=1280)
 parser.add_argument("--height", type=int, default=720)
 parser.add_argument("--collect", type=int, default=0, help="record N scripted grasp demonstrations and exit")
 parser.add_argument("--collect-push", type=int, default=0, help="record N paddle push demonstrations (deep shelving) and exit")
+parser.add_argument("--push-speed", type=float, default=0.0, help="override the sideways push speed in m/s for every blocker")
 parser.add_argument("--out", default="/workspace/vla/data/raw")
 parser.add_argument("--seed", type=int, default=0)
 parser.add_argument("--policy-url", default="http://localhost:8030")
@@ -1889,6 +1890,7 @@ class Commands:
         reached = start.copy()
         squareness = abs(math.sin(2 * (blocker.yaw - math.pi / 2)))
         speed = PUSH_SLOW_SPEED if squareness > math.sin(2 * PUSH_SLOW_YAW) and blocker.size[0] != blocker.size[1] else PUSH_SPEED
+        speed = args.push_speed or speed
         trace["push_speed"] = speed
         ticks = max(1, int(PUSH_PLAN_STEP / speed / PHYSICS_DT))
         for k, (point, joints) in enumerate(plan):
