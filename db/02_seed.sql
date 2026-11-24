@@ -72,9 +72,7 @@ INSERT INTO inventory (sku, location_id, quantity) VALUES
     ('SKU-2002', 'B-01-1', 2),
     ('SKU-1001', 'C-04-1', 1),
     ('SKU-1002', 'C-04-1', 1),
-    ('SKU-2001', 'C-04-1', 1),
-    ('SKU-2002', 'C-04-1', 1),
-    ('SKU-2006', 'C-04-1', 1),
+    ('SKU-2006', 'C-04-1', 2),
     ('SKU-1001', 'STAGING-1', 4),
     ('SKU-1002', 'STAGING-1', 4);
 

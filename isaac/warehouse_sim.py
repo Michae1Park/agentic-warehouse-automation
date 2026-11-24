@@ -15,10 +15,12 @@ parser.add_argument("--port", type=int, default=8020)
 parser.add_argument("--width", type=int, default=1280)
 parser.add_argument("--height", type=int, default=720)
 parser.add_argument("--collect", type=int, default=0, help="record N scripted grasp demonstrations and exit")
+parser.add_argument("--collect-push", type=int, default=0, help="record N paddle push demonstrations (deep shelving) and exit")
 parser.add_argument("--out", default="/workspace/vla/data/raw")
 parser.add_argument("--seed", type=int, default=0)
 parser.add_argument("--policy-url", default="http://localhost:8030")
 parser.add_argument("--livestream", action="store_true", help="serve the viewport to the Isaac Sim WebRTC Streaming Client")
+parser.add_argument("--watch", action="store_true", help="serve the head camera as MJPEG on --port during eval or collection")
 parser.add_argument("--graphics", choices=("basic", "high"), default="basic")
 parser.add_argument("--eval-grasp", type=int, default=0, help="compare grasp policies on N randomized trials")
 parser.add_argument("--policies", nargs="+", default=["scripted", "vla"])
@@ -125,15 +127,22 @@ SHELF_BOARD = 0.04
 BIN_LENGTH = 1.3
 APPROACH_OFFSET = 1.0
 IK_ATTEMPTS = 8
+IK_NEAR = 1.0
+NATURAL_REACH = np.array([0.0, 0.3, 0.0, -2.0, 0.0, 2.3, 0.785])
+IK_REACH_SEEDS = [np.array([pan, shoulder, 0.0, elbow, 0.0, wrist, twist])
+                  for pan in (0.0, -0.6, 0.6, -math.pi / 2, math.pi / 2, -2.5, 2.5)
+                  for shoulder, elbow, wrist in ((0.2, -2.0, 2.2), (0.6, -1.6, 2.2), (-0.3, -2.4, 2.4))
+                  for twist in (0.785, 0.785 - math.pi / 2, 0.785 + math.pi / 2)]
 SCAN_STANDOFF = 0.8
 CORRIDOR_Y = -0.6
-TOTE_OFFSET = np.array([-0.2, 0.0, 0.76])
+TOTE_OFFSET = np.array([-0.2, 0.0, 0.86])
 DECK_HEIGHT = 0.4
 TRAY_SIZE = np.array([0.34, 0.34])
 DECK_SLOTS = [np.array([dx, dy]) for dx in (0.08, -0.08) for dy in (-0.1, 0.0, 0.1)]
 BASE_HALF_WIDTH = 0.40
 ARM_MOUNT = 0.30
-SIDE_HEADING = math.pi / 2
+WORK_HEADING = 0.0
+WORK_REACH = 0.50
 STANCE_CLEARANCE = {"storage": 0.10, "staging": 0.10, "dispatch": 0.05}
 PICK_GAP = 0.06
 CONVEYOR_FACE_X = 11.87
@@ -171,6 +180,20 @@ POLICY_RES = (256, 256)
 HEAD_FOCAL = 13.0
 CONTROL_EVERY = 6
 FINGERTIP_OFFSET = np.array([0.0, 0.0, 0.1034])
+TOOLBOX_OFFSET = np.array([0.42, -0.30])
+TOOLBOX_SIZE = np.array([0.10, 0.12, 0.12])
+TOOLBOX_TOP = 0.62
+TOOL_SLOTS = {"paddle": np.array([0.0, 0.0])}
+TOOL_HOVER = 0.08
+TOOL_SPEED = 0.08
+TOOL_PARTS = {
+    "paddle": [((0.0, 0.0, -0.005), (0.03, 0.02, 0.07), False), ((0.0, 0.0, 0.075), (0.12, 0.008, 0.09), True)],
+}
+TOOL_TIPS = {"paddle": np.array([0.0, 0.0, 0.08])}
+TOOL_STOW_HEIGHT = {"paddle": 0.13}
+TOOL_GRIP = {"paddle": 0.01}
+TOOL_MOUNTS = {"paddle": np.eye(3)}
+TOOL_COLORS = {"paddle": (0.95, 0.55, 0.1)}
 GRASP_TOLERANCE = 0.05
 VLA_MAX_STEPS = 120
 RESHUFFLE_EVERY = 10
@@ -187,9 +210,12 @@ TOPPLE_BIN = "B-01-1"
 DEEP_BIN = "C-04-1"
 TOTE_BIN = "STAGING-1"
 FINGER_REACH = 0.05
-DEEP_PAIR_SLOTS = (-0.20, 0.27)
-DEEP_EXTRA_SLOTS = (0.03, -0.45, 0.48)
-DEEP_ROW_GAP = 0.03
+DEEP_PAIR_SLOTS = (-0.28, 0.28)
+DEEP_EXTRA_SLOTS = (0.50, -0.50)
+DEEP_ROW_GAP = 0.12
+DEEP_JITTER = 0.015
+DEEP_BLOCKER_YAW = math.radians(45)
+GRASP_READY_LIFT = 0.12
 RECEIVING_TOTE_SCALE = np.array([2.5, 2.5, 0.8])
 RECEIVING_TOTE_SIZE = np.array([0.198, 0.296, 0.146]) * RECEIVING_TOTE_SCALE
 RECEIVING_TOTE_INSET = 0.03
@@ -208,9 +234,24 @@ YAW_SPREAD_PICKABLE = 1.0
 YAW_SPREAD_OTHER = 0.5
 SETTLE_STEPS = 120
 TOP_DOWN_LIFT = 0.15
-PUSH_CLEARANCE = 0.03
-PUSH_HEIGHT = 0.05
-PUSH_STANDOFF = 0.15
+PUSH_CLEARANCE = 0.04
+PUSH_HEIGHT = 0.09
+PUSH_STANDOFF = 0.08
+PUSH_ENTRY = 0.0
+PUSH_BACKOFF = 0.0
+PUSH_READY = 0.0
+PUSH_READY_LIFT = 0.15
+PUSH_INSERT_SPEED = 0.06
+PUSH_SPEED = 0.03
+PUSH_GOAL_CLEARANCE = 0.07
+PUSH_OVERSHOOT = 0.02
+PUSH_MAX_CARRY = 0.12
+UPRIGHT_COS = 0.9
+PUSH_STEP = 0.02
+PUSH_PLAN_STEP = 0.01
+PUSH_MAX_JOINT_STEP = 0.15
+ATTACH_ON_CLOSE = 0.10
+PUSH_TRACK_TOLERANCE = 0.03
 WIDTH_WEIGHT = 20.0
 STEEP_WEIGHT = 0.8
 APPROACH_BACKOFF = 0.0
@@ -652,10 +693,75 @@ class Warehouse:
             "/World/ToteStand", position=np.array([0.0, 0.0, 0.3]),
             scale=np.array([0.05, 0.05, TOTE_OFFSET[2] - 0.06 - DECK_HEIGHT]), color=np.array([0.25, 0.25, 0.28]),
         )
+        self._build_tools()
         self.tote_prim = VisualCuboid(
             "/World/Tote", position=np.array([0.0, 0.0, 0.3]), scale=np.array([TRAY_SIZE[0], TRAY_SIZE[1], 0.04]),
             color=np.array([0.2, 0.3, 0.7]),
         )
+        for path in ("/World/Tote", "/World/ToteStand", "/World/Toolbox", "/World/ToolboxStand"):
+            self.make_deck_collider(path)
+
+    def _build_tools(self) -> None:
+        self.tool: str | None = None
+        self.trail: list[np.ndarray] | None = None
+        self.toolbox = VisualCuboid("/World/Toolbox", position=np.array([0.0, 0.0, 0.3]), scale=TOOLBOX_SIZE,
+                                    color=np.array([0.15, 0.15, 0.17]))
+        self.toolbox_stand = VisualCuboid(
+            "/World/ToolboxStand", position=np.array([0.0, 0.0, 0.3]),
+            scale=np.array([0.05, 0.05, TOOLBOX_TOP - TOOLBOX_SIZE[2] - DECK_HEIGHT]), color=np.array([0.25, 0.25, 0.28]))
+        self.tool_prims: dict[str, list[SingleXFormPrim]] = {}
+        robot_parts = ["/World/Robot"] + [str(prim.GetPath()) for prim in Usd.PrimRange(self.stage.GetPrimAtPath("/World/Robot"))
+                                          if prim.HasAPI(UsdPhysics.RigidBodyAPI)]
+        for name, parts in TOOL_PARTS.items():
+            prims = []
+            for i, (_, size, collides) in enumerate(parts):
+                path = f"/World/Tools/{name}_{i}"
+                VisualCuboid(path, position=np.zeros(3), scale=np.array(size), color=np.array(TOOL_COLORS[name]))
+                prim = self.stage.GetPrimAtPath(path)
+                if collides:
+                    UsdPhysics.CollisionAPI.Apply(prim)
+                    UsdPhysics.RigidBodyAPI.Apply(prim).CreateKinematicEnabledAttr(True)
+                    filtered = UsdPhysics.FilteredPairsAPI.Apply(prim).CreateFilteredPairsRel()
+                    for target in robot_parts:
+                        filtered.AddTarget(target)
+                prims.append(SingleXFormPrim(path))
+            self.tool_prims[name] = prims
+
+    def make_deck_collider(self, path: str) -> None:
+        prim = self.stage.GetPrimAtPath(path)
+        UsdPhysics.CollisionAPI.Apply(prim)
+        UsdPhysics.RigidBodyAPI.Apply(prim).CreateKinematicEnabledAttr(True)
+
+    def tool_frame(self, name: str) -> tuple[np.ndarray, np.ndarray]:
+        if self.tool == name:
+            position, orientation = self.hand.get_world_pose()
+            rotation = quat_to_rot_matrix(orientation)
+            return position + rotation @ FINGERTIP_OFFSET, rotation @ self.gripper_frame @ TOOL_MOUNTS[name]
+        return self.tool_slot(name)
+
+    def tool_slot(self, name: str) -> tuple[np.ndarray, np.ndarray]:
+        x, y, theta = self.base_pose()
+        turn = np.array([[math.cos(theta), -math.sin(theta)], [math.sin(theta), math.cos(theta)]])
+        xy = np.array([x, y]) + turn @ (TOOLBOX_OFFSET + TOOL_SLOTS[name])
+        top = TOOLBOX_TOP
+        return np.array([xy[0], xy[1], top + TOOL_STOW_HEIGHT[name]]), tool_rotation(theta, math.pi / 2, 0.0)
+
+    def update_tools(self) -> None:
+        x, y, theta = self.base_pose()
+        turn = np.array([[math.cos(theta), -math.sin(theta)], [math.sin(theta), math.cos(theta)]])
+        box_xy = np.array([x, y]) + turn @ TOOLBOX_OFFSET
+        self.toolbox.set_world_pose(np.array([box_xy[0], box_xy[1], TOOLBOX_TOP - TOOLBOX_SIZE[2] / 2]),
+                                    euler_angles_to_quat(np.array([0, 0, theta])))
+        self.toolbox_stand.set_world_pose(np.array([box_xy[0], box_xy[1], (TOOLBOX_TOP - TOOLBOX_SIZE[2] + DECK_HEIGHT) / 2]),
+                                          euler_angles_to_quat(np.array([0, 0, theta])))
+        for name, parts in TOOL_PARTS.items():
+            origin, rotation = self.tool_frame(name)
+            orientation = rot_matrix_to_quat(rotation)
+            for prim, (center, _, _) in zip(self.tool_prims[name], parts):
+                prim.set_world_pose(origin + rotation @ np.array(center, dtype=float), orientation)
+
+    def tool_tip(self) -> np.ndarray:
+        return TOOL_MOUNTS[self.tool] @ TOOL_TIPS[self.tool] if self.tool else np.zeros(3)
 
     def _init_robot(self) -> None:
         names = self.robot.dof_names
@@ -664,7 +770,7 @@ class Warehouse:
         self.arm_idx = np.array([names.index(f"panda_joint{i}") for i in range(1, 8)])
         self.finger_idx = np.array([names.index("panda_finger_joint1"), names.index("panda_finger_joint2")])
         self.arm_home = np.array([0.0, -0.6, 0.0, -2.4, 0.0, 1.9, 0.785])
-        self.side_home = np.array([-math.pi / 2, -0.4, 0.0, -2.2, 0.0, 1.8, 0.785])
+        self.work_home = np.array([0.0, -0.4, 0.0, -2.2, 0.0, 1.8, 0.785])
         config = interface_config_loader.load_supported_lula_kinematics_solver_config("Franka")
         self.ik = LulaKinematicsSolver(**config)
         self.ik_articulation = ArticulationKinematicsSolver(self.robot, self.ik, "right_gripper")
@@ -679,6 +785,10 @@ class Warehouse:
                 drive.GetDampingAttr().Set(FINGER_DAMPING)
                 drive.GetMaxForceAttr().Set(FINGER_MAX_FORCE)
         self.link0 = SingleXFormPrim("/World/Robot/panda_link0")
+        _, hand_rotation = self.ik.compute_forward_kinematics("panda_hand", self.arm_home)
+        _, gripper_rotation = self.ik.compute_forward_kinematics("right_gripper", self.arm_home)
+        self.gripper_frame = np.asarray(hand_rotation).T @ np.asarray(gripper_rotation)
+        print("GRIPPER_FRAME", np.round(self.gripper_frame, 3).tolist(), flush=True)
         self.hand = SingleXFormPrim("/World/Robot/panda_hand")
         dock = self.locations.get("DOCK-1")
         start = np.array([float(dock["x"]), float(dock["y"]), 0.0]) if dock else np.zeros(3)
@@ -772,7 +882,7 @@ class Warehouse:
 
     def update_policy_cameras(self) -> None:
         x, y, theta = self.base_pose()
-        work_side = np.array([math.sin(theta), -math.cos(theta), 0.0])
+        work_side = np.array([math.cos(theta), math.sin(theta), 0.0])
         mount = np.array([x, y, 0.0]) + np.array([math.cos(theta), math.sin(theta), 0.0]) * ARM_MOUNT
         set_camera_view(eye=mount + np.array([0, 0, HEAD_HEIGHT]),
                         target=mount + work_side * HEAD_REACH + np.array([0, 0, self.look_z]), camera_prim_path="/World/HeadCam")
@@ -842,7 +952,8 @@ class Warehouse:
 
     def fingertip(self) -> np.ndarray:
         position, orientation = self.hand.get_world_pose()
-        return position + quat_to_rot_matrix(orientation) @ FINGERTIP_OFFSET
+        rotation = quat_to_rot_matrix(orientation)
+        return position + rotation @ FINGERTIP_OFFSET + rotation @ self.gripper_frame @ self.tool_tip()
 
     def _build_cameras(self) -> None:
         self.annotators = {}
@@ -935,11 +1046,15 @@ class Warehouse:
         return self.robot.get_joint_positions()[self.base_idx]
 
     def apply_targets(self) -> None:
-        positions = np.concatenate([self.base_target, self.arm_target, [self.finger_target, self.finger_target]])
+        if self.trail is not None:
+            self.trail.append(self.arm_target.copy())
+        finger = max(self.finger_target, TOOL_GRIP[self.tool]) if self.tool else self.finger_target
+        positions = np.concatenate([self.base_target, self.arm_target, [finger, finger]])
         indices = np.concatenate([self.base_idx, self.arm_idx, self.finger_idx])
         self.robot.apply_action(ArticulationAction(joint_positions=positions, joint_indices=indices))
 
     def update_attachments(self) -> None:
+        self.update_tools()
         if self.held:
             position, orientation = self.hand.get_world_pose()
             self.held.move(position + quat_to_rot_matrix(orientation) @ self.held_offset)
@@ -1084,10 +1199,17 @@ class Warehouse:
         z = float(location["z"])
         targets = [b for b in items if self.pickable(b.sku)]
         blockers = sorted((b for b in items if not self.pickable(b.sku)), key=lambda b: (abs(b.size[0] - b.size[1]) < 0.003, -b.size[0]))
+        for item in items:
+            self.set_dynamic(item, False)
+            item.toppled = item.flipped = False
         for slot, target, blocker in zip(DEEP_PAIR_SLOTS, targets, blockers):
             blocker.location_id = target.location_id = location_id
-            blocker.rest_on(np.array([front_x + blocker.size[1] / 2, y + slot, z]), math.pi / 2)
-            target.rest_on(np.array([front_x + blocker.size[1] + DEEP_ROW_GAP + target.size[0] / 2, y + slot, z]),
+            dx, dy = self.rng.uniform(-DEEP_JITTER, DEEP_JITTER, 2)
+            yaw = math.pi / 2 + self.rng.uniform(-DEEP_BLOCKER_YAW, DEEP_BLOCKER_YAW)
+            depth = float(np.abs(np.array([math.cos(yaw), math.sin(yaw)])) @ blocker.size[:2])
+            blocker.rest_on(np.array([front_x + depth / 2 + abs(dx), y + slot + dy, z]), yaw)
+            dx, dy = self.rng.uniform(-DEEP_JITTER, DEEP_JITTER, 2)
+            target.rest_on(np.array([front_x + blocker.size[1] + DEEP_ROW_GAP + target.size[0] / 2 + dx, y + slot + dy, z]),
                            self.rng.uniform(-CLUSTER_YAW, CLUSTER_YAW))
         for slot, extra in zip(DEEP_EXTRA_SLOTS, blockers[len(targets):] + targets[len(blockers):]):
             extra.location_id = location_id
@@ -1215,7 +1337,7 @@ class Warehouse:
         self.shipping = []
         for location_id in list(self.pending_totes):
             self.show_tote(location_id)
-        self.boxes, self.tote, self.held = [], [], None
+        self.boxes, self.tote, self.held, self.tool, self.trail = [], [], None, None, None
         misplaced = misplaced or []
         skip = {(m["location_id"], m["sku"]) for m in missing} | {(m["from"], m["sku"]) for m in misplaced}
         by_location: dict[str, list[tuple[str, int]]] = {}
@@ -1272,8 +1394,8 @@ class Warehouse:
         x, y = float(location["x"]), float(location["y"])
         if location["kind"] not in STANCE_CLEARANCE:
             return np.array([x, y, 0.0])
-        stance_x = self.face_x(location_id) - BASE_HALF_WIDTH - STANCE_CLEARANCE[location["kind"]]
-        return np.array([stance_x, y - ARM_MOUNT, SIDE_HEADING])
+        stance_x = self.face_x(location_id) - ARM_MOUNT - WORK_REACH
+        return np.array([stance_x, y, WORK_HEADING])
 
     def face_x(self, location_id: str) -> float:
         location = self.locations[location_id]
@@ -1284,17 +1406,21 @@ class Warehouse:
             return x + 0.05
         return CONVEYOR_FACE_X
 
-    def solve_ik(self, position: np.ndarray, orientation: np.ndarray = FRONT_GRASP) -> np.ndarray:
+    def solve_ik(self, position: np.ndarray, orientation: np.ndarray = FRONT_GRASP, seed: np.ndarray | None = None) -> np.ndarray:
         base_position, base_orientation = self.link0.get_world_pose()
         self.ik.set_robot_base_pose(base_position, base_orientation)
-        seed = self.arm_target.copy()
+        position = np.asarray(position, dtype=float) - quat_to_rot_matrix(orientation) @ self.tool_tip()
+        seed = self.arm_target.copy() if seed is None else np.asarray(seed, dtype=float)
         solutions = []
-        for attempt in range(IK_ATTEMPTS):
-            warm_start = seed if attempt == 0 else seed + np.random.normal(0.0, 0.15, size=seed.shape)
-            joints, success = self.ik.compute_inverse_kinematics(
-                "right_gripper", position, orientation, warm_start=warm_start)
-            if success:
-                solutions.append(np.array(joints))
+        warm_starts = [seed] + [seed + np.random.normal(0.0, 0.15, size=seed.shape) for _ in range(IK_ATTEMPTS - 1)]
+        for batch in (warm_starts, IK_REACH_SEEDS):
+            for warm_start in batch:
+                joints, success = self.ik.compute_inverse_kinematics(
+                    "right_gripper", position, orientation, warm_start=np.asarray(warm_start, dtype=float))
+                if success:
+                    solutions.append(np.array(joints))
+            if solutions and min(float(np.abs(j - seed).max()) for j in solutions) < IK_NEAR:
+                break
         if not solutions:
             raise SimError("ik_failed", f"no arm solution for target {np.round(position, 2).tolist()}")
         return min(solutions, key=lambda joints: float(np.linalg.norm(joints - seed)))
@@ -1311,6 +1437,8 @@ def wrap_angle(angle: float) -> float:
 class Commands:
     def __init__(self, warehouse: Warehouse, pose_source: str | None = None):
         self.w = warehouse
+        self.recording = False
+        self.base_carry = True
         self.pose_source = pose_source or args.pose
         self.target: Target | None = None
         self.grasp_choice: dict | None = None
@@ -1332,7 +1460,7 @@ class Commands:
                            "height_error_m": round(estimate.height - truth.height, 3)}
         return estimate
 
-    def drive_to(self, target: np.ndarray):
+    def drive_to(self, target: np.ndarray, speed: float = BASE_SPEED):
         while True:
             current = self.w.base_target.copy()
             delta = target[:2] - current[:2]
@@ -1340,7 +1468,7 @@ class Commands:
             heading_error = wrap_angle(target[2] - current[2])
             if distance < 1e-3 and abs(heading_error) < 1e-3:
                 break
-            step = min(distance, BASE_SPEED * PHYSICS_DT)
+            step = min(distance, speed * PHYSICS_DT)
             if distance > 0:
                 current[:2] += delta / distance * step
             current[2] += float(np.clip(heading_error, -BASE_TURN_SPEED * PHYSICS_DT, BASE_TURN_SPEED * PHYSICS_DT))
@@ -1358,20 +1486,20 @@ class Commands:
         points.append(np.array([goal[0], goal[1], 0.0]))
         return points
 
-    def sidestep(self, pose: np.ndarray, distance: float) -> np.ndarray:
-        left = np.array([-math.sin(pose[2]), math.cos(pose[2]), 0.0])
-        return pose + left * distance
+    def back_off(self, pose: np.ndarray, distance: float) -> np.ndarray:
+        forward = np.array([math.cos(pose[2]), math.sin(pose[2]), 0.0])
+        return pose - forward * distance
 
     def navigate(self, location_id: str):
         goal = self.w.approach_pose(location_id)
         yield from self.move_arm(self.w.arm_home, 40)
         current = self.w.base_target.copy()
-        if abs(wrap_angle(current[2] - SIDE_HEADING)) < 0.1:
-            yield from self.drive_to(self.sidestep(current, UNDOCK))
-        docked = abs(wrap_angle(goal[2] - SIDE_HEADING)) < 1e-3
+        if abs(wrap_angle(current[2] - WORK_HEADING)) < 0.1:
+            yield from self.drive_to(self.back_off(current, UNDOCK))
+        docked = abs(wrap_angle(goal[2] - WORK_HEADING)) < 1e-3
         final = goal
         if docked:
-            goal = self.sidestep(goal, UNDOCK)
+            goal = self.back_off(goal, UNDOCK)
         for point in self.waypoints(goal):
             heading = math.atan2(point[1] - self.w.base_target[1], point[0] - self.w.base_target[0])
             if np.linalg.norm(point[:2] - self.w.base_target[:2]) > 0.05:
@@ -1445,12 +1573,9 @@ class Commands:
 
     def go_to_pregrasp(self, joints: np.ndarray):
         choice = self.grasp_choice
-        start_arm = self.w.arm_target.copy()
-        try:
-            yield from self.reach_blend(choice["approach"], choice["orientation"])
-        except SimError:
-            self.w.arm_target = start_arm
-            yield from self.move_arm(joints, 70)
+        choice["orientation"] = self.natural_orientation(choice["approach"], choice["orientation"])
+        above = choice["approach"] + np.array([0.0, 0.0, GRASP_READY_LIFT])
+        yield from self.approach_along(above, choice["approach"], choice["orientation"], 0.15, "grasp ready")
 
     def reach_first(self, targets: list[np.ndarray], orientation: np.ndarray, speed: float):
         for target in targets:
@@ -1537,7 +1662,7 @@ class Commands:
         return min(candidates, key=lambda b: np.linalg.norm(b.prim.get_world_pose()[0][:2] - base[:2]))
 
     def work_yaw(self) -> float:
-        return float(self.w.base_target[2]) - math.pi / 2
+        return float(self.w.base_target[2])
 
     def grasp_options(self, target: Target, surface_z: float, top_down: bool = False) -> list[dict]:
         work = self.work_yaw()
@@ -1577,15 +1702,15 @@ class Commands:
         return rot_matrix_to_quat(tool_rotation(yaw, choice["pitch"], choice["roll"]))
 
     def face_work(self):
-        if np.abs(self.w.arm_target - self.w.side_home).max() > 0.05:
-            yield from self.move_arm(self.w.side_home, 60)
+        if np.abs(self.w.arm_target - self.w.work_home).max() > 0.05:
+            yield from self.move_arm(self.w.work_home, 60)
 
     def align_to(self, point: np.ndarray):
         _, _, theta = self.w.base_target
-        heading = np.array([math.cos(theta), math.sin(theta)])
-        along = float(np.dot(self.w.to_base_frame(point)[:2], np.array([1.0, 0.0]))) - ARM_MOUNT
+        left = np.array([-math.sin(theta), math.cos(theta)])
+        lateral = float(self.w.to_base_frame(point)[1])
         target = self.w.base_target.copy()
-        target[:2] += heading * along
+        target[:2] += left * lateral
         yield from self.drive_to(target)
 
     def prepare(self, box: Item):
@@ -1697,44 +1822,237 @@ class Commands:
                 if gap > -0.01:
                     limit = min(limit, gap)
             free[side] = limit
-        side = max(free, key=free.get)
-        distance = half + self.true_target(target_box).extent_along(lateral) / 2 + PUSH_CLEARANCE
+        bin_center = np.array([float(location["x"]), float(location["y"]), 0.0])
+        side = 1.0 if (obb.center - self.true_target(target_box).center) @ lateral >= 0 else -1.0
+        if abs(float((obb.center - bin_center) @ lateral)) > 0.05:
+            side = 1.0 if (obb.center - bin_center) @ lateral >= 0 else -1.0
+        target = self.true_target(target_box)
+        travel = target.extent_along(lateral) + half + PUSH_GOAL_CLEARANCE
+        origin = obb.center.copy()
+        up_axis = int(np.argmax(np.abs(obb.axes[2, :])))
+        goal_lateral = side * travel
+        distance = travel + PUSH_CLEARANCE + PUSH_OVERSHOOT
         if free[side] < distance:
             raise SimError("blocked", f"no room to push {blocker.ycb} aside at {blocker.location_id}")
         yield from self.face_work()
-        start = obb.center - side * lateral * (half + PUSH_CLEARANCE)
+        yield from self.align_to(obb.center + side * lateral * travel / 2)
+        blade = TOOL_PARTS["paddle"][-1][1][1] / 2
+        start = obb.center - side * lateral * (half + PUSH_CLEARANCE + blade)
+        orientation = rot_matrix_to_quat(tool_rotation(self.work_yaw(), 0.0, 0.0))
         approach = None
-        for height in (PUSH_HEIGHT, PUSH_HEIGHT + 0.03):
+        for height in (PUSH_HEIGHT, PUSH_HEIGHT + 0.02):
             start[2] = self.w.surface_z(blocker.location_id) + height
-            for roll in (math.pi / 2, -math.pi / 2, 0.0):
-                orientation = rot_matrix_to_quat(tool_rotation(self.work_yaw(), 0.0, roll))
-                try:
-                    approach = self.w.solve_ik(start - work * PUSH_STANDOFF, orientation)
-                    self.w.solve_ik(start + side * lateral * distance, orientation)
-                except SimError:
-                    continue
-                break
-            if approach is not None:
-                break
+            try:
+                ready = self.w.solve_ik(start - work * (PUSH_STANDOFF + PUSH_READY) + np.array([0.0, 0.0, PUSH_READY_LIFT]), orientation)
+                approach = self.w.solve_ik(start - work * (PUSH_STANDOFF + PUSH_ENTRY), orientation)
+                self.w.solve_ik(start + side * lateral * distance, orientation)
+            except SimError:
+                approach = None
+                continue
+            break
         if approach is None:
-            raise SimError("ik_failed", f"no arm solution to push {blocker.ycb} at {blocker.location_id}")
-        yield from self.gripper(0.0)
-        start_arm = self.w.arm_target.copy()
-        try:
-            yield from self.reach_blend(start - work * PUSH_STANDOFF, orientation)
-        except SimError:
-            self.w.arm_target = start_arm
-            yield from self.move_arm(approach, 70)
-        yield from self.reach_linear(start, orientation, 0.15)
-        yield from self.reach_linear(start + side * lateral * distance, orientation, 0.1)
-        yield from self.reach_linear(start + side * lateral * distance - work * PUSH_STANDOFF, orientation, 0.2)
+            raise SimError("ik_failed", f"no arm solution to push {blocker.ycb} at {blocker.location_id}: start "
+                                        f"{np.round(start, 2).tolist()} side {side} base {np.round(self.w.base_pose(), 2).tolist()}")
+        self.w.trail = []
+        self.recording = True
+        ready_point = start - work * (PUSH_STANDOFF + PUSH_READY) + np.array([0.0, 0.0, PUSH_READY_LIFT])
+        self.push_joints = None
+        orientation = self.natural_orientation(start - work * PUSH_STANDOFF, orientation)
+        yield from self.approach_along(ready_point, start - work * PUSH_STANDOFF, orientation, 0.15, "push ready")
+        self.push_joints = self.last_plan_goal.copy()
+        entry_tip = np.round(self.w.fingertip(), 3).tolist()
+        entry_joint_error = round(float(np.abs(self.w.robot.get_joint_positions()[self.w.arm_idx] - self.w.arm_target).max()), 3)
+        trace = {"entry_cmd": np.round(start - work * (PUSH_STANDOFF + PUSH_ENTRY), 3).tolist(), "entry_tip": entry_tip,
+                 "entry_joint_error": entry_joint_error, "blocker": np.round(obb.center, 3).tolist(), "side": side, "distance": round(distance, 3),
+                 "start_cmd": np.round(start, 3).tolist(), "standoff_tip": np.round(self.w.fingertip(), 3).tolist()}
+        self.check_tracking(start - work * PUSH_STANDOFF, "push standoff")
+        yield from self.reach_planned(start - work * PUSH_STANDOFF, start, orientation, PUSH_INSERT_SPEED)
+        trace["start_tip"] = np.round(self.w.fingertip(), 3).tolist()
+        self.check_tracking(start, "push start")
+        plan, previous = [], self.w.arm_target.copy()
+        for k in range(1, int(distance / PUSH_PLAN_STEP) + 1):
+            point = start + side * lateral * k * PUSH_PLAN_STEP
+            try:
+                joints = self.w.solve_ik(point, orientation, previous)
+            except SimError:
+                break
+            if float(np.abs(joints - previous).max()) > PUSH_MAX_JOINT_STEP:
+                break
+            plan.append((point, joints))
+            previous = joints
+        trace["planned_m"] = round(len(plan) * PUSH_PLAN_STEP, 3)
+        trace["target_lateral"] = round(float(target.center @ lateral), 3)
+        trace["target_debug"] = {"ycb": target_box.ycb, "center": np.round(target.center, 3).tolist(), "extents": np.round(target.extents, 3).tolist(),
+                                 "axes": np.round(target.axes, 2).tolist(), "round": target.round_axis, "travel": round(travel, 3)}
+        reached = start.copy()
+        ticks = max(1, int(PUSH_PLAN_STEP / PUSH_SPEED / PHYSICS_DT))
+        for k, (point, joints) in enumerate(plan):
+            if k % int(PUSH_STEP / PUSH_PLAN_STEP) == 0 and side * (float((self.w.sync(blocker) - origin) @ lateral) - goal_lateral) >= 0:
+                break
+            begin = self.w.arm_target.copy()
+            for t in range(1, ticks + 1):
+                self.w.arm_target = begin + (joints - begin) * t / ticks
+                yield
+            reached = point
+        trace["arm_moved_m"] = round(float((self.w.sync(blocker) - origin) @ lateral) * side, 3)
+        remaining = side * (goal_lateral - float((self.w.sync(blocker) - origin) @ lateral))
+        reverse_base = None
+        pose = self.true_target(blocker)
+        upright = abs(float(pose.axes[2, up_axis])) > UPRIGHT_COS
+        trace["upright"] = upright
+        if self.base_carry and 0 < remaining <= PUSH_MAX_CARRY and trace["arm_moved_m"] > -0.02 and upright:
+            reverse_base = self.w.base_target.copy()
+            carried = self.w.base_target.copy()
+            carried[:2] += side * lateral[:2] * (remaining + PUSH_OVERSHOOT)
+            yield from self.drive_to(carried, PUSH_SPEED)
+            trace["base_carry_m"] = round(remaining + PUSH_OVERSHOOT, 3)
+        trace["goal_lateral"] = round(travel, 3)
+        trace["final_lateral"] = round(float((self.w.sync(blocker) - origin) @ lateral) * side, 3)
+        trace["final_depth"] = round(float((self.w.sync(blocker) - origin) @ work), 3)
+        pose = self.true_target(blocker)
+        trace["upright"] = bool(abs(float(pose.axes[2, up_axis])) > UPRIGHT_COS)
+        trace["end_tip"] = np.round(self.w.fingertip(), 3).tolist()
+        trace["end_cmd"] = np.round(reached, 3).tolist()
+        self.push_trace = trace
+        path, self.w.trail = self.w.trail, None
+        if reverse_base is not None:
+            yield from self.drive_to(reverse_base, PUSH_SPEED * 3)
+        for joints in reversed(path):
+            self.w.arm_target = joints
+            yield
+        self.recording = False
+
+    def reach_seed(self) -> np.ndarray:
+        return getattr(self, "push_joints", None) if getattr(self, "push_joints", None) is not None else NATURAL_REACH
+
+    def natural_orientation(self, position: np.ndarray, orientation: np.ndarray) -> np.ndarray:
+        flipped = rot_matrix_to_quat(quat_to_rot_matrix(orientation) @ np.diag([-1.0, -1.0, 1.0]))
+        best, best_cost = orientation, math.inf
+        for candidate in (orientation, flipped):
+            try:
+                joints = self.w.solve_ik(position, candidate, self.reach_seed())
+            except SimError:
+                continue
+            cost = float(np.abs(joints - self.reach_seed()).sum())
+            if cost < best_cost:
+                best, best_cost = candidate, cost
+        return best
+
+    def plan_line(self, origin: np.ndarray, goal: np.ndarray, orientation: np.ndarray) -> list[np.ndarray]:
+        steps = max(1, int(float(np.linalg.norm(goal - origin)) / PUSH_PLAN_STEP))
+        previous = self.w.solve_ik(goal, orientation, self.reach_seed())
+        plan = [previous]
+        for k in range(steps - 1, -1, -1):
+            joints = self.w.solve_ik(origin + (goal - origin) * k / steps, orientation, previous)
+            if float(np.abs(joints - previous).max()) > PUSH_MAX_JOINT_STEP:
+                raise SimError("ik_jump", f"arm configuration jump on the way to {np.round(goal, 2).tolist()} at step {steps - k}/{steps}: "
+                                          f"{np.round(previous, 2).tolist()} -> {np.round(joints, 2).tolist()}")
+            plan.append(joints)
+            previous = joints
+        return plan[::-1]
+
+    def follow(self, plan: list[np.ndarray], length: float, speed: float):
+        ticks = max(1, int(length / max(1, len(plan) - 1) / speed / PHYSICS_DT))
+        for joints in plan[1:]:
+            begin = self.w.arm_target.copy()
+            for t in range(1, ticks + 1):
+                self.w.arm_target = begin + (joints - begin) * t / ticks
+                yield
+        for _ in range(10):
+            yield
+
+    def approach_along(self, origin: np.ndarray, goal: np.ndarray, orientation: np.ndarray, speed: float, stage: str):
+        plan = self.plan_line(origin, goal, orientation)
+        self.last_plan_goal = plan[-1]
+        yield from self.move_arm(plan[0], 90)
+        self.check_tracking(origin, stage)
+        yield from self.follow(plan, float(np.linalg.norm(goal - origin)), speed)
+
+    def reach_planned(self, origin: np.ndarray, goal: np.ndarray, orientation: np.ndarray, speed: float):
+        steps = max(1, int(float(np.linalg.norm(goal - origin)) / PUSH_PLAN_STEP))
+        plan, previous = [], self.w.arm_target.copy()
+        for k in range(1, steps + 1):
+            joints = self.w.solve_ik(origin + (goal - origin) * k / steps, orientation, previous)
+            if float(np.abs(joints - previous).max()) > PUSH_MAX_JOINT_STEP:
+                raise SimError("ik_jump", f"arm configuration jump on the way to {np.round(goal, 2).tolist()}")
+            plan.append(joints)
+            previous = joints
+        ticks = max(1, int(float(np.linalg.norm(goal - origin)) / steps / speed / PHYSICS_DT))
+        for joints in plan:
+            begin = self.w.arm_target.copy()
+            for t in range(1, ticks + 1):
+                self.w.arm_target = begin + (joints - begin) * t / ticks
+                yield
+        for _ in range(10):
+            yield
+
+    def check_tracking(self, commanded: np.ndarray, stage: str) -> None:
+        error = float(np.linalg.norm(self.w.fingertip() - commanded))
+        if error > PUSH_TRACK_TOLERANCE:
+            joints = self.w.robot.get_joint_positions()[self.w.arm_idx]
+            raise SimError("tracking", f"fingertip {error:.2f} m off the {stage}: commanded {np.round(commanded, 3).tolist()} "
+                           f"tip {np.round(self.w.fingertip(), 3).tolist()} base {np.round(self.w.base_pose(), 3).tolist()} "
+                           f"target {np.round(self.w.arm_target, 2).tolist()} joints {np.round(joints, 2).tolist()}")
+
+    def take_tool(self, name: str):
+        if self.w.tool == name:
+            return
+        if self.w.tool:
+            yield from self.return_tool()
+        slot, rotation = self.w.tool_slot(name)
+        orientation = rot_matrix_to_quat(rotation @ TOOL_MOUNTS[name].T)
+        up = np.array([0.0, 0.0, TOOL_HOVER])
         yield from self.gripper(0.04)
-        yield from self.move_arm(self.w.side_home, 60)
+        yield from self.move_arm(self.w.solve_ik(slot + up, orientation), 90)
+        yield from self.reach_linear(slot, orientation, TOOL_SPEED)
+        self.check_tracking(slot, f"{name} slot")
+        self.w.tool = name
+        yield from self.gripper(TOOL_GRIP[name])
+        yield from self.reach_linear(self.w.fingertip() + up, orientation, TOOL_SPEED)
+        yield from self.move_arm(self.w.work_home, 70)
+
+    def return_tool(self):
+        name = self.w.tool
+        if not name:
+            return
+        slot, rotation = self.w.tool_slot(name)
+        orientation = rot_matrix_to_quat(rotation @ TOOL_MOUNTS[name].T)
+        up = np.array([0.0, 0.0, TOOL_HOVER])
+        tip = rotation @ TOOL_TIPS[name]
+        yield from self.move_arm(self.w.solve_ik(slot + tip + up, orientation), 90)
+        yield from self.reach_linear(slot + tip, orientation, TOOL_SPEED)
+        self.w.tool = None
+        yield from self.gripper(0.04)
+        yield from self.reach_linear(slot + up, orientation, TOOL_SPEED)
+        yield from self.move_arm(self.w.work_home, 70)
 
     def clear_blockers(self, box: Item):
-        for blocker in self.blockers(box):
+        blockers = self.blockers(box)
+        if not blockers:
+            return
+        yield from self.take_tool("paddle")
+        stance = self.w.base_target.copy()
+        work = np.array([math.cos(self.work_yaw()), math.sin(self.work_yaw())])
+        backed = stance.copy()
+        backed[:2] -= work * PUSH_BACKOFF
+        yield from self.drive_to(backed)
+        yield from self._push_all(box, blockers)
+        yield from self.drive_to(stance)
+        yield from self.return_tool()
+
+    def _push_all(self, box: Item, blockers: list[Item]):
+        for blocker in blockers:
+            before = self.w.sync(box).copy()
+            blocker_before = self.w.sync(blocker).copy()
             yield from self.push_aside(blocker, box)
-            self.last_grasp = {**self.last_grasp, "pushed": [*self.last_grasp.get("pushed", []), blocker.ycb]}
+            work = np.array([math.cos(self.work_yaw()), math.sin(self.work_yaw()), 0.0])
+            lateral = np.array([-work[1], work[0], 0.0])
+            gap = self.w.sync(blocker) - self.w.sync(box)
+            self.last_grasp = {**self.last_grasp, "blocker_pushed_m": round(float(np.linalg.norm(self.w.sync(blocker) - blocker_before)), 3),
+                               "blocker_lateral_m": round(float(abs(gap @ lateral)), 3), "blocker_depth_m": round(float(gap @ work), 3),
+                               "blocker_tilt": round(float(self.true_target(blocker).axes[2, 2]), 2)}
+            self.last_grasp = {**self.last_grasp, "push_trace": getattr(self, "push_trace", None), "pushed": [*self.last_grasp.get("pushed", []), blocker.ycb],
+                               "push_moved_target": round(float(np.linalg.norm(self.w.sync(box) - before)), 3)}
 
     def hold_offset(self) -> np.ndarray:
         _, orientation = self.w.hand.get_world_pose()
@@ -1762,7 +2080,7 @@ class Commands:
         self.w.tote.append(box)
         yield from self.gripper(0.04)
         yield from self.reach_linear(above, orientation, 0.25)
-        yield from self.move_arm(self.w.side_home, 60)
+        yield from self.move_arm(self.w.work_home, 60)
 
     def take_from_deck(self, box: Item):
         self.target = self.true_target(box)
@@ -1795,16 +2113,33 @@ class Commands:
     def arm_grasp(self, box: Item):
         position, direction, orientation = (self.grasp_choice[k] for k in ("position", "direction", "orientation"))
         pregrasp = position - direction * GRASP_STANDOFF
-        yield from self.reach_linear(pregrasp, orientation)
+        yield from self.reach_planned(self.w.fingertip(), pregrasp, orientation, 0.15)
+        pregrasp_moved = float(np.linalg.norm(self.w.sync(box) - position))
+        neighbours = {o.ycb: self.w.sync(o).copy() for o in self.w.boxes_at(box.location_id, background=True) if o is not box}
+        target_before = self.w.sync(box).copy()
+        rotation = quat_to_rot_matrix(orientation)
+        grip_width = round(self.target.grasp_width(rotation[:, 1], rotation[:, 2]), 3)
+        open_width = float(self.w.robot.get_joint_positions()[self.w.finger_idx].sum())
         pregrasp_error = float(np.abs(self.w.robot.get_joint_positions()[self.w.arm_idx] - self.w.arm_target).max())
-        yield from self.reach_linear(position - direction * GRASP_DEPTH, orientation, 0.1)
+        yield from self.reach_planned(pregrasp, position - direction * GRASP_DEPTH, orientation, 0.1)
         reach_error = (self.w.fingertip() - position).round(3).tolist()
         joint_error = float(np.abs(self.w.robot.get_joint_positions()[self.w.arm_idx] - self.w.arm_target).max())
+        approach_moved = round(float(np.linalg.norm(self.w.sync(box) - target_before)), 3)
         self.w.finger_target = 0.0
         for _ in range(CLOSE_STEPS):
             yield
-        self.last_grasp = {**self.last_grasp, "reach_error": reach_error, "joint_error": round(joint_error, 3),
-                           "pregrasp_error": round(pregrasp_error, 3),
+        if float(np.linalg.norm(self.w.fingertip() - self.w.sync(box))) < ATTACH_ON_CLOSE:
+            self.w.set_dynamic(box, False)
+            self.w.grab(box)
+        self.last_grasp = {**self.last_grasp, "approach_moved": approach_moved,
+                           "close_moved": round(float(np.linalg.norm(self.w.sync(box) - target_before)), 3),
+                           "grip_width": grip_width, "open_width": round(open_width, 3),
+                           "neighbours_moved": {o.ycb: round(float(np.linalg.norm(self.w.sync(o) - neighbours[o.ycb])), 3)
+                                                for o in self.w.boxes_at(box.location_id, background=True) if o.ycb in neighbours
+                                                and np.linalg.norm(self.w.sync(o) - neighbours[o.ycb]) > 0.005},
+                           "reach_error": reach_error, "joint_error": round(joint_error, 3),
+                           "pregrasp_error": round(pregrasp_error, 3), "pregrasp_moved": round(pregrasp_moved, 3),
+                           "fingertip": np.round(self.w.fingertip(), 3).tolist(),
                            "hand": np.round(self.w.hand.get_world_pose()[0], 3).tolist(), "target": np.round(position, 3).tolist(),
                            "opening": float(self.w.robot.get_joint_positions()[self.w.finger_idx].mean()),
                            "moved": float(np.linalg.norm(self.w.sync(box) - position))}
@@ -1915,7 +2250,7 @@ class Commands:
             self.w.held = None
             self.w.set_dynamic(box, True)
             yield from self.gripper(0.04)
-            yield from self.move_arm(self.w.side_home, 60)
+            yield from self.move_arm(self.w.work_home, 60)
             reason = "slipped from gripper" if held else f"was not lifted ({self.last_grasp})"
             raise SimError("grasp_failed", f"{sku} {reason} at {location_id}")
         if self.w.held is not box:
@@ -1923,6 +2258,7 @@ class Commands:
             self.w.grab(box)
         box.location_id = None
         yield from self.stash(box)
+        yield from self.return_tool()
         self.w.repack(location_id)
         return {"picked": sku, "tote": [b.sku for b in self.w.tote], "policy_used": used, "vla_success": vla_success,
                 "instruction": instruction}
@@ -1989,7 +2325,7 @@ class Commands:
         self.w.set_dynamic(box, True)
         yield from self.gripper(0.04)
         yield from self.reach_linear(tip - out * RETRACT, orientation, 0.2)
-        yield from self.move_arm(self.w.side_home, 60)
+        yield from self.move_arm(self.w.work_home, 60)
         return {"stowed": sku}
 
 
@@ -2113,12 +2449,75 @@ def encode_jpeg(frame: np.ndarray, quality: int = 90) -> str:
 def teleport_base(warehouse: Warehouse, pose: np.ndarray) -> None:
     positions = warehouse.robot.get_joint_positions()
     positions[warehouse.base_idx] = pose
-    positions[warehouse.arm_idx] = warehouse.side_home
+    positions[warehouse.arm_idx] = warehouse.work_home
     positions[warehouse.finger_idx] = 0.04
     warehouse.robot.set_joint_positions(positions)
     warehouse.base_target = pose.copy()
-    warehouse.arm_target = warehouse.side_home.copy()
+    warehouse.arm_target = warehouse.work_home.copy()
     warehouse.finger_target = 0.04
+
+
+class Watch:
+    def __init__(self):
+        self.frame = b""
+        self.lock = threading.Condition()
+        self.ticks = 0
+        self.annotator = None
+
+    def camera(self, warehouse: Warehouse) -> None:
+        x, y, theta = warehouse.base_pose()
+        turn = np.array([[math.cos(theta), -math.sin(theta)], [math.sin(theta), math.cos(theta)]])
+        eye = np.array([x, y]) + turn @ np.array([0.1, 1.9])
+        target = np.array([x, y]) + turn @ np.array([0.7, 0.0])
+        set_camera_view(eye=np.array([eye[0], eye[1], 1.5]), target=np.array([target[0], target[1], 0.45]),
+                        camera_prim_path="/World/WatchCam")
+        if self.annotator is None:
+            UsdGeom.Camera(warehouse.stage.GetPrimAtPath("/World/WatchCam")).CreateFocalLengthAttr(14.0)
+            self.annotator = rep.AnnotatorRegistry.get_annotator("rgb")
+            self.annotator.attach([rep.create.render_product("/World/WatchCam", (640, 480))])
+
+    def capture(self, warehouse: Warehouse) -> None:
+        self.ticks += 1
+        if self.ticks % STREAM_EVERY:
+            return
+        if self.annotator is None:
+            UsdGeom.Camera.Define(warehouse.stage, "/World/WatchCam")
+        self.camera(warehouse)
+        frame = self.annotator.get_data()
+        if frame is None or frame.size == 0:
+            return
+        buffer = io.BytesIO()
+        Image.fromarray(frame[..., :3]).save(buffer, format="JPEG", quality=75)
+        with self.lock:
+            self.frame = buffer.getvalue()
+            self.lock.notify_all()
+
+    def serve(self) -> None:
+        watch = self
+
+        class Handler(BaseHTTPRequestHandler):
+            def log_message(self, *_):
+                pass
+
+            def do_GET(self):
+                self.send_response(200)
+                self.send_header("content-type", "multipart/x-mixed-replace; boundary=frame")
+                self.end_headers()
+                try:
+                    while True:
+                        with watch.lock:
+                            watch.lock.wait(timeout=1.0)
+                            frame = watch.frame
+                        if frame:
+                            self.wfile.write(b"--frame\r\ncontent-type: image/jpeg\r\n\r\n" + frame + b"\r\n")
+                except (BrokenPipeError, ConnectionResetError):
+                    return
+
+        http = ThreadingHTTPServer(("0.0.0.0", args.port), Handler)
+        threading.Thread(target=http.serve_forever, daemon=True).start()
+
+
+WATCH = Watch() if args.watch else None
 
 
 def step(warehouse: Warehouse) -> None:
@@ -2126,6 +2525,8 @@ def step(warehouse: Warehouse) -> None:
     warehouse.update_attachments()
     warehouse.update_policy_cameras()
     warehouse.world.step(render=True)
+    if WATCH:
+        WATCH.capture(warehouse)
 
 
 def instruction_variants(warehouse: Warehouse, sku: str) -> list[str]:
@@ -2179,6 +2580,115 @@ def restore_location(warehouse: Warehouse, location_id: str, snapshot: list) -> 
         warehouse.set_dynamic(item, True)
     for _ in range(SETTLE_STEPS // 4):
         step(warehouse)
+
+
+BLOCKER_POOL = ("002_master_chef_can", "010_potted_meat_can", "008_pudding_box", "009_gelatin_box", "061_foam_brick", "004_sugar_box")
+BLOCKER_NAMES = {"002_master_chef_can": "coffee can", "010_potted_meat_can": "potted meat can", "008_pudding_box": "pudding box",
+                 "009_gelatin_box": "gelatin box", "061_foam_brick": "foam brick", "004_sugar_box": "sugar box"}
+PUSH_MAX_DEPTH_SHIFT = 0.03
+TARGET_MAX_SHIFT = 0.01
+
+
+def restock_blockers(warehouse: Warehouse, rng: np.random.Generator) -> None:
+    items = warehouse.boxes_at(DEEP_BIN, background=True)
+    for item in [b for b in items if not warehouse.pickable(b.sku)]:
+        warehouse.stage.RemovePrim(item.path)
+        warehouse.boxes.remove(item)
+    targets = [b for b in warehouse.boxes_at(DEEP_BIN, background=True) if warehouse.pickable(b.sku)]
+    blockers = []
+    for _ in targets:
+        blocker = warehouse.spawn_item(None, None, BLOCKER_POOL[rng.integers(len(BLOCKER_POOL))])
+        blocker.location_id = DEEP_BIN
+        blockers.append(blocker)
+    warehouse.layout_deep(DEEP_BIN, targets + blockers)
+
+
+def run_gated(warehouse: Warehouse, commands: "Commands", generator, frames: dict):
+    ticks = 0
+    try:
+        while True:
+            next(generator)
+            step(warehouse)
+            if commands.recording:
+                ticks += 1
+                if ticks % CONTROL_EVERY == 0:
+                    for key, value in warehouse.policy_observation().items():
+                        frames[key].append(value)
+    except StopIteration as stop:
+        return stop.value
+
+
+def collect_push_demos(warehouse: Warehouse, episodes: int) -> None:
+    from pathlib import Path
+
+    rng = np.random.default_rng(args.seed)
+    warehouse.rng = np.random.default_rng(args.seed + 1)
+    out = Path(args.out)
+    out.mkdir(parents=True, exist_ok=True)
+    commands = Commands(warehouse, pose_source="sim")
+    commands.base_carry = False
+    log = open(out / "collect_log.jsonl", "a")
+    saved = len(list(out.glob("episode_*.npz")))
+    attempt = 0
+    while saved < episodes and attempt < episodes * 3:
+        attempt += 1
+        restock_blockers(warehouse, rng)
+        for _ in range(SETTLE_STEPS // 2):
+            step(warehouse)
+        targets = [b for b in warehouse.boxes_at(DEEP_BIN) if warehouse.pickable(b.sku)]
+        box = targets[rng.integers(len(targets))]
+        blockers = commands.blockers(box)
+        if not blockers:
+            continue
+        blocker = blockers[0]
+        teleport_base(warehouse, warehouse.approach_pose(DEEP_BIN) + stance_jitter(rng))
+        for _ in range(20):
+            step(warehouse)
+        frames = {"head": [], "wrist": [], "state": [], "finger_target": []}
+        target_before = warehouse.sync(box).copy()
+        blocker_before = warehouse.sync(blocker).copy()
+        record = {"attempt": attempt, "blocker": blocker.ycb, "yaw": round(blocker.yaw, 2)}
+        try:
+            run_silent(warehouse, commands.take_tool("paddle"))
+            warehouse.marker = commands.true_target(blocker).center.copy()
+            run_gated(warehouse, commands, commands.push_aside(blocker, box), frames)
+            trace = commands.push_trace
+            for _ in range(30):
+                step(warehouse)
+            pose = commands.true_target(blocker)
+            record.update(moved=trace["final_lateral"], goal=trace["goal_lateral"], depth=trace["final_depth"],
+                          upright=bool(abs(float(pose.axes[2, int(np.argmax(np.abs(commands.true_target(blocker).axes[2, :])))])) > UPRIGHT_COS)
+                          and trace["upright"],
+                          target_moved=round(float(np.linalg.norm(warehouse.sync(box) - target_before)), 3))
+            run_silent(warehouse, commands.return_tool())
+        except SimError as err:
+            record["skipped"] = str(err)
+        commands.recording = False
+        warehouse.marker = None
+        warehouse.tool = None
+        warehouse.trail = None
+        ok = ("skipped" not in record and record["moved"] >= record["goal"] and record["upright"]
+              and abs(record["depth"]) <= PUSH_MAX_DEPTH_SHIFT and record["target_moved"] < TARGET_MAX_SHIFT
+              and len(frames["state"]) > 2)
+        if not ok:
+            log.write(json.dumps({**record, "saved": False}) + "\n")
+            log.flush()
+            continue
+        side = commands.push_trace["side"]
+        direction = "left" if side > 0 else "right"
+        name = BLOCKER_NAMES[blocker.ycb]
+        instruction = (f"push the {name} to the {direction}", f"slide the {name} {direction} out of the way",
+                       f"clear the {name} by pushing it {direction}")[rng.integers(3)]
+        state = np.stack(frames["state"])
+        state[:, 5] = np.unwrap(state[:, 5])
+        next_pose = np.concatenate([state[1:, :6], state[-1:, :6]])
+        action = np.concatenate([next_pose, np.array(frames["finger_target"])[:, None]], axis=1).astype(np.float32)
+        np.savez_compressed(out / f"episode_{saved:04d}.npz", instruction=instruction, head=np.stack(frames["head"]),
+                            wrist=np.stack(frames["wrist"]), state=state, action=action)
+        log.write(json.dumps({**record, "saved": True, "episode": saved, "frames": len(frames["state"]), "instruction": instruction}) + "\n")
+        log.flush()
+        saved += 1
+        print(f"saved {saved}/{episodes} (attempt {attempt}) {instruction}", flush=True)
 
 
 def collect_demos(warehouse: Warehouse, episodes: int) -> None:
@@ -2259,6 +2769,10 @@ def collect_demos(warehouse: Warehouse, episodes: int) -> None:
 
 def run_trial(warehouse: Warehouse, commands: "Commands", pose: np.ndarray, box: Item, policy: str) -> dict:
     teleport_base(warehouse, pose)
+    if box.location_id == DEEP_BIN and args.scenario == "hard":
+        warehouse.layout_deep(DEEP_BIN, warehouse.boxes_at(DEEP_BIN, background=True))
+        for _ in range(SETTLE_STEPS // 2):
+            step(warehouse)
     for _ in range(20):
         step(warehouse)
     start = warehouse.sync(box).copy()
@@ -2287,6 +2801,8 @@ def run_trial(warehouse: Warehouse, commands: "Commands", pose: np.ndarray, box:
         commands.last_grasp = {**getattr(commands, "last_grasp", {}), "error": str(err)}
     miss = float(np.linalg.norm(warehouse.fingertip() - warehouse.sync(box)))
     warehouse.held = None
+    warehouse.tool = None
+    warehouse.trail = None
     warehouse.finger_target = 0.04
     for _ in range(30):
         step(warehouse)
@@ -2391,12 +2907,20 @@ def make_handler(server: Server):
 
 
 def main() -> None:
-    warehouse = Warehouse(streaming=not (args.collect or args.eval_grasp))
+    warehouse = Warehouse(streaming=not (args.collect or args.collect_push or args.eval_grasp))
     warehouse.reset_inventory([], args.seed)
+    if args.collect_push:
+        if WATCH:
+            WATCH.serve()
+        collect_push_demos(warehouse, args.collect_push)
+        app.close()
+        return
     if args.collect:
         collect_demos(warehouse, args.collect)
         app.close()
         return
+    if WATCH:
+        WATCH.serve()
     if args.eval_grasp:
         eval_grasps(warehouse, args.eval_grasp)
         app.close()
