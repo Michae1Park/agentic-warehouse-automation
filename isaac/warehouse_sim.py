@@ -253,8 +253,7 @@ PUSH_SPEED = 0.03
 PUSH_GOAL_CLEARANCE = 0.07
 PUSH_OVERSHOOT = 0.02
 PUSH_MAX_CARRY = 0.12
-PUSH_SLOW_SPEED = 0.02
-PUSH_SLOW_YAW = math.radians(17)
+PUSH_STROKE_SPEED = 0.08
 UPRIGHT_COS = 0.9
 PUSH_STEP = 0.02
 PUSH_PLAN_STEP = 0.01
@@ -1905,9 +1904,7 @@ class Commands:
         trace["target_debug"] = {"ycb": target_box.ycb, "center": np.round(target.center, 3).tolist(), "extents": np.round(target.extents, 3).tolist(),
                                  "axes": np.round(target.axes, 2).tolist(), "round": target.round_axis, "travel": round(travel, 3)}
         reached = start.copy()
-        squareness = abs(math.sin(2 * (blocker.yaw - math.pi / 2)))
-        speed = PUSH_SLOW_SPEED if squareness > math.sin(2 * PUSH_SLOW_YAW) and blocker.size[0] != blocker.size[1] else PUSH_SPEED
-        speed = args.push_speed or speed
+        speed = args.push_speed or PUSH_STROKE_SPEED
         trace["push_speed"] = speed
         ticks = max(1, int(PUSH_PLAN_STEP / speed / PHYSICS_DT))
         for k, (point, joints) in enumerate(plan):
