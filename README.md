@@ -112,6 +112,31 @@ A warehouse manager types *"Prepare order #1045 and move it to dispatch."* A **Q
 </details>
 
 <details>
+<summary><b>Agent tools: the 17 typed tools the agent can call</b></summary>
+
+| Group | Tool | What it does |
+|---|---|---|
+| **Orders** | `list_orders` | List orders, optionally by status |
+| | `get_order` | Order with its lines (SKU, quantity, picked) |
+| | `plan_fulfillment` | Reserve stock and create a pick task with an optimized route; fails with a reason when short |
+| **Inventory** | `find_stock` | Shelf locations and available quantity for a SKU or product name |
+| | `get_location` | Contents of a location |
+| | `find_empty_bins` | Empty storage bins, optionally in one aisle |
+| | `inspect_inventory` | Plan a VLM cycle count over bins or an aisle; corrects the records |
+| | `relocate_stock` | Plan a move of stock between storage bins |
+| | `replenish_stock` | Plan a move of received stock from staging to a bin |
+| **Robot & tasks** | `get_robot_status` | Robot status, position, battery and tote contents |
+| | `dispatch_task` | Send a planned task to the robot (asynchronous) |
+| | `get_task_status` | Task status and per-step progress |
+| | `wait_for_task` | Block until a task finishes, when the next step depends on it |
+| | `clear_blocker` | Splice `take_tool paddle → push_blocker → return_tool` before a blocked pick |
+| | `cancel_task` | Cancel a task and release its reservations |
+| **Exceptions** | `list_exceptions` | List open, resolved or escalated exceptions |
+| | `report_exception` | Record an exception that needs human attention |
+
+</details>
+
+<details>
 <summary><b>Iterative build progression</b></summary>
 
 | Stage | Core addition | Result |
