@@ -91,7 +91,7 @@ INSERT INTO order_lines (order_id, sku, quantity) VALUES
     (1042, 'SKU-1001', 2),
     (1042, 'SKU-1002', 1),
     (1043, 'SKU-1001', 1),
-    (1044, 'SKU-1001', 8),
+    (1044, 'SKU-1001', 12),
     (1045, 'SKU-1002', 5);
 
 INSERT INTO robots (id, name, model, x, y) VALUES
