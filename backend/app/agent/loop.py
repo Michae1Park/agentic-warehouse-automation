@@ -34,6 +34,8 @@ report back when it finishes.
 the manager; on failure, inspect the task and exceptions and recommend a next step.
 - If a task is paused because the target is blocked by another item at the shelf, call clear_blocker on that \
 task and then dispatch_task to resume it; tell the manager what is in the way and that the robot will push it aside.
+- After a cycle count, report every discrepancy from the findings. If stock was found in a bin where it is not \
+recorded (misplaced) and its recorded bin was counted short, move it back with relocate_stock and dispatch_task.
 - Be concise and operational. Use order numbers, SKUs and location ids."""
 
 client = AsyncOpenAI(base_url=settings.llm_base_url, api_key="unused")
@@ -147,8 +149,14 @@ async def notify_task_finished(task: dict) -> None:
     else:
         detail = task["status"]
     subject = f"for order {task['order_id']}" if task["order_id"] else f"({task['instruction']})"
+    findings = await fetch_all(
+        "SELECT message FROM exceptions WHERE task_id = %s AND type IN ('inventory_discrepancy', 'unexpected_item') ORDER BY id",
+        task["id"],
+    )
+    report = "".join(f"\n- {row['message']}" for row in findings)
     await run_agent(
         task["conversation_id"],
-        f"[SYSTEM EVENT] {task['kind'].capitalize()} task {task['id']} {subject} {detail}.",
+        f"[SYSTEM EVENT] {task['kind'].capitalize()} task {task['id']} {subject} {detail}."
+        + (f" Findings:{report}" if report else ""),
         task["robot_id"],
     )

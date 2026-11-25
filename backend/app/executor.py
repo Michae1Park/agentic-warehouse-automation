@@ -302,6 +302,7 @@ class TaskExecutor:
         location_id = step["args"]["location_id"]
         counts, detail = await self._perceive(location_id)
         if "vlm" in detail:
+            await self._record_unexpected(task, location_id, counts)
             counts, unexpected = await warehouse.presence_counts(location_id, counts)
             for sku in unexpected:
                 await warehouse.raise_exception(
