@@ -1921,7 +1921,7 @@ class Commands:
         for height in (PUSH_HEIGHT, PUSH_HEIGHT + 0.02):
             start[2] = self.w.surface_z(blocker.location_id) + height
             try:
-                ready = self.w.solve_ik(start - work * (PUSH_STANDOFF + PUSH_READY) + np.array([0.0, 0.0, PUSH_READY_LIFT]), orientation)
+                self.w.solve_ik(start - work * (PUSH_STANDOFF + PUSH_READY) + np.array([0.0, 0.0, PUSH_READY_LIFT]), orientation)
                 approach = self.w.solve_ik(start - work * (PUSH_STANDOFF + PUSH_ENTRY), orientation)
                 self.w.solve_ik(start + side * lateral * distance, orientation)
             except SimError:
@@ -3177,7 +3177,6 @@ def collect_push_demos(warehouse: Warehouse, episodes: int) -> None:
             step(warehouse)
         frames = {"head": [], "wrist": [], "state": [], "finger_target": []}
         target_before = warehouse.sync(box).copy()
-        blocker_before = warehouse.sync(blocker).copy()
         record = {"attempt": attempt, "blocker": blocker.ycb, "yaw": round(blocker.yaw, 2)}
         try:
             run_silent(warehouse, commands.take_tool("paddle"))
