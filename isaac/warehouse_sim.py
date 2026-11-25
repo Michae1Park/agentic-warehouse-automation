@@ -18,6 +18,9 @@ parser.add_argument("--collect", type=int, default=0, help="record N scripted gr
 parser.add_argument("--collect-push", type=int, default=0, help="record N paddle push demonstrations (deep shelving) and exit")
 parser.add_argument("--push-policy", choices=["expert", "vla"], default="expert", help="with --collect-push: vla evaluates the push policy at --policy-url instead of recording expert demos")
 parser.add_argument("--push-eval", action="store_true", help="with --collect-push: log success per trial instead of saving demos")
+parser.add_argument("--push-blend", type=int, default=5, help="blend this many leading actions of each new push chunk with the previous chunk")
+parser.add_argument("--push-lead", type=int, default=1, help="command the push policy action this many steps ahead to offset tracking lag")
+parser.add_argument("--push-settle", type=int, default=0, help="max ticks to wait for the arm to reach each push action")
 parser.add_argument("--push-execute", type=int, default=5, help="push policy actions executed per query")
 parser.add_argument("--marker-state", action="store_true", help="append the head-image marker center to the push policy state")
 parser.add_argument("--push-speed", type=float, default=0.0, help="override the sideways push speed in m/s for every blocker")
@@ -211,7 +214,6 @@ RESHUFFLE_EVERY = 10
 VLA_EXECUTE_ACTIONS = 5
 VLA_PUSH_QUERIES = 45
 VLA_PUSH_HOME_TOLERANCE = 0.04
-VLA_PUSH_SETTLE_TICKS = 12
 VLA_PUSH_SETTLE_TOLERANCE = 0.005
 PERCEPTION_RES = (512, 512)
 HEAD_HEIGHT = 1.3
@@ -1998,6 +2000,7 @@ class Commands:
         ready_tip = self.w.fingertip().copy()
         reached_goal = False
         self.vla_debug = {"ik_failures": 0, "actions": 0, "first_actions": [], "first_state": None}
+        previous = None
         for _ in range(VLA_PUSH_QUERIES * VLA_EXECUTE_ACTIONS // args.push_execute):
             obs = self.w.policy_observation()
             state = np.concatenate([obs["state"], marker_center(obs["head"])]) if args.marker_state else obs["state"]
@@ -2008,10 +2011,16 @@ class Commands:
             request = urllib.request.Request(args.policy_url + "/act", data=body, headers={"content-type": "application/json"})
             with urllib.request.urlopen(request, timeout=30) as response:
                 actions = np.array(json.loads(response.read())["actions"], dtype=float)
+            if previous is not None and args.push_blend:
+                overlap = min(args.push_blend, len(previous) - args.push_execute, len(actions))
+                weights = (np.arange(1, overlap + 1) / (overlap + 1))[:, None]
+                actions[:overlap] = weights * actions[:overlap] + (1 - weights) * previous[args.push_execute:args.push_execute + overlap]
+            previous = actions
             if self.vla_debug["first_state"] is None:
                 self.vla_debug["first_state"] = np.round(obs["state"], 3).tolist()
                 self.vla_debug["first_actions"] = np.round(actions[:3], 3).tolist()
-            for action in actions[:args.push_execute]:
+            for index in range(args.push_execute):
+                action = actions[min(index + args.push_lead, len(actions) - 1)]
                 start_arm = self.w.arm_target.copy()
                 self.vla_debug["actions"] += 1
                 try:
@@ -2024,7 +2033,7 @@ class Commands:
                     self.w.arm_target = start_arm + (goal_arm - start_arm) * i / CONTROL_EVERY
                     yield
                 target_tip = self.w.to_world_frame(action[:3])
-                for _ in range(VLA_PUSH_SETTLE_TICKS):
+                for _ in range(args.push_settle):
                     if np.linalg.norm(self.w.fingertip() - target_tip) < VLA_PUSH_SETTLE_TOLERANCE:
                         break
                     yield
