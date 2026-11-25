@@ -8,7 +8,7 @@ export default function SimPreview() {
       {SIM_URL ? (
         <a className="sim-preview" href="#/sim" title="Open the live simulation">
           <img className="sim-stream" src={`${SIM_URL}/stream.mjpg`} alt="Isaac Sim live stream" />
-          <span className="sim-help">Open full view →</span>
+          <span className="sim-help">Open live view →</span>
         </a>
       ) : (
         <div className="sim-placeholder">Isaac Sim not connected.</div>

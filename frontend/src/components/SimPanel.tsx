@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import FloorMap from "./FloorMap";
-import Panel from "./Panel";
+import Icon from "./Icon";
+import KpiBar from "./KpiBar";
+import OrdersPanel from "./OrdersPanel";
+import RobotPanel from "./RobotPanel";
 
 const SIM_URL = import.meta.env.VITE_SIM_URL as string | undefined;
 const CAMERAS = ["overview", "chase", "inspect"] as const;
@@ -73,52 +76,60 @@ export default function SimPanel() {
   };
 
   return (
-    <Panel title="Live Simulation" area="sim">
-      <div className="tabs">
-        <button className={view === "sim" ? "active" : ""} onClick={() => setView("sim")}>
-          Isaac Sim
-        </button>
-        <button className={view === "map" ? "active" : ""} onClick={() => setView("map")}>
-          Floor map
-        </button>
+    <section className="stage">
+      <div className="viewport">
+      {view === "map" && <FloorMap />}
+      {view === "sim" &&
+        (SIM_URL ? (
+          <img
+            ref={stream}
+            className="sim-stream interactive"
+            src={`${SIM_URL}/stream.mjpg`}
+            alt="Isaac Sim live stream"
+            draggable={false}
+            onPointerDown={onPointerDown}
+            onPointerMove={onPointerMove}
+            onPointerUp={() => (drag.current = null)}
+            onDoubleClick={resetView}
+            onContextMenu={(e) => e.preventDefault()}
+          />
+        ) : (
+          <div className="sim-placeholder">Isaac Sim not connected</div>
+        ))}
+      <div className="toolbar glass">
+        <span className="live-dot" />
+        <div className="segmented">
+          <button className={view === "sim" ? "active" : ""} onClick={() => setView("sim")}>
+            3D
+          </button>
+          <button className={view === "map" ? "active" : ""} onClick={() => setView("map")}>
+            Map
+          </button>
+        </div>
         {view === "sim" && SIM_URL && (
-          <span className="camera-select">
+          <div className="segmented">
             {CAMERAS.map((name) => (
               <button key={name} className={camera === name ? "active" : ""} onClick={() => selectCamera(name)}>
                 {name}
               </button>
             ))}
-            <button onClick={resetView} title="Reset the overview camera">
-              reset view
+            <button onClick={resetView} title="Reset view">
+              <Icon name="reset" size={14} />
             </button>
-          </span>
+          </div>
         )}
       </div>
-      {view === "map" && <FloorMap />}
-      {view === "sim" &&
-        (SIM_URL ? (
-          <div className="sim-viewport">
-            <img
-              ref={stream}
-              className="sim-stream interactive"
-              src={`${SIM_URL}/stream.mjpg`}
-              alt="Isaac Sim live stream"
-              title="Drag: orbit · Right/Shift-drag: pan · Wheel: zoom · Double-click: reset"
-              draggable={false}
-              onPointerDown={onPointerDown}
-              onPointerMove={onPointerMove}
-              onPointerUp={() => (drag.current = null)}
-              onDoubleClick={resetView}
-              onContextMenu={(e) => e.preventDefault()}
-            />
-            <div className="sim-help">
-              <b>Drag</b> orbit · <b>Right-drag</b> / <b>Shift-drag</b> pan · <b>Scroll</b> zoom ·{" "}
-              <b>Double-click</b> reset
-            </div>
-          </div>
-        ) : (
-          <div className="sim-placeholder">Isaac Sim not connected (start with the isaac profile and set SIM_URL).</div>
-        ))}
-    </Panel>
+      {view === "sim" && SIM_URL && (
+        <div className="sim-help">Drag orbit · Shift-drag pan · Scroll zoom · Double-click reset</div>
+      )}
+      </div>
+      <div className="stage-kpis">
+        <KpiBar />
+      </div>
+      <aside className="stage-side">
+        <RobotPanel />
+        <OrdersPanel title="Awaiting" area="orders" statuses={["pending", "in_progress"]} empty="No orders waiting." compact />
+      </aside>
+    </section>
   );
 }

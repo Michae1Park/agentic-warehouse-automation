@@ -2,9 +2,9 @@ import { useLive } from "../api";
 import type { Order } from "../types";
 import Panel from "./Panel";
 
-type Props = { title: string; area: string; statuses: Order["status"][]; empty: string };
+type Props = { title: string; area: string; statuses: Order["status"][]; empty: string; compact?: boolean };
 
-export default function OrdersPanel({ title, area, statuses, empty }: Props) {
+export default function OrdersPanel({ title, area, statuses, empty, compact }: Props) {
   const orders = (useLive<Order[]>("/api/orders", ["orders", "order_lines"]) ?? []).filter((order) =>
     statuses.includes(order.status),
   );
@@ -12,6 +12,17 @@ export default function OrdersPanel({ title, area, statuses, empty }: Props) {
   return (
     <Panel title={`${title} (${orders.length})`} area={area}>
       {orders.length === 0 && <p className="muted">{empty}</p>}
+      {compact ? (
+        <ul className="order-list">
+          {orders.map((order) => (
+            <li key={order.id}>
+              <span className="mono">#{order.id}</span>
+              <span className="progress"><i style={{ width: `${order.units ? (100 * order.picked_units) / order.units : 0}%` }} /></span>
+              <span className={`badge ${order.status}`}>{order.status.replace("_", " ")}</span>
+            </li>
+          ))}
+        </ul>
+      ) : (
       <table>
         <thead>
           <tr>
@@ -40,6 +51,7 @@ export default function OrdersPanel({ title, area, statuses, empty }: Props) {
           ))}
         </tbody>
       </table>
+      )}
     </Panel>
   );
 }

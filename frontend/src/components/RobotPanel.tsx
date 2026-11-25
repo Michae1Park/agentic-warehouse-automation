@@ -46,8 +46,12 @@ export default function RobotPanel() {
       {robots.map((robot) => (
         <div key={robot.id} className="robot">
           <div className="robot-head">
-            <strong>{robot.name}</strong>
+            <strong><span className={`status-dot ${robot.status}`} />{robot.name}</strong>
             <span className={`badge ${robot.status}`}>{robot.status}</span>
+          </div>
+          <div className="battery" title={`Battery ${Math.round(Number(robot.battery_pct))}%`}>
+            <i style={{ width: `${Number(robot.battery_pct)}%` }} />
+            <span className="mono">{Math.round(Number(robot.battery_pct))}%</span>
           </div>
           <dl>
             <dt>Model</dt>

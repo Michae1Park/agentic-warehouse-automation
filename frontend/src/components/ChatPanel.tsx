@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { API_URL, onEvent } from "../api";
-import Panel from "./Panel";
+import Icon from "./Icon";
 
 type ToolCall = { id: string; function: { name: string; arguments: string } };
 type Message = {
@@ -12,8 +12,9 @@ type Message = {
 };
 
 const SUGGESTIONS = [
-  "Prepare order #1042 and move it to the dispatch area",
-  "Which orders are waiting for fulfillment?",
+  "Prepare order #1045 and move it to dispatch",
+  "Cycle count aisle B",
+  "Prepare order #1044",
   "Are there any open exceptions?",
 ];
 
@@ -83,17 +84,28 @@ function renderBlocks(text: string) {
 
 function MessageView({ message }: { message: Message }) {
   if (message.role === "tool") return null;
-  const isEvent = message.role === "user" && message.content.startsWith("[SYSTEM EVENT]");
+  if (message.role === "user" && message.content.startsWith("[SYSTEM EVENT]"))
+    return <div className="msg event">{message.content.replace("[SYSTEM EVENT]", "").trim()}</div>;
+  if (message.role === "user") return <div className="msg user">{renderBlocks(message.content)}</div>;
+  const calls = message.tool_calls ?? [];
   return (
-    <div className={`msg ${isEvent ? "event" : message.role}`}>
-      {message.content && (
-        <div className="msg-text">{renderBlocks(message.content)}</div>
-      )}
-      {message.tool_calls?.map((call) => (
-        <code key={call.id} className="tool-chip" title={call.function.arguments}>
-          {call.function.name}({toolArgs(call.function.arguments)})
-        </code>
-      ))}
+    <div className="msg assistant">
+      <span className="avatar">
+        <Icon name="cube" size={16} />
+      </span>
+      <div className="msg-body">
+        {message.content && <div className="msg-text">{renderBlocks(message.content)}</div>}
+        {calls.length > 0 && (
+          <div className="tools">
+            {calls.map((call) => (
+              <code key={call.id} className="tool-chip" title={call.function.arguments}>
+                {call.function.name}
+                <span>({toolArgs(call.function.arguments)})</span>
+              </code>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -119,7 +131,7 @@ export default function ChatPanel() {
   }, [base, conversation]);
 
   useEffect(() => {
-    logRef.current?.scrollTo({ top: logRef.current.scrollHeight });
+    logRef.current?.scrollTo({ top: logRef.current.scrollHeight, behavior: "smooth" });
   }, [messages, busy]);
 
   const send = async (content: string) => {
@@ -145,25 +157,49 @@ export default function ChatPanel() {
     setConversation(fresh);
   };
 
+  const empty = messages.length === 0;
+
   return (
-    <Panel title="Operations Agent" area="chat">
+    <section className="chat">
+      <header className="chat-head">
+        <span>Operations Agent</span>
+        <button className="ghost" onClick={reset} title="New conversation">
+          <Icon name="plus" size={16} /> New chat
+        </button>
+      </header>
       <div className="chat-log" ref={logRef}>
-        {messages.length === 0 && (
-          <div className="suggestions">
-            {SUGGESTIONS.map((s) => (
-              <button key={s} onClick={() => send(s)}>
-                {s}
-              </button>
-            ))}
-          </div>
-        )}
-        {messages.map((m) => (
-          <MessageView key={m.id} message={m} />
-        ))}
-        {busy && <div className="msg assistant muted">Working…</div>}
+        <div className="chat-column">
+          {empty && (
+            <div className="greeting">
+              <h1>
+                <span className="gradient">Hello, manager</span>
+                <br />
+                What should the warehouse do?
+              </h1>
+              <div className="suggestions">
+                {SUGGESTIONS.map((s) => (
+                  <button key={s} onClick={() => send(s)}>
+                    {s}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          {messages.map((m) => (
+            <MessageView key={m.id} message={m} />
+          ))}
+          {busy && (
+            <div className="msg assistant">
+              <span className="avatar thinking">
+                <Icon name="cube" size={16} />
+              </span>
+              <div className="msg-body muted">Thinking…</div>
+            </div>
+          )}
+        </div>
       </div>
       <form
-        className="chat-input"
+        className="composer"
         onSubmit={(e) => {
           e.preventDefault();
           send(input);
@@ -172,14 +208,13 @@ export default function ChatPanel() {
         <input
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          placeholder="e.g. Prepare order #1042 and move it to dispatch"
+          placeholder="Ask the warehouse agent"
           disabled={busy}
         />
-        <button disabled={busy || !input.trim()}>Send</button>
-        <button type="button" className="secondary" onClick={reset} title="New conversation">
-          New
+        <button className="send" disabled={busy || !input.trim()} title="Send">
+          <Icon name="send" />
         </button>
       </form>
-    </Panel>
+    </section>
   );
 }
