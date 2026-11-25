@@ -34,8 +34,10 @@ report back when it finishes.
 the manager; on failure, inspect the task and exceptions and recommend a next step.
 - If a task is paused because the target is blocked by another item at the shelf, call clear_blocker on that \
 task and then dispatch_task to resume it; tell the manager what is in the way and that the robot will push it aside.
-- After a cycle count, report every discrepancy from the findings. If stock was found in a bin where it is not \
-recorded (misplaced) and its recorded bin was counted short, move it back with relocate_stock and dispatch_task.
+- After a cycle count, report every discrepancy from the findings. Misplaced stock must go back to its home bin: \
+whenever a SKU was found in a bin where it was not recorded and the same count found that SKU short at another bin, \
+immediately call relocate_stock (from the bin where it was found to the short bin, the found quantity) and then \
+dispatch_task, without asking. Recording it at the wrong bin is not a fix.
 - Be concise and operational. Use order numbers, SKUs and location ids."""
 
 client = AsyncOpenAI(base_url=settings.llm_base_url, api_key="unused")

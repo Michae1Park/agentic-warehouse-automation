@@ -38,7 +38,8 @@ class PhysicalWorld:
         if not self.faults.misplaced_stock_rate:
             return []
         pickable = {r["sku"] for r in await fetch_all("SELECT sku FROM products WHERE robot_pickable")}
-        bins = [r["id"] for r in await fetch_all("SELECT id FROM locations WHERE kind = 'storage' ORDER BY id")]
+        bins = [r["id"] for r in await fetch_all(
+            "SELECT id FROM locations WHERE kind = 'storage' AND level = 1 ORDER BY id")]
         misplaced = []
         for (location_id, sku), qty in list(self.stock.items()):
             if sku not in pickable or location_id not in bins or qty <= 0:

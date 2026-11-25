@@ -165,6 +165,7 @@ CONVEYOR_FACE_X = 11.87
 UNDOCK = 0.35
 CARRY_CLEARANCE = 0.12
 HOVER_LIFT = np.array([0.0, 0.0, 0.18])
+TOTE_HOVER_LIFTS = (0.18, 0.08, 0.0)
 SET_DOWN_TURNS = (0.0, math.pi / 2, -math.pi / 2, math.pi, 0.5, -0.5)
 OUTBOUND_CLEARANCE = 0.12
 FRONT_GRASP = euler_angles_to_quat(np.array([0.0, math.pi / 2, 0.0]))
@@ -258,6 +259,9 @@ PERCEPTION_RES = (512, 512)
 HEAD_HEIGHT = 1.3
 HEAD_REACH = 0.8
 HEAD_LOOK_ABOVE = 0.08
+UPPER_LEVEL_Z = 0.6
+UPPER_HEAD_REACH = 0.6
+UPPER_HEAD_HEIGHT = 1.6
 MIN_VISIBLE_POINTS = 40
 MAX_GRASP_WIDTH = 0.075
 ATTACH_MARGIN = 0.015
@@ -310,6 +314,7 @@ UPRIGHT_COS = 0.9
 PUSH_STEP = 0.02
 PUSH_PLAN_STEP = 0.01
 PUSH_MAX_JOINT_STEP = 0.15
+RELAXED_JOINT_STEP = 0.6
 ATTACH_ON_CLOSE = 0.10
 PUSH_TRACK_TOLERANCE = 0.03
 WIDTH_WEIGHT = 20.0
@@ -352,6 +357,7 @@ class Item:
         self.toppled = False
         self.flipped = False
         self.deck_slot = 0
+        self.pinned = False
 
     @property
     def path(self) -> str:
@@ -453,6 +459,8 @@ class Warehouse:
         self.views: dict[str, tuple[np.ndarray, np.ndarray, float]] = {}
         self.grasp_failure_next = False
         self.look_z = 0.38
+        self.look_reach = HEAD_REACH
+        self.look_height = HEAD_HEIGHT
         self.marker: np.ndarray | None = None
         self._build_environment()
         self.grip_material = self._physics_material("/World/PhysicsMaterials/grip", GRIP_FRICTION)
@@ -1019,8 +1027,8 @@ class Warehouse:
         x, y, theta = self.base_pose()
         work_side = np.array([math.cos(theta), math.sin(theta), 0.0])
         mount = np.array([x, y, 0.0]) + np.array([math.cos(theta), math.sin(theta), 0.0]) * ARM_MOUNT
-        set_camera_view(eye=mount + np.array([0, 0, HEAD_HEIGHT]),
-                        target=mount + work_side * HEAD_REACH + np.array([0, 0, self.look_z]), camera_prim_path="/World/HeadCam")
+        set_camera_view(eye=mount + np.array([0, 0, self.look_height]),
+                        target=mount + work_side * self.look_reach + np.array([0, 0, self.look_z]), camera_prim_path="/World/HeadCam")
         hand_position, hand_orientation = self.hand.get_world_pose()
         hand = quat_to_rot_matrix(hand_orientation)
         tip = hand_position + hand @ FINGERTIP_OFFSET
@@ -1208,6 +1216,10 @@ class Warehouse:
         for prim, (offset, z, _, _) in zip(self.hardware, HARDWARE):
             xy = np.array([x, y]) + rotation @ np.array(offset)
             prim.set_world_pose(np.array([xy[0], xy[1], z]), euler_angles_to_quat(np.array([0, 0, theta])))
+        for box in self.tote:
+            if box.pinned:
+                surface, yaw = self.deck_slot(box.deck_slot)
+                box.rest_on(surface, yaw)
 
     def deck_slot(self, index: int) -> tuple[np.ndarray, float]:
         x, y, theta = self.base_pose()
@@ -1598,7 +1610,12 @@ class Commands:
         if self.pose_source == "sim":
             return truth
         surface_z = self.w.surface_z(box.location_id)
-        self.w.look_z = surface_z + HEAD_LOOK_ABOVE
+        upper = surface_z > UPPER_LEVEL_Z
+        self.w.look_z = surface_z if upper else surface_z + HEAD_LOOK_ABOVE
+        self.w.look_reach = UPPER_HEAD_REACH if upper else HEAD_REACH
+        self.w.look_height = UPPER_HEAD_HEIGHT if upper else HEAD_HEIGHT
+        if upper and np.abs(self.w.arm_target - self.w.arm_home).max() > 0.05:
+            yield from self.move_arm(self.w.arm_home, 60)
         for _ in range(6):
             yield
         estimate = self.w.estimate_target(box, surface_z)
@@ -1751,13 +1768,13 @@ class Commands:
                 self.w.arm_target = begin + (goal - begin) * k / ticks
                 yield
 
-    def smooth_approach(self, option: dict) -> tuple[np.ndarray, list[np.ndarray]] | None:
+    def smooth_approach(self, option: dict, max_step: float = PUSH_MAX_JOINT_STEP) -> tuple[np.ndarray, list[np.ndarray]] | None:
         above = option["approach"] + np.array([0.0, 0.0, GRASP_READY_LIFT])
         natural = self.natural_orientation(option["approach"], option["orientation"])
         flipped = rot_matrix_to_quat(quat_to_rot_matrix(natural) @ np.diag([-1.0, -1.0, 1.0]))
         for orientation in (natural, flipped):
             try:
-                plan = self.plan_line(above, option["approach"], orientation)
+                plan = self.plan_line(above, option["approach"], orientation, max_step)
             except SimError:
                 continue
             option["orientation"] = orientation
@@ -1920,6 +1937,7 @@ class Commands:
     def choose_grasp(self, box: Item) -> np.ndarray:
         self.grasp_choice = None
         pregrasp_joints = None
+        reachable = []
         top_down = box.location_id == TOTE_BIN and args.scenario == "hard"
         for option in self.grasp_options(self.target, self.w.surface_z(box.location_id), top_down):
             try:
@@ -1936,10 +1954,17 @@ class Commands:
                 pass
             plan = self.smooth_approach(option)
             if plan is None:
+                reachable.append(option)
                 continue
             option["plan"] = plan
             self.grasp_choice = option
             break
+        for option in reachable if self.grasp_choice is None else []:
+            plan = self.smooth_approach(option, RELAXED_JOINT_STEP)
+            if plan is not None:
+                option["plan"] = plan
+                self.grasp_choice = option
+                break
         self.last_grasp = {**self.last_grasp, "target_upright": round(float(np.abs(self.true_target(box).axes[2]).max()), 2),
                            "options": len(self.grasp_options(self.target, self.w.surface_z(box.location_id), top_down))}
         if self.last_grasp["options"] == 0:
@@ -2332,13 +2357,14 @@ class Commands:
                 best, best_cost = candidate, cost
         return best
 
-    def plan_line(self, origin: np.ndarray, goal: np.ndarray, orientation: np.ndarray) -> list[np.ndarray]:
+    def plan_line(self, origin: np.ndarray, goal: np.ndarray, orientation: np.ndarray,
+                  max_step: float = PUSH_MAX_JOINT_STEP) -> list[np.ndarray]:
         steps = max(1, int(float(np.linalg.norm(goal - origin)) / PUSH_PLAN_STEP))
         previous = self.w.solve_ik(goal, orientation, self.reach_seed())
         plan = [previous]
         for k in range(steps - 1, -1, -1):
             joints = self.w.solve_ik(origin + (goal - origin) * k / steps, orientation, previous)
-            if float(np.abs(joints - previous).max()) > PUSH_MAX_JOINT_STEP:
+            if float(np.abs(joints - previous).max()) > max_step:
                 raise SimError("ik_jump", f"arm configuration jump on the way to {np.round(goal, 2).tolist()} at step {steps - k}/{steps}: "
                                           f"{np.round(previous, 2).tolist()} -> {np.round(joints, 2).tolist()}")
             plan.append(joints)
@@ -2507,7 +2533,11 @@ class Commands:
         box.location_id = None
         box.deck_slot = slot
         self.w.tote.append(box)
-        self.w.set_dynamic(box, True)
+        box.pinned = box.footprint[2] > 2 * ROBOT_TOTE_SIZE[2]
+        if box.pinned:
+            box.rest_on(surface, yaw)
+        else:
+            self.w.set_dynamic(box, True)
         yield from self.gripper(0.04)
         yield from self.reach_linear(above, orientation, 0.25)
         yield from self.reach_linear(above + HOVER_LIFT, orientation, 0.25)
@@ -2518,21 +2548,24 @@ class Commands:
         options = self.grasp_options(self.target, self.target.center[2] - self.target.height / 2)
         reachable = None
         for option in sorted(options, key=lambda o: o["pitch"] < 1.0):
-            above = option["position"] + np.array([0.0, 0.0, CARRY_CLEARANCE])
-            try:
-                hover_joints = self.w.solve_ik(above + HOVER_LIFT, option["orientation"])
-                joints = self.w.solve_ik(above, option["orientation"], hover_joints)
-                self.w.solve_ik(option["position"], option["orientation"], joints)
-            except SimError:
-                continue
-            reachable = option, hover_joints
-            break
+            for lift in TOTE_HOVER_LIFTS:
+                above = option["position"] + np.array([0.0, 0.0, CARRY_CLEARANCE])
+                try:
+                    hover_joints = self.w.solve_ik(above + np.array([0.0, 0.0, lift]), option["orientation"])
+                    joints = self.w.solve_ik(above, option["orientation"], hover_joints)
+                    self.w.solve_ik(option["position"], option["orientation"], joints)
+                except SimError:
+                    continue
+                reachable = option, hover_joints, lift
+                break
+            if reachable:
+                break
         if reachable is None:
             raise SimError("ik_failed", f"no reachable grasp for {box.sku} in the tote")
-        self.grasp_choice, hover_joints = reachable
+        self.grasp_choice, hover_joints, lift = reachable
         position, orientation = self.grasp_choice["position"], self.grasp_choice["orientation"]
         above = position + np.array([0.0, 0.0, CARRY_CLEARANCE])
-        hover = above + HOVER_LIFT
+        hover = above + np.array([0.0, 0.0, lift])
         yield from self.gripper(0.04)
         tip = self.w.fingertip()
         for height in (tip[2], *TOTE_LIFT_HEIGHTS):
@@ -2556,7 +2589,7 @@ class Commands:
         self.w.set_dynamic(box, False)
         self.w.grab(box)
         yield from self.reach_linear(above, orientation, 0.2)
-        yield from self.reach_linear(above + HOVER_LIFT, orientation, 0.2)
+        yield from self.reach_linear(hover, orientation, 0.2)
 
     def grasp_scripted(self, box: Item):
         self.last_grasp = {}
