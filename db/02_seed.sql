@@ -81,7 +81,8 @@ INSERT INTO orders (id, customer, priority, dispatch_location) VALUES
     (1041, 'Contoso Office',    2, 'DISPATCH-2'),
     (1042, 'Acme Fitness',      1, 'DISPATCH-1'),
     (1043, 'Fabrikam Home',     3, 'DISPATCH-2'),
-    (1044, 'Tailspin Grocers',  2, 'DISPATCH-1');
+    (1044, 'Tailspin Grocers',  2, 'DISPATCH-1'),
+    (1045, 'Litware Deli',      1, 'DISPATCH-1');
 
 INSERT INTO order_lines (order_id, sku, quantity) VALUES
     (1040, 'SKU-1001', 1),
@@ -90,7 +91,8 @@ INSERT INTO order_lines (order_id, sku, quantity) VALUES
     (1042, 'SKU-1001', 2),
     (1042, 'SKU-1002', 1),
     (1043, 'SKU-1001', 1),
-    (1044, 'SKU-1001', 8);
+    (1044, 'SKU-1001', 8),
+    (1045, 'SKU-1002', 5);
 
 INSERT INTO robots (id, name, model, x, y) VALUES
     ('amr-01', 'Picker 1', 'Ridgeback-Franka', 0.0, 0.0);

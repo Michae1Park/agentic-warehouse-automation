@@ -4,8 +4,9 @@ cd "$(dirname "$0")/.."
 
 CPUS="${CPUS:-16-31}"
 GRASP_POLICY="${GRASP_POLICY:-scripted}"
+PUSH_POLICY="${PUSH_POLICY:-vla}"
 GRAPHICS="${GRAPHICS:-high}"
-CHECKPOINT="${CHECKPOINT:-vla/outputs/smolvla_ycb/checkpoints/last/pretrained_model}"
+CHECKPOINT="${CHECKPOINT:-vla/outputs/smolvla_push/checkpoints/last/pretrained_model}"
 VLA_PYTHON="${VLA_PYTHON:-$HOME/workspace/robo-learning/.venv/bin/python}"
 
 LLM_SETTINGS=$(grep -E "^LLM_(WEIGHTS|MODEL|GPU_UTIL|ARGS)=" .env 2>/dev/null || true)
@@ -14,8 +15,9 @@ BACKEND_PORT=8010
 LLM_PORT=8001
 ROBOT_BACKEND=isaac
 SIM_URL=http://localhost:8020
-ISAAC_ARGS="--livestream --graphics $GRAPHICS"
+ISAAC_ARGS="--livestream --graphics $GRAPHICS --scenario hard"
 GRASP_POLICY=$GRASP_POLICY
+PUSH_POLICY=$PUSH_POLICY
 $LLM_SETTINGS
 EOF
 
@@ -25,7 +27,7 @@ read -r TOTAL_MB USED_MB < <(nvidia-smi --query-gpu=memory.total,memory.used --f
 ISAAC_PID_MB=$(nvidia-smi --query-compute-apps=process_name,used_memory --format=csv,noheader,nounits | awk -F', ' '/isaac-sim/ {s += $2} END {print s + 0}')
 FREE_MB=$((TOTAL_MB - USED_MB + ISAAC_PID_MB))
 NEED_MB=$ISAAC_VRAM_MB
-[[ "$GRASP_POLICY" != scripted ]] && NEED_MB=$((NEED_MB + VLA_VRAM_MB))
+[[ "$GRASP_POLICY" != scripted || "$PUSH_POLICY" == vla ]] && NEED_MB=$((NEED_MB + VLA_VRAM_MB))
 if ! docker compose ps --status running --services 2>/dev/null | grep -qx llm; then
   LLM_UTIL=$(grep -oP '^LLM_GPU_UTIL=\K.*' .env || echo 0.75)
   NEED_MB=$((NEED_MB + $(awk -v u="$LLM_UTIL" -v t="$TOTAL_MB" 'BEGIN {printf "%d", u * t}')))
@@ -56,7 +58,7 @@ until curl -sf "http://localhost:8001/v1/models" > /dev/null; do
   sleep 5
 done
 
-if [[ "$GRASP_POLICY" != scripted ]]; then
+if [[ "$GRASP_POLICY" != scripted || "$PUSH_POLICY" == vla ]]; then
   taskset -c "$CPUS" nohup "$VLA_PYTHON" vla/policy_server.py --checkpoint "$CHECKPOINT" > vla/policy_server.log 2>&1 &
 fi
 
