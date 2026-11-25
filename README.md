@@ -29,13 +29,13 @@ https://github.com/user-attachments/assets/5ee24081-e2d6-4b52-a7ed-a4387c0ef353
 <p align="center"><br><b>Demo 2 · Cycle Count</b><br><sub>VLM finds short and misplaced stock</sub><br></p>
 
 <p align="center">
-  <img src="docs/img/demo-cycle-count.gif" alt="Cycle count of an aisle: the VLM inspects each bin, flags a short bin and a misplaced SKU, the agent corrects the records and relocates the stock" width="820">
+  <img src="docs/img/demo-2-cycle-count.jpg" alt="Cycle count of aisle B: the VLM inspects each bin, finds four short bins and two soup cans misplaced in B-02-1, the agent corrects the records and moves the cans back to B-01-1" width="820">
 </p>
 
 <p align="center"><br><b>Demo 3 · Shortage Recovery</b><br><sub>agent replenishes from receiving, then fulfills</sub><br></p>
 
 <p align="center">
-  <img src="docs/img/demo-shortage.gif" alt="Order 1044 is short on the shelf: the agent finds stock in the receiving tote, replenishes the bin, then fulfills the order and the VLM verifies the tote at dispatch" width="820">
+  <img src="docs/img/demo-3-shortage.jpg" alt="Order 1044 needs three mustard bottles but the shelf holds one: the agent replenishes two from the receiving tote into A-01-1, waits for the task, then fulfills the order and the VLM verifies the tote at dispatch" width="820">
 </p>
 
 <br>
@@ -46,7 +46,7 @@ https://github.com/user-attachments/assets/5ee24081-e2d6-4b52-a7ed-a4387c0ef353
 |---|---|---|
 | **Order fulfillment** | *"Prepare order #1045"* | • Reserves stock across bins, plans the route, picks into the robot's tote<br>• Unloads into the outbound tote on the conveyor<br>• VLM audits the tote, then the order closes |
 | **Cycle count** | *"Cycle count aisle B"* | • VLM checks each bin against the WMS record<br>• Writes `cycle_count` adjustments, raises discrepancies, relocates misplaced stock |
-| **Shortage recovery** | An order short on the shelf | • Agent does not dispatch; finds stock in the receiving tote<br>• Replenishes the bin, waits, then fulfills |
+| **Shortage recovery** | *"Prepare order #1044"* (short on the shelf) | • Finds the gap covered by the receiving tote<br>• Replenishes the home bin, waits for the task, then fulfills |
 | **Exception handling** | Grasp slip, blocked path, missing stock | • Regrasp / replan / reallocate from an alternate bin<br>• Escalates with a report when recovery fails |
 
 <details>

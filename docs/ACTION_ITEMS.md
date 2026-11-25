@@ -195,7 +195,11 @@ Goal: three realistic warehouse tasks, each showing one applied AI technology.
    - [x] Base speed 1.2 m/s with 0.6 m/s² ramps, arm 2.5×; bins capped to what fits on the shelf (27 cups at A-04-2 overflowed past the rack end and fell)
    - [ ] Separate fetch action after the push: post-push grasp currently fails (fingertip 0.6–0.7 m off the grasp-ready pose, `eval/results/push_stream/`)
 2. **Cycle count with discrepancies (VLM)**: the agent counts bins by camera, finds short and misplaced stock, corrects the record and relocates the stock
-   - [ ] E2E run with `misplaced_stock_rate` and missing stock: discrepancies raised, records corrected, relocation task planned and executed
+   - [x] E2E run with `misplaced_stock_rate` and missing stock: recorded (seed 1, 1.5× UI zoom): 4 short bins corrected, 2 soup cans found misplaced at B-02-1, agent relocates them to B-01-1 (`docs/videos/demo-2-highlight.mp4`)
+   - [x] Fixes found while recording: VLM count now records misplaced stock it sees (before, only an `unexpected_item` flag, so relocation had nothing to move); task-finished events carry the findings; prompt requires relocating misplaced stock home without asking (one take decided "no relocation needed")
+   - [x] Misplacement fault restricted to level-1 bins for now (see open item below); VLM checked per seed before recording (seed 45 missed a mustard among boxes, misread SKU-2003 as SKU-2001)
+   - [ ] Upper-level picks of tall items: head camera now rises/aims for level 2 (it missed the front of the shelf), but no grasp is reachable for a 19 cm mustard at the front of level 2 from the work stance; needs a different stance or approach (review together)
 3. **Shortage handled from receiving (agent)**: an order is short on the shelf; the agent finds the stock in the cluttered receiving tote, replenishes, waits, then fulfills and the tote is verified at dispatch
    - [ ] Tote pick inside a replenishment task (grounded by the VLM, top-down grasp)
-   - [ ] E2E run: shortage → replenish → wait_for_task → fulfill → verify_tote
+   - [x] E2E run: shortage → replenish → wait_for_task → fulfill → verify_tote, recorded with reset `scenario: "shortage"` (order 1044 = 3 mustards, 1 on the shelf at A-01-1, 4 in receiving); the seeded 12-mustard order was not actually short (shelves hold 12) and needed 12 picks
+   - [x] Prompt recovers shortages covered by receiving without asking; tall items stay pinned in the robot tote (a mustard tipped over the 8 cm wall); base repositions up to 0.3 m and retries when no grasp is reachable (far side of the receiving tote)
