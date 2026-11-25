@@ -68,6 +68,15 @@ class IsaacRobot:
         world.take(location_id, sku)
         return result
 
+    async def take_tool(self, tool: str) -> None:
+        await self._with_pose_sync("take_tool", {"name": tool})
+
+    async def return_tool(self) -> None:
+        await self._with_pose_sync("return_tool", {})
+
+    async def push_blocker(self, sku: str, location_id: str) -> dict:
+        return await self._with_pose_sync("push_blocker", {"sku": sku, "location_id": location_id, "policy": settings.push_policy})
+
     async def resolve(self, location_id: str, point: list[float]) -> dict:
         return await self._command("resolve", {"location_id": location_id, "point": point})
 

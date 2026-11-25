@@ -204,6 +204,28 @@ async def dispatch_task(task_id: int) -> dict:
     return task
 
 
+async def clear_blocker(task_id: int) -> dict:
+    async with pool.connection() as conn, conn.transaction():
+        cur = await conn.execute("SELECT status, error FROM tasks WHERE id = %s FOR UPDATE", (task_id,))
+        task = await cur.fetchone()
+        if not task or task["status"] != "planned" or not (task["error"] or "").startswith("blocked"):
+            raise WarehouseError(f"task {task_id} is not paused on a blocked pick")
+        cur = await conn.execute(
+            "SELECT seq, args FROM task_steps WHERE task_id = %s AND status = 'pending' AND action = 'pick' ORDER BY seq LIMIT 1",
+            (task_id,),
+        )
+        pick = await cur.fetchone()
+        await conn.execute("UPDATE task_steps SET seq = seq + 1000 WHERE task_id = %s AND seq >= %s", (task_id, pick["seq"]))
+        await conn.execute("UPDATE task_steps SET seq = seq - 997 WHERE task_id = %s AND seq >= 1000", (task_id,))
+        target = {"sku": pick["args"]["sku"], "location_id": pick["args"]["location_id"]}
+        for offset, (action, args) in enumerate([("take_tool", {"tool": "paddle"}), ("push_blocker", target), ("return_tool", {})]):
+            await conn.execute("INSERT INTO task_steps (task_id, seq, action, args) VALUES (%s, %s, %s, %s)",
+                               (task_id, pick["seq"] + offset, action, Jsonb(args)))
+        await conn.execute("UPDATE tasks SET error = NULL WHERE id = %s", (task_id,))
+    return {"task_id": task_id, "inserted": ["take_tool paddle", f"push_blocker {target['sku']} at {target['location_id']}",
+                                             "return_tool"], "next": "dispatch_task to resume"}
+
+
 async def release_reservations(conn: AsyncConnection, task_id: int) -> None:
     cur = await conn.execute(
         "SELECT args FROM task_steps WHERE task_id = %s AND action = 'pick' AND status IN ('pending', 'running', 'failed')",

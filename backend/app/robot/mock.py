@@ -63,3 +63,13 @@ class MockRobot:
         if world.grasp_fails():
             raise RobotError("grasp_failed", f"stow of {sku} at {location_id} slipped")
         world.add(location_id, sku)
+
+    async def take_tool(self, tool: str) -> None:
+        await self._sleep(2.0)
+
+    async def return_tool(self) -> None:
+        await self._sleep(2.0)
+
+    async def push_blocker(self, sku: str, location_id: str) -> dict:
+        await self._sleep(4.0)
+        return {"pushed": [], "policy": "mock"}
