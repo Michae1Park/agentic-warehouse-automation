@@ -1,7 +1,7 @@
 <p align="center">
   <h1 align="center">Agentic Warehouse Automation</h1>
   <p align="center">
-    <strong>An LLM agent that runs warehouse workflows end to end, with a VLM for perception and a simulated mobile manipulator for the physical work</strong>
+    <strong>A VLM agent that runs warehouse workflows end to end: it plans, perceives, and directs a simulated mobile manipulator for the physical work</strong>
   </p>
   <p align="center">
     <a href="https://github.com/Michae1Park/agentic-warehouse-automation/actions/workflows/ci.yml"><img src="https://github.com/Michae1Park/agentic-warehouse-automation/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
