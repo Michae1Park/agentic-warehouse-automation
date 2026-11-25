@@ -24,9 +24,7 @@ A warehouse manager types *"Prepare order #1045 and move it to dispatch."* A **Q
 
 <p align="center"><br><b>Demo 1 · Order Fulfillment</b><br><sub>agent plans, robot picks from two aisles, VLM audits the outbound tote</sub><br></p>
 
-<p align="center">
-  <img src="docs/img/demo-1-fulfillment.gif" alt="Order 1045: the agent plans the picks, the robot collects five tomato soup cans from aisles A and C into its tote, unloads them into the outbound tote on the conveyor, and the audited tote leaves through the wall" width="820">
-</p>
+https://github.com/user-attachments/assets/25ca0ca6-505e-45bc-a1d2-95776f0902cc
 
 <p align="center"><br><b>Demo 2 · Cycle Count</b><br><sub>VLM finds short and misplaced stock</sub><br></p>
 
