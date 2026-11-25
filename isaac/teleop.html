@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Push Teleop</title>
+<style>
+  :root { --bg: #111418; --panel: #1b2027; --text: #e6e8eb; --muted: #8b939e; --accent: #4fa3ff; --human: #ffb547; --vla: #5ad19a; --bad: #ff6b6b; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.4 system-ui, sans-serif; }
+  main { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 12px; padding: 12px; height: 100vh; }
+  .views { display: grid; grid-template-rows: minmax(0, 1fr) auto; gap: 8px; min-height: 0; }
+  .views img { width: 100%; border-radius: 6px; background: #000; display: block; }
+  .views figure { margin: 0; min-height: 0; }
+  .views > figure { display: grid; grid-template-rows: minmax(0, 1fr) auto; }
+  #main { width: 100%; height: 100%; object-fit: contain; }
+  .thumbs { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
+  .thumbs figure { cursor: pointer; border: 2px solid transparent; border-radius: 6px; }
+  .thumbs figure.active { border-color: var(--accent); }
+  .thumbs img { aspect-ratio: 4 / 3; object-fit: cover; }
+  figcaption { color: var(--muted); font-size: 12px; margin-top: 2px; }
+  aside { background: var(--panel); border-radius: 8px; padding: 12px; display: grid; gap: 12px; align-content: start; }
+  h1 { font-size: 16px; margin: 0; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-weight: 600; color: #111; }
+  .human { background: var(--human); } .vla { background: var(--vla); } .paused { background: var(--muted); }
+  dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 10px; margin: 0; }
+  dt { color: var(--muted); } dd { margin: 0; font-variant-numeric: tabular-nums; }
+  .bar { height: 8px; background: #2a313a; border-radius: 4px; overflow: hidden; }
+  .bar > div { height: 100%; background: var(--accent); width: 0; transition: width .1s; }
+  table { border-collapse: collapse; width: 100%; font-size: 12px; }
+  td { padding: 2px 4px; border-bottom: 1px solid #2a313a; }
+  kbd { background: #2a313a; border-radius: 3px; padding: 0 5px; font-size: 12px; }
+  .buttons { display: flex; flex-wrap: wrap; gap: 6px; }
+  button { background: #2a313a; color: var(--text); border: 0; border-radius: 6px; padding: 6px 10px; cursor: pointer; }
+  button.save { background: var(--vla); color: #111; } button.discard { background: var(--bad); color: #111; }
+  .warn { color: var(--bad); }
+  aside { overflow-y: auto; }
+  @media (max-width: 800px) { main { grid-template-columns: 1fr; height: auto; } #main { height: auto; aspect-ratio: 4 / 3; } }
+</style>
+</head>
+<body>
+<main>
+  <section class="views">
+    <figure><img id="main" alt="Main view"><figcaption id="main-label"></figcaption></figure>
+    <div class="thumbs" id="thumbs"></div>
+  </section>
+  <aside>
+    <h1>Push teleop</h1>
+    <div><span id="controller" class="badge paused">—</span> <span id="assist"></span></div>
+    <dl>
+      <dt>Task</dt><dd id="instruction">—</dd>
+      <dt>Blocker</dt><dd id="blocker">—</dd>
+      <dt>Pushed</dt><dd id="moved">—</dd>
+      <dt>Frames</dt><dd id="frames">—</dd>
+      <dt>Saved</dt><dd id="saved">—</dd>
+      <dt>Phase</dt><dd id="phase">—</dd>
+    </dl>
+    <div class="bar"><div id="progress"></div></div>
+    <div id="reach" class="warn"></div>
+    <div class="buttons">
+      <button class="save" data-command="save">Save ⏎</button>
+      <button class="discard" data-command="discard">Retry ⌫</button>
+      <button data-command="next">New scene N</button>
+      <button data-command="pause">Pause ␣</button>
+      <button data-command="assist">VLA assist T</button>
+      <button data-command="release">Hand back to VLA V</button>
+    </div>
+    <table>
+      <tr><td><kbd>W</kbd>/<kbd>S</kbd></td><td>forward / back</td></tr>
+      <tr><td><kbd>A</kbd>/<kbd>D</kbd></td><td>left / right</td></tr>
+      <tr><td><kbd>R</kbd>/<kbd>F</kbd></td><td>up / down</td></tr>
+      <tr><td><kbd>Q</kbd>/<kbd>E</kbd></td><td>rotate paddle</td></tr>
+      <tr><td><kbd>Shift</kbd></td><td>fine control</td></tr>
+      <tr><td><kbd>⌫</kbd></td><td>discard and reset to ready (same scene)</td></tr>
+      <tr><td><kbd>N</kbd></td><td>discard and load a new scene</td></tr>
+      <tr><td><kbd>1</kbd>–<kbd>5</kbd></td><td>switch main view</td></tr>
+      <tr><td><kbd>T</kbd></td><td>toggle VLA assist (intervention mode)</td></tr>
+      <tr><td><kbd>V</kbd></td><td>hand control back to the VLA</td></tr>
+      <tr><td colspan="2">With assist on, any motion key takes over from the VLA.</td></tr>
+    </table>
+  </aside>
+</main>
+<script>
+const motion = new Set(["w", "a", "s", "d", "r", "f", "q", "e", "shift"]);
+const commandKeys = { "Enter": "save", "Backspace": "discard", "n": "next", " ": "pause", "t": "assist", "v": "release" };
+const held = new Set();
+const views = [["wrist", "Wrist camera (policy input)"], ["top", "Top-down over the bin"],
+               ["side", "Side view across the shelf"], ["overview", "Overview"], ["head", "Head camera (policy input)"]];
+const thumbs = document.getElementById("thumbs");
+const main = document.getElementById("main");
+let active = 0;
+const refresh = (img, currentName, delay) => {
+  const load = () => { img.src = `/snap/${currentName()}?t=${Date.now()}`; };
+  img.onload = img.onerror = () => setTimeout(load, delay);
+  load();
+};
+const showView = (index) => {
+  active = index;
+  document.getElementById("main-label").textContent = `${index + 1}. ${views[index][1]}`;
+  thumbs.querySelectorAll("figure").forEach((figure, i) => figure.classList.toggle("active", i === index));
+};
+views.forEach(([name, label], index) => {
+  const figure = document.createElement("figure");
+  figure.innerHTML = `<img alt="${label}"><figcaption>${index + 1}. ${name}</figcaption>`;
+  figure.addEventListener("click", () => showView(index));
+  thumbs.appendChild(figure);
+  refresh(figure.querySelector("img"), () => name, 400);
+});
+showView(0);
+refresh(main, () => views[active][0], 60);
+
+const post = (path, body) => fetch(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }).catch(() => {});
+const command = (name) => post("/command", { name });
+
+document.addEventListener("keydown", (event) => {
+  const key = event.key.length === 1 ? event.key.toLowerCase() : event.key;
+  if (commandKeys[key] && !event.repeat) { event.preventDefault(); command(commandKeys[key]); return; }
+  if (/^[1-5]$/.test(key)) { showView(Number(key) - 1); return; }
+  const name = key === "Shift" ? "shift" : key;
+  if (motion.has(name)) { event.preventDefault(); held.add(name); }
+});
+document.addEventListener("keyup", (event) => {
+  const key = event.key.length === 1 ? event.key.toLowerCase() : event.key;
+  held.delete(key === "Shift" ? "shift" : key);
+});
+window.addEventListener("blur", () => held.clear());
+document.querySelectorAll("button[data-command]").forEach((button) => button.addEventListener("click", () => command(button.dataset.command)));
+
+setInterval(() => post("/keys", { keys: [...held] }), 50);
+
+const set = (id, text) => { document.getElementById(id).textContent = text; };
+setInterval(async () => {
+  try {
+    const status = await (await fetch("/status")).json();
+    const badge = document.getElementById("controller");
+    const mode = status.paused ? "paused" : (status.controller || "paused");
+    badge.className = `badge ${mode}`;
+    badge.textContent = status.paused ? "PAUSED" : (status.controller === "vla" ? "VLA DRIVING" : "YOU DRIVING");
+    set("assist", status.assist ? "assist on" : "assist off");
+    set("instruction", status.instruction || "—");
+    set("blocker", status.blocker ? `${status.blocker} (yaw ${status.yaw})` : "—");
+    set("moved", status.goal ? `${(status.moved * 100).toFixed(1)} / ${(status.goal * 100).toFixed(1)} cm` : "—");
+    set("frames", status.frames ?? "—");
+    set("saved", status.saved ?? "—");
+    set("phase", status.phase || "—");
+    document.getElementById("progress").style.width = status.goal ? `${Math.min(100, Math.max(0, 100 * status.moved / status.goal))}%` : "0";
+    set("reach", status.reachable === false ? "Target out of reach — back off" : "");
+  } catch (_) {}
+}, 200);
+</script>
+</body>
+</html>

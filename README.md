@@ -57,7 +57,49 @@ updating the record and raising the exception, closes that loop. A robot that on
 **Deliberately avoided:** multi-agent frameworks. One agent with structured tools, a persistent task state machine
 and deterministic recovery policies proved more reliable than agents passing messages to each other.
 
-## 4. How does the architecture work?
+## 4. Why is a VLA necessary?
+
+On a tidy shelf the VLA is not needed: a scripted grasp planned from a depth-camera pose estimate succeeds 75% of the
+time, against 55% for the same grasp given the simulator's exact pose (20 trials, physical grasp,
+`eval/results/grasp_depth_phys/`). The VLA has to earn its place, so the scenario includes the cases where the scripted
+pipeline breaks.
+
+**A fair comparison.** The deployed scripted planner never reads the simulator. It segments the target, back-projects the
+head depth camera into a point cloud and fits position, yaw and height against the catalog dimensions (`--pose depth`).
+Only the demonstration expert reads the simulator pose (`--pose sim`). That expert exists only in simulation, so in
+deployment the choice is between a perception-dependent planner and a policy distilled from the expert that acts from
+pixels.
+
+**Division of labour.**
+
+| Layer | Owner | Output |
+|---|---|---|
+| What and where: which object, which bin, blocked or toppled | Qwen VLM | A 2D point on the target and a scene description |
+| How: 6-DoF pose, grasp approach, push then grasp, recovery | SmolVLA | Actions from pixels and language; pose stays implicit |
+| Explicit pose estimation | Scripted baseline only | The module the VLA replaces |
+
+VLMs are weak at precise 3D geometry, so Qwen never outputs poses.
+
+**Three scenes that need a learned policy.**
+
+| Scene | Real-world case | Why the scripted planner struggles |
+|---|---|---|
+| **Toppled items** | Pickable products lying on their side or upside down among upright neighbours | Pose fits from a partial view are ambiguous, and one grasp recipe does not fit every orientation |
+| **Cluttered tote** | Inbound mixed tote at receiving, items piled and partly hidden | Segmentation and pose fail under occlusion; there is no clean geometry to plan against |
+| **Mixed-SKU deep shelving** | The target sits behind a different product ("the mustard behind the sugar box"), normal in dense micro-fulfilment storage | No direct grasp exists; the planner needs a separate, hand-written push module first |
+
+Back-row picks are also driven by FIFO and expiry rotation (pharma, food), where the order needs a specific lot behind
+the front unit.
+
+**Training data beyond imitation.** Demonstrations come from the privileged expert with perturbations (a nudge
+mid-approach, an offset grasp, a partial slip) and its corrections, plus a scripted push primitive that clears
+blockers in deep shelving. The policy therefore sees recoveries, not only clean runs, and can exceed a planner that
+just follows its plan.
+
+**Out of scope.** Deformable items (bags, pouches, blister packs) are another case where scripted grasping has no pose
+to plan against, but deformable simulation is costly and fragile, so they are left as future work.
+
+## 5. How does the architecture work?
 
 The design is an ordinary tool-calling AI agent. The difference is that some of its tools happen to be robots.
 The agent calls `dispatch_task` the way a coding agent calls `run_tests`: it states intent, gets a structured
@@ -72,7 +114,7 @@ speeds:
 | **System 1** | Turns a task into skills and runs them reliably: perception, grasping, recovery. Plans are rows in `tasks` / `task_steps`, so a restart resumes a running task | The tool's implementation |
 | **System 0** | Turns skill targets into motion: IK, joint control, physics | The OS / hardware the tool runs on |
 
-## 5. How does the agent interact with enterprise systems?
+## 6. How does the agent interact with enterprise systems?
 
 Through typed tools that wrap SQL transactions, never free-form SQL:
 
@@ -89,7 +131,7 @@ Through typed tools that wrap SQL transactions, never free-form SQL:
   the order and raises a `tote_mismatch` exception (pack-station QA) on any difference.
 - **The order closes** only after a `verify` step confirms every line is fully picked and placed.
 
-## 6. What happens when something fails?
+## 7. What happens when something fails?
 
 Faults are injected into a **physical world model** that is separate from the database, so the WMS can actually be
 wrong. That is the situation inventory accuracy measures.
@@ -104,7 +146,7 @@ wrong. That is the situation inventory accuracy measures.
 When a task finishes, the executor sends a `[SYSTEM EVENT]` into the conversation that created it. The agent then
 inspects the task and its exceptions and reports to the manager without being asked.
 
-## 7. What can be measured?
+## 8. What can be measured?
 
 See [Results](#results). All numbers come from simulation and are compared against **our own scripted simulation
 baseline, not a real warehouse.**
@@ -181,7 +223,7 @@ This is a portfolio demo, so the simplifications are stated plainly:
 - **Grasp physics.** YCB objects are rigid bodies with convex-hull colliders, but the demo uses attach-on-grasp: once
   the fingers close on the item it is attached to the hand. Physical grasping (`--grasp physical`) reaches 65% and
   stays experimental until it passes 80%.
-- **Side-stance manipulation.** The base parks parallel to the shelf, receiving pallet or conveyor and slides to line the arm up with the item; the arm grasps with a horizontal gripper, backs straight out and sets the item down in a tote on a raised stand behind it (a horizontal gripper cannot reach the deck itself). Dispatch and stow are the reverse transfer. The scripted grasp plans from the simulator's object pose; the VLM decides which object.
+- **Side-stance manipulation.** The base parks parallel to the shelf, receiving pallet or conveyor and slides to line the arm up with the item; the arm grasps with a horizontal gripper, backs straight out and sets the item down in a tote on a raised stand behind it (a horizontal gripper cannot reach the deck itself). Dispatch and stow are the reverse transfer. The scripted grasp plans from a pose estimated from the head depth camera (the target mask comes from simulator instance ids; in deployment it would come from the VLM point and a promptable segmenter); the VLM decides which object.
 - **Two pickable products.** Mustard bottle and tomato soup can are robot-pickable; the other 10 YCB products are
   real WMS SKUs flagged `robot_pickable = false`, which the agent refuses and routes to manual handling.
 - **Navigation.** A corridor waypoint planner inside the simulator drives the holonomic base. ROS2 / Nav2 and MoveIt2

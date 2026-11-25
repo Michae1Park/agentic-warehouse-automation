@@ -91,7 +91,10 @@ class TaskExecutor:
                     if not await self._recover(task, step, failure):
                         raise
         except StepFailed as failure:
-            await self._fail_task(task, failure)
+            if failure.code == "blocked" and settings.recovery_enabled:
+                await self._park_task(task, failure)
+            else:
+                await self._fail_task(task, failure)
         else:
             await self._complete_task(task)
         finally:
@@ -234,6 +237,10 @@ class TaskExecutor:
                 outcome = await self.robot.pick(args["sku"], args["location_id"], point) or {}
             except RobotError as err:
                 failed_attempts += 1
+                if err.code == "blocked":
+                    await fetch_one("UPDATE task_steps SET args = args || %s WHERE id = %s RETURNING id",
+                                    Jsonb({"picked": picked}), step["id"])
+                    raise StepFailed(err.code, str(err)) from err
                 if err.code == "item_not_found" or failed_attempts >= max_attempts:
                     raise StepFailed(err.code, str(err)) from err
                 await record_fault(task["id"], step["seq"], err.code, str(err), f"regrasp (attempt {failed_attempts + 1})")
@@ -344,6 +351,30 @@ class TaskExecutor:
                 await conn.execute(
                     "UPDATE orders SET status = 'completed', completed_at = now() WHERE id = %s", (task["order_id"],)
                 )
+
+    async def _park_task(self, task: dict, failure: StepFailed) -> None:
+        async with pool.connection() as conn, conn.transaction():
+            cur = await conn.execute(
+                "UPDATE task_steps SET status = 'pending', finished_at = NULL WHERE task_id = %s AND status = 'failed' RETURNING seq",
+                (task["id"],),
+            )
+            seq = (await cur.fetchone())["seq"]
+            await conn.execute("UPDATE tasks SET status = 'planned', error = %s WHERE id = %s",
+                               (f"{failure.code}: {failure}", task["id"]))
+        await record_fault(task["id"], seq, failure.code, str(failure), "paused for the agent to clear access")
+        await warehouse.raise_exception(failure.code, f"task {task['id']} paused: {failure}", severity="warning",
+                                        task_id=task["id"], order_id=task["order_id"])
+
+    async def _do_take_tool(self, task: dict, step: dict) -> dict:
+        await self.robot.take_tool(step["args"]["tool"])
+        return {"tool": step["args"]["tool"]}
+
+    async def _do_push_blocker(self, task: dict, step: dict) -> dict:
+        return await self.robot.push_blocker(step["args"]["sku"], step["args"]["location_id"]) or {}
+
+    async def _do_return_tool(self, task: dict, step: dict) -> dict:
+        await self.robot.return_tool()
+        return {}
 
     async def _fail_task(self, task: dict, failure: StepFailed) -> None:
         async with pool.connection() as conn, conn.transaction():

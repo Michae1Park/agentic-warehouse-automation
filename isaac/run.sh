@@ -4,7 +4,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 CACHE="${ISAAC_CACHE:-$HOME/.cache/isaac-sim}"
 mkdir -p "$CACHE"/{kit,ov,pip,glcache,computecache,data}
 MOUNT="${ISAAC_MOUNT:-$SCRIPT_DIR}"
-exec docker run --rm ${ISAAC_DOCKER_ARGS:-} -u 0 --gpus all --network host \
+exec docker run --rm --cpuset-cpus "${CPUS:-16-31}" ${ISAAC_DOCKER_ARGS:-} -u 0 --gpus all --network host \
   -e ACCEPT_EULA=Y -e PRIVACY_CONSENT=Y -e OMNI_KIT_ALLOW_ROOT=1 \
   -v "$CACHE/kit:/isaac-sim/kit/cache" -v "$CACHE/ov:/root/.cache/ov" -v "$CACHE/pip:/root/.cache/pip" \
   -v "$CACHE/glcache:/root/.cache/nvidia/GLCache" -v "$CACHE/computecache:/root/.nv/ComputeCache" \

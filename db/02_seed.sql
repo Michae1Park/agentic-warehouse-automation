@@ -67,6 +67,12 @@ INSERT INTO inventory (sku, location_id, quantity) VALUES
     ('SKU-2003', 'C-02-2', 54),
     ('SKU-4001', 'C-03-1', 4),
     ('SKU-5001', 'C-04-2', 2),
+    ('SKU-1001', 'B-01-1', 2),
+    ('SKU-1002', 'B-01-1', 2),
+    ('SKU-2002', 'B-01-1', 2),
+    ('SKU-1001', 'C-04-1', 1),
+    ('SKU-1002', 'C-04-1', 1),
+    ('SKU-2006', 'C-04-1', 2),
     ('SKU-1001', 'STAGING-1', 4),
     ('SKU-1002', 'STAGING-1', 4);
 
@@ -75,7 +81,8 @@ INSERT INTO orders (id, customer, priority, dispatch_location) VALUES
     (1041, 'Contoso Office',    2, 'DISPATCH-2'),
     (1042, 'Acme Fitness',      1, 'DISPATCH-1'),
     (1043, 'Fabrikam Home',     3, 'DISPATCH-2'),
-    (1044, 'Tailspin Grocers',  2, 'DISPATCH-1');
+    (1044, 'Tailspin Grocers',  2, 'DISPATCH-1'),
+    (1045, 'Litware Deli',      1, 'DISPATCH-1');
 
 INSERT INTO order_lines (order_id, sku, quantity) VALUES
     (1040, 'SKU-1001', 1),
@@ -84,7 +91,8 @@ INSERT INTO order_lines (order_id, sku, quantity) VALUES
     (1042, 'SKU-1001', 2),
     (1042, 'SKU-1002', 1),
     (1043, 'SKU-1001', 1),
-    (1044, 'SKU-1001', 8);
+    (1044, 'SKU-1001', 12),
+    (1045, 'SKU-1002', 5);
 
 INSERT INTO robots (id, name, model, x, y) VALUES
     ('amr-01', 'Picker 1', 'Ridgeback-Franka', 0.0, 0.0);

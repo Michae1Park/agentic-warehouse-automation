@@ -97,6 +97,10 @@ async def wait_for_task(ctx: ToolContext, task_id: int, timeout_s: int = 300):
     return {"id": task_id, "status": "still_running", "note": "timed out waiting"}
 
 
+async def clear_blocker(ctx: ToolContext, task_id: int):
+    return await warehouse.clear_blocker(task_id)
+
+
 async def cancel_task(ctx: ToolContext, task_id: int):
     return await warehouse.cancel_task(task_id)
 
@@ -207,6 +211,11 @@ TOOLS = [
          "Block until a dispatched task finishes, then return its final status. Use only when a following step "
          "depends on that task's outcome (e.g. fulfill after replenishment).",
          _params({"task_id": TASK_ID, "timeout_s": {"type": "integer"}}, ["task_id"]), wait_for_task),
+    Tool("clear_blocker",
+         "For a task paused because the target item is hidden behind another item (error 'blocked'): insert steps to pick "
+         "up the paddle tool, push the blocking item aside with the learned push policy (VLA), and put the paddle back, "
+         "before the paused pick. Then call dispatch_task to resume the task.",
+         _params({"task_id": TASK_ID}, ["task_id"]), clear_blocker),
     Tool("cancel_task", "Cancel a planned or queued task and release its inventory reservations.",
          _params({"task_id": TASK_ID}, ["task_id"]), cancel_task),
     Tool("list_exceptions", "List operational exceptions.",

@@ -32,6 +32,8 @@ options such as partial fulfillment or restocking.
 report back when it finishes.
 - Messages starting with [SYSTEM EVENT] are notifications from the robot executor. Summarize the outcome for \
 the manager; on failure, inspect the task and exceptions and recommend a next step.
+- If a task is paused because the target is blocked by another item at the shelf, call clear_blocker on that \
+task and then dispatch_task to resume it; tell the manager what is in the way and that the robot will push it aside.
 - Be concise and operational. Use order numbers, SKUs and location ids."""
 
 client = AsyncOpenAI(base_url=settings.llm_base_url, api_key="unused")
@@ -138,7 +140,12 @@ async def _run(conversation_id: str, user_message: str, robot_id: str) -> dict:
 async def notify_task_finished(task: dict) -> None:
     if not task.get("conversation_id"):
         return
-    detail = f"failed with {task['error']}" if task["status"] == "failed" else task["status"]
+    if task["status"] == "failed":
+        detail = f"failed with {task['error']}"
+    elif task["status"] == "planned" and task.get("error"):
+        detail = f"paused: {task['error']}"
+    else:
+        detail = task["status"]
     subject = f"for order {task['order_id']}" if task["order_id"] else f"({task['instruction']})"
     await run_agent(
         task["conversation_id"],

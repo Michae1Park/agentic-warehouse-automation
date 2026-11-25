@@ -1,5 +1,6 @@
 services:
   postgres:
+    cpuset: "${CPUS:-16-31}"
     image: postgres:17
     environment:
       POSTGRES_USER: warehouse
@@ -16,6 +17,7 @@ services:
       retries: 20
 
   llm:
+    cpuset: "${CPUS:-16-31}"
     image: vllm/vllm-openai:v0.33.0
     command: >
       --model ${LLM_WEIGHTS:-Qwen/Qwen3.8-27B-FP8}
@@ -48,6 +50,7 @@ services:
       retries: 60
 
   backend:
+    cpuset: "${CPUS:-16-31}"
     build: ./backend
     environment:
       DATABASE_URL: postgresql://warehouse:warehouse@postgres:5432/warehouse
@@ -55,6 +58,7 @@ services:
       LLM_MODEL: ${LLM_MODEL:-qwen3.8-27b}
       ROBOT_BACKEND: ${ROBOT_BACKEND:-mock}
       GRASP_POLICY: ${GRASP_POLICY:-scripted}
+      PUSH_POLICY: ${PUSH_POLICY:-expert}
       ISAAC_URL: http://host.docker.internal:8020
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -67,6 +71,7 @@ services:
         condition: service_healthy
 
   frontend:
+    cpuset: "${CPUS:-16-31}"
     image: node:24-slim
     working_dir: /app
     command: sh -c "npm ci && npm run dev -- --host 0.0.0.0"
@@ -85,6 +90,7 @@ services:
       - backend
 
   isaac:
+    cpuset: "${CPUS:-16-31}"
     image: nvcr.io/nvidia/isaac-sim:5.1.0
     profiles: ["isaac"]
     user: "0"
