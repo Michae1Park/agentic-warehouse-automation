@@ -208,6 +208,8 @@ RESHUFFLE_EVERY = 10
 VLA_EXECUTE_ACTIONS = 5
 VLA_PUSH_QUERIES = 45
 VLA_PUSH_HOME_TOLERANCE = 0.04
+VLA_PUSH_SETTLE_TICKS = 12
+VLA_PUSH_SETTLE_TOLERANCE = 0.005
 PERCEPTION_RES = (512, 512)
 HEAD_HEIGHT = 1.3
 HEAD_REACH = 0.8
@@ -887,7 +889,7 @@ class Warehouse:
         return np.concatenate([self.to_base_frame(self.fingertip()), rotation_to_6d(rotation)])
 
     def push_orientation(self, features: np.ndarray) -> np.ndarray:
-        return rot_matrix_to_quat(self.base_rotation() @ rotation_from_6d(np.asarray(features)))
+        return rot_matrix_to_quat(self.base_rotation() @ rotation_from_6d(np.asarray(features)) @ self.gripper_frame)
 
     def tool_orientation(self, yaw: float, pitch: float, roll: float = 0.0) -> np.ndarray:
         rotation = quat_to_rot_matrix(euler_angles_to_quat(np.array([0.0, math.pi / 2 + pitch, self.base_pose()[2] + yaw])))
@@ -1905,7 +1907,8 @@ class Commands:
         if policy == "vla":
             instruction = f"push the {BLOCKER_NAMES[blocker.ycb]} to the {'left' if side > 0 else 'right'}"
             yield from self.push_vla(instruction, blocker, origin, lateral, side * travel)
-            self.push_trace = {"side": side, "instruction": instruction, "goal_lateral": round(travel, 3),
+            self.push_trace = {"side": side, "instruction": instruction, "goal_lateral": round(travel, 3), "vla_debug": self.vla_debug,
+                               "end_tip": np.round(self.w.to_base_frame(self.w.fingertip()), 3).tolist(),
                                "final_lateral": round(float((self.w.sync(blocker) - origin) @ lateral) * side, 3),
                                "final_depth": round(float((self.w.sync(blocker) - origin) @ work), 3),
                                "upright": bool(abs(float(self.true_target(blocker).axes[2, up_axis])) > UPRIGHT_COS)}
@@ -1984,6 +1987,7 @@ class Commands:
     def push_vla(self, instruction: str, blocker: Item, origin: np.ndarray, lateral: np.ndarray, goal_lateral: float):
         ready_tip = self.w.fingertip().copy()
         reached_goal = False
+        self.vla_debug = {"ik_failures": 0, "actions": 0, "first_actions": [], "first_state": None}
         for _ in range(VLA_PUSH_QUERIES):
             obs = self.w.policy_observation()
             body = json.dumps({
@@ -1993,14 +1997,25 @@ class Commands:
             request = urllib.request.Request(args.policy_url + "/act", data=body, headers={"content-type": "application/json"})
             with urllib.request.urlopen(request, timeout=30) as response:
                 actions = np.array(json.loads(response.read())["actions"], dtype=float)
+            if self.vla_debug["first_state"] is None:
+                self.vla_debug["first_state"] = np.round(obs["state"], 3).tolist()
+                self.vla_debug["first_actions"] = np.round(actions[:3], 3).tolist()
             for action in actions[:VLA_EXECUTE_ACTIONS]:
                 start_arm = self.w.arm_target.copy()
+                self.vla_debug["actions"] += 1
                 try:
                     goal_arm = self.w.solve_ik(self.w.to_world_frame(action[:3]), self.w.push_orientation(action[3:9]), start_arm)
-                except SimError:
+                except SimError as err:
+                    self.vla_debug["ik_failures"] += 1
+                    self.vla_debug["ik_error"] = str(err)[:200]
                     goal_arm = start_arm
                 for i in range(1, CONTROL_EVERY + 1):
                     self.w.arm_target = start_arm + (goal_arm - start_arm) * i / CONTROL_EVERY
+                    yield
+                target_tip = self.w.to_world_frame(action[:3])
+                for _ in range(VLA_PUSH_SETTLE_TICKS):
+                    if np.linalg.norm(self.w.fingertip() - target_tip) < VLA_PUSH_SETTLE_TOLERANCE:
+                        break
                     yield
             moved = float((self.w.sync(blocker) - origin) @ lateral)
             reached_goal = reached_goal or moved * np.sign(goal_lateral) >= abs(goal_lateral)
@@ -2318,6 +2333,11 @@ class Commands:
             box = self.grounded_box(location_id, point)
             if box.sku != sku:
                 raise SimError("wrong_object", f"grounded point at {location_id} is a {box.ycb[4:].replace('_', ' ')}, not {sku}")
+        if policy != "expert" and self.w.locations[location_id]["kind"] == "storage":
+            blocking = self.blockers(box)
+            if blocking:
+                names = ", ".join(BLOCKER_NAMES.get(b.ycb, b.ycb[4:].replace("_", " ")) for b in blocking)
+                raise SimError("blocked", f"{sku} at {location_id} is behind the {names}; push it aside with the paddle before picking")
         position, _ = box.prim.get_world_pose()
         used = "scripted"
         vla_success = None
@@ -2352,6 +2372,31 @@ class Commands:
         self.w.repack(location_id)
         return {"picked": sku, "tote": [b.sku for b in self.w.tote], "policy_used": used, "vla_success": vla_success,
                 "instruction": instruction}
+
+    def push_blocker(self, sku: str, location_id: str, policy: str = "vla"):
+        box = self.target_box(sku, location_id)
+        blocking = self.blockers(box)
+        if not blocking:
+            return {"pushed": [], "policy": policy}
+        if self.w.tool != "paddle":
+            raise SimError("no_tool", "pick up the paddle before pushing")
+        yield from self.move_arm(self.w.work_home, 60)
+        pushed = []
+        self.w.push_encoding = policy == "vla"
+        try:
+            for blocker in blocking:
+                self.w.marker = self.true_target(blocker).center.copy()
+                yield from self.push_aside(blocker, box, policy)
+                pushed.append({"blocker": BLOCKER_NAMES.get(blocker.ycb, blocker.ycb), **{
+                    k: self.push_trace.get(k) for k in ("instruction", "final_lateral", "goal_lateral", "upright")}})
+        finally:
+            self.w.push_encoding = False
+            self.w.marker = None
+        yield from self.move_arm(self.w.work_home, 60)
+        remaining = self.blockers(box)
+        if remaining:
+            raise SimError("push_failed", f"{sku} at {location_id} is still blocked after the push")
+        return {"pushed": pushed, "policy": policy}
 
     def place(self, location_id: str):
         location = self.w.locations[location_id]
@@ -2766,9 +2811,12 @@ def collect_push_demos(warehouse: Warehouse, episodes: int) -> None:
               and abs(record["depth"]) <= PUSH_MAX_DEPTH_SHIFT and record["target_moved"] < TARGET_MAX_SHIFT
               and len(frames["state"]) > 2)
         if args.push_policy == "vla":
-            log.write(json.dumps({**record, "success": bool(ok), "frames": len(frames["state"]),
+            log.write(json.dumps({**record, "success": bool(ok), "frames": len(frames["state"]), "trace": commands.push_trace,
                                   "instruction": commands.push_trace.get("instruction") if "skipped" not in record else None}) + "\n")
             log.flush()
+            if frames["state"]:
+                np.savez_compressed(out / f"eval_{attempt:04d}.npz", head=np.stack(frames["head"]), wrist=np.stack(frames["wrist"]),
+                                    state=np.stack(frames["state"]))
             saved += "skipped" not in record
             print(f"eval {saved}/{episodes} (attempt {attempt}) success={ok}", flush=True)
             continue
@@ -3001,7 +3049,8 @@ def make_handler(server: Server):
             length = int(self.headers.get("content-length", 0))
             payload = json.loads(self.rfile.read(length) or b"{}")
             name = self.path.strip("/").split("?")[0]
-            if name not in ("navigate", "inspect", "pick", "place", "stow", "reset", "view", "camera", "release", "resolve", "probe"):
+            if name not in ("navigate", "inspect", "pick", "place", "stow", "reset", "view", "camera", "release", "resolve", "probe",
+                            "take_tool", "return_tool", "push_blocker"):
                 return self._json(404, {"error": "unknown_command"})
             self._json(*server.submit(name, payload))
 
