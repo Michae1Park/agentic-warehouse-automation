@@ -16,6 +16,7 @@ parser.add_argument("--width", type=int, default=1280)
 parser.add_argument("--height", type=int, default=720)
 parser.add_argument("--collect", type=int, default=0, help="record N scripted grasp demonstrations and exit")
 parser.add_argument("--collect-push", type=int, default=0, help="record N paddle push demonstrations (deep shelving) and exit")
+parser.add_argument("--push-policy", choices=["expert", "vla"], default="expert", help="with --collect-push: vla evaluates the push policy at --policy-url instead of recording expert demos")
 parser.add_argument("--push-speed", type=float, default=0.0, help="override the sideways push speed in m/s for every blocker")
 parser.add_argument("--out", default="/workspace/vla/data/raw")
 parser.add_argument("--seed", type=int, default=0)
@@ -205,6 +206,8 @@ GRASP_TOLERANCE = 0.05
 VLA_MAX_STEPS = 120
 RESHUFFLE_EVERY = 10
 VLA_EXECUTE_ACTIONS = 5
+VLA_PUSH_QUERIES = 45
+VLA_PUSH_HOME_TOLERANCE = 0.04
 PERCEPTION_RES = (512, 512)
 HEAD_HEIGHT = 1.3
 HEAD_REACH = 0.8
@@ -1845,7 +1848,7 @@ class Commands:
                 found.append(other)
         return found
 
-    def push_aside(self, blocker: Item, target_box: Item):
+    def push_aside(self, blocker: Item, target_box: Item, policy: str = "expert"):
         work = np.array([math.cos(self.work_yaw()), math.sin(self.work_yaw()), 0.0])
         lateral = np.array([-work[1], work[0], 0.0])
         obb = self.true_target(blocker)
@@ -1899,6 +1902,16 @@ class Commands:
                                         f"{np.round(start, 2).tolist()} side {side} base {np.round(self.w.base_pose(), 2).tolist()}")
         self.w.trail = []
         self.recording = True
+        if policy == "vla":
+            instruction = f"push the {BLOCKER_NAMES[blocker.ycb]} to the {'left' if side > 0 else 'right'}"
+            yield from self.push_vla(instruction, blocker, origin, lateral, side * travel)
+            self.push_trace = {"side": side, "instruction": instruction, "goal_lateral": round(travel, 3),
+                               "final_lateral": round(float((self.w.sync(blocker) - origin) @ lateral) * side, 3),
+                               "final_depth": round(float((self.w.sync(blocker) - origin) @ work), 3),
+                               "upright": bool(abs(float(self.true_target(blocker).axes[2, up_axis])) > UPRIGHT_COS)}
+            self.w.trail = None
+            self.recording = False
+            return
         ready_point = start - work * (PUSH_STANDOFF + PUSH_READY) + np.array([0.0, 0.0, PUSH_READY_LIFT])
         self.push_joints = None
         orientation = self.natural_orientation(start - work * PUSH_STANDOFF, orientation)
@@ -1967,6 +1980,32 @@ class Commands:
             self.w.arm_target = joints
             yield
         self.recording = False
+
+    def push_vla(self, instruction: str, blocker: Item, origin: np.ndarray, lateral: np.ndarray, goal_lateral: float):
+        ready_tip = self.w.fingertip().copy()
+        reached_goal = False
+        for _ in range(VLA_PUSH_QUERIES):
+            obs = self.w.policy_observation()
+            body = json.dumps({
+                "instruction": instruction, "state": obs["state"].tolist(),
+                "images": {"head": encode_jpeg(obs["head"]), "wrist": encode_jpeg(obs["wrist"])},
+            }).encode()
+            request = urllib.request.Request(args.policy_url + "/act", data=body, headers={"content-type": "application/json"})
+            with urllib.request.urlopen(request, timeout=30) as response:
+                actions = np.array(json.loads(response.read())["actions"], dtype=float)
+            for action in actions[:VLA_EXECUTE_ACTIONS]:
+                start_arm = self.w.arm_target.copy()
+                try:
+                    goal_arm = self.w.solve_ik(self.w.to_world_frame(action[:3]), self.w.push_orientation(action[3:9]), start_arm)
+                except SimError:
+                    goal_arm = start_arm
+                for i in range(1, CONTROL_EVERY + 1):
+                    self.w.arm_target = start_arm + (goal_arm - start_arm) * i / CONTROL_EVERY
+                    yield
+            moved = float((self.w.sync(blocker) - origin) @ lateral)
+            reached_goal = reached_goal or moved * np.sign(goal_lateral) >= abs(goal_lateral)
+            if reached_goal and np.linalg.norm(self.w.fingertip() - ready_tip) < VLA_PUSH_HOME_TOLERANCE:
+                return
 
     def reach_seed(self) -> np.ndarray:
         return getattr(self, "push_joints", None) if getattr(self, "push_joints", None) is not None else NATURAL_REACH
@@ -2707,7 +2746,7 @@ def collect_push_demos(warehouse: Warehouse, episodes: int) -> None:
             if ready_error > READY_POSE_TOLERANCE:
                 raise SimError("ready", f"paddle pickup ended {ready_error:.3f} rad off the push ready pose")
             warehouse.marker = commands.true_target(blocker).center.copy()
-            run_gated(warehouse, commands, commands.push_aside(blocker, box), frames)
+            run_gated(warehouse, commands, commands.push_aside(blocker, box, args.push_policy), frames)
             trace = commands.push_trace
             for _ in range(30):
                 step(warehouse)
@@ -2726,6 +2765,13 @@ def collect_push_demos(warehouse: Warehouse, episodes: int) -> None:
         ok = ("skipped" not in record and record["moved"] >= record["goal"] and record["upright"]
               and abs(record["depth"]) <= PUSH_MAX_DEPTH_SHIFT and record["target_moved"] < TARGET_MAX_SHIFT
               and len(frames["state"]) > 2)
+        if args.push_policy == "vla":
+            log.write(json.dumps({**record, "success": bool(ok), "frames": len(frames["state"]),
+                                  "instruction": commands.push_trace.get("instruction") if "skipped" not in record else None}) + "\n")
+            log.flush()
+            saved += "skipped" not in record
+            print(f"eval {saved}/{episodes} (attempt {attempt}) success={ok}", flush=True)
+            continue
         if not ok:
             log.write(json.dumps({**record, "saved": False}) + "\n")
             log.flush()
