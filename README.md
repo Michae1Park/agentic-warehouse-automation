@@ -22,10 +22,10 @@
 
 A warehouse manager types *"Prepare order #1045 and move it to dispatch."* A **Qwen3.8-27B** agent reads the order from **Postgres** (the system of record), reserves stock, plans the route and dispatches a Ridgeback + Franka mobile manipulator in **Isaac Sim**. The same model, used as a VLM, checks each shelf bin and audits the outbound tote. Every physical step writes back to the database, so the dashboard, chat and live simulation stay in sync.
 
-<p align="center"><br><b>Demo 1 · Deep-Shelving Pick</b><br><sub>agent + push-then-pick</sub><br></p>
+<p align="center"><br><b>Demo 1 · Order Fulfillment</b><br><sub>agent plans, robot picks from two aisles, VLM audits the outbound tote</sub><br></p>
 
 <p align="center">
-  <img src="docs/img/demo-deep-pick.gif" alt="Order 1045: the robot finds the last tomato soup can behind a coffee can, takes the paddle, pushes the blocker aside, picks the can and sends the audited tote down the conveyor" width="820">
+  <img src="docs/img/demo-1-fulfillment.gif" alt="Order 1045: the agent plans the picks, the robot collects five tomato soup cans from aisles A and C into its tote, unloads them into the outbound tote on the conveyor, and the audited tote leaves through the wall" width="820">
 </p>
 
 <p align="center"><br><b>Demo 2 · Cycle Count</b><br><sub>VLM finds short and misplaced stock</sub><br></p>
@@ -40,15 +40,13 @@ A warehouse manager types *"Prepare order #1045 and move it to dispatch."* A **Q
   <img src="docs/img/demo-shortage.gif" alt="Order 1044 is short on the shelf: the agent finds stock in the receiving tote, replenishes the bin, then fulfills the order and the VLM verifies the tote at dispatch" width="820">
 </p>
 
-<p align="center"><sub><i>Demo 1: the push is done by the scripted expert. The SmolVLA push policy is trained but paused (2/30 on held-out scenes); see <a href="docs/ACTION_ITEMS.md">action items</a>.</i></sub></p>
-
 <br>
 
 ### What It Does
 
 | Workflow | Input | Execution & output |
 |---|---|---|
-| **Order fulfillment** | *"Prepare order #1045"* | • Reserves stock, plans the route, picks into the outbound tote<br>• Clears a blocker with the paddle when the target sits behind another product<br>• VLM audits the tote, then the order closes |
+| **Order fulfillment** | *"Prepare order #1045"* | • Reserves stock across bins, plans the route, picks into the robot's tote<br>• Unloads into the outbound tote on the conveyor<br>• VLM audits the tote, then the order closes |
 | **Cycle count** | *"Cycle count aisle B"* | • VLM checks each bin against the WMS record<br>• Writes `cycle_count` adjustments, raises discrepancies, relocates misplaced stock |
 | **Shortage recovery** | An order short on the shelf | • Agent does not dispatch; finds stock in the receiving tote<br>• Replenishes the bin, waits, then fulfills |
 | **Exception handling** | Grasp slip, blocked path, missing stock | • Regrasp / replan / reallocate from an alternate bin<br>• Escalates with a report when recovery fails |
@@ -58,11 +56,11 @@ A warehouse manager types *"Prepare order #1045 and move it to dispatch."* A **Q
 
 **Request:** `"Prepare order #1045 and move it to dispatch."` (5× tomato soup)
 
-1. **Plan**<br>`get_order` → `plan_fulfillment` reserves 4 cans at A-02-1 and the last one at C-04-1 in one `SELECT … FOR UPDATE` transaction.
+1. **Plan**<br>`get_order` → `plan_fulfillment` reserves 4 cans at A-02-1 and the last one at C-01-1 in one `SELECT … FOR UPDATE` transaction.
 2. **Dispatch**<br>`dispatch_task` hands the plan to the executor; steps are rows in `task_steps`, so a restart resumes the task.
-3. **Blocked pick**<br>At C-04-1 the sim check sees a coffee can in front of the target. The executor pauses the task, raises a `blocked` exception and notifies the agent.
-4. **Recovery**<br>The agent calls `clear_blocker`, which splices `take_tool paddle → push_blocker → return_tool` before the paused pick, then resumes the task.
-5. **Audit and close**<br>The VLM compares the tote with the order; on a match the tote is released down the conveyor and `verify` closes the order. A `[SYSTEM EVENT]` prompts the agent to report back.
+3. **Pick**<br>At each bin the VLM confirms the stock from the scan pose, the base drives in, and the arm grasps each can, backs out of the rack and lowers it into the robot's tote.
+4. **Unload**<br>At DISPATCH-1 the arm lifts each can above the conveyor rails and lowers it into a free spot in the outbound tote.
+5. **Audit and close**<br>The VLM compares the tote with the order; on a match the tote rides the conveyor out through the wall and `verify` closes the order. A `[SYSTEM EVENT]` prompts the agent to report back.
 
 </details>
 
