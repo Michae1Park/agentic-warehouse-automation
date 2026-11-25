@@ -28,6 +28,7 @@ def main() -> None:
 
     dataset = LeRobotDataset.create(
         repo_id=args.repo_id, fps=args.fps, root=root, robot_type="ridgeback_franka", use_videos=False,
+        image_writer_processes=8, image_writer_threads=2,
         features={
             **{f"observation.images.{camera}": {"dtype": "image", "shape": (height, width, 3),
                                                 "names": ["height", "width", "channel"]} for camera in CAMERAS},
