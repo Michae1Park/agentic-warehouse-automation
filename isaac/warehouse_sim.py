@@ -5,9 +5,11 @@ import json
 import math
 import queue
 import threading
+import time
 import traceback
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--api", default="http://localhost:8010")
@@ -18,6 +20,7 @@ parser.add_argument("--collect", type=int, default=0, help="record N scripted gr
 parser.add_argument("--collect-push", type=int, default=0, help="record N paddle push demonstrations (deep shelving) and exit")
 parser.add_argument("--push-policy", choices=["expert", "vla"], default="expert", help="with --collect-push: vla evaluates the push policy at --policy-url instead of recording expert demos")
 parser.add_argument("--push-eval", action="store_true", help="with --collect-push: log success per trial instead of saving demos")
+parser.add_argument("--teleop", action="store_true", help="keyboard push demonstrations in the browser on --port, saved to --out")
 parser.add_argument("--push-blend", type=int, default=5, help="blend this many leading actions of each new push chunk with the previous chunk")
 parser.add_argument("--push-lead", type=int, default=1, help="command the push policy action this many steps ahead to offset tracking lag")
 parser.add_argument("--push-settle", type=int, default=0, help="max ticks to wait for the arm to reach each push action")
@@ -214,6 +217,20 @@ RESHUFFLE_EVERY = 10
 VLA_EXECUTE_ACTIONS = 5
 VLA_PUSH_QUERIES = 45
 VLA_PUSH_HOME_TOLERANCE = 0.04
+TELEOP_SPEED = 0.08
+TELEOP_FINE_SPEED = 0.02
+TELEOP_TURN = 0.8
+TELEOP_FINE_TURN = 0.2
+TELEOP_KEY_TIMEOUT = 0.4
+TELEOP_MAX_JOINT_STEP = 0.01
+TELEOP_IK_JUMP = 0.15
+TELEOP_FLOOR_MARGIN = 0.005
+TELEOP_VIEW_SIZE = (480, 360)
+TELEOP_VIEW_FOCAL = 14.0
+TELEOP_VIEW_POSES = {"top": ((0.62, 0.0, 1.45), (0.95, 0.0, 0.35)), "side": ((0.95, 0.85, 0.5), (0.95, -0.1, 0.4))}
+TELEOP_DIRECTIONS = {"w": np.array([1.0, 0.0, 0.0]), "s": np.array([-1.0, 0.0, 0.0]), "a": np.array([0.0, 1.0, 0.0]),
+                     "d": np.array([0.0, -1.0, 0.0]), "r": np.array([0.0, 0.0, 1.0]), "f": np.array([0.0, 0.0, -1.0])}
+TELEOP_MOTION_KEYS = set(TELEOP_DIRECTIONS) | {"q", "e"}
 VLA_PUSH_SETTLE_TOLERANCE = 0.005
 PERCEPTION_RES = (512, 512)
 HEAD_HEIGHT = 1.3
@@ -1916,10 +1933,19 @@ class Commands:
                                         f"{np.round(start, 2).tolist()} side {side} base {np.round(self.w.base_pose(), 2).tolist()}")
         self.w.trail = []
         self.recording = True
-        if policy == "vla":
+        if policy in ("vla", "teleop"):
             instruction = f"push the {BLOCKER_NAMES[blocker.ycb]} to the {'left' if side > 0 else 'right'}"
-            yield from self.push_vla(instruction, blocker, origin, lateral, side * travel)
-            self.push_trace = {"side": side, "instruction": instruction, "goal_lateral": round(travel, 3), "vla_debug": self.vla_debug,
+            if policy == "teleop":
+                TELEOP.update(instruction=instruction, goal=round(travel, 3))
+                ready_point = start - work * (PUSH_STANDOFF + PUSH_READY) + np.array([0.0, 0.0, PUSH_READY_LIFT])
+                ready_orientation = self.natural_orientation(start - work * PUSH_STANDOFF, orientation)
+                yield from self.move_arm(self.w.solve_ik(ready_point, ready_orientation, self.reach_seed()), 90)
+                for _ in range(20):
+                    yield
+                yield from self.push_teleop(instruction, blocker, origin, lateral, side)
+            else:
+                yield from self.push_vla(instruction, blocker, origin, lateral, side * travel)
+            self.push_trace = {"side": side, "instruction": instruction, "goal_lateral": round(travel, 3), "vla_debug": getattr(self, "vla_debug", None),
                                "end_tip": np.round(self.w.to_base_frame(self.w.fingertip()), 3).tolist(),
                                "final_lateral": round(float((self.w.sync(blocker) - origin) @ lateral) * side, 3),
                                "final_depth": round(float((self.w.sync(blocker) - origin) @ work), 3),
@@ -2041,6 +2067,131 @@ class Commands:
             reached_goal = reached_goal or moved * np.sign(goal_lateral) >= abs(goal_lateral)
             if reached_goal and np.linalg.norm(self.w.fingertip() - ready_tip) < VLA_PUSH_HOME_TOLERANCE:
                 return
+
+    def query_push_policy(self, instruction: str) -> tuple[dict, np.ndarray]:
+        obs = self.w.policy_observation()
+        state = np.concatenate([obs["state"], marker_center(obs["head"])]) if args.marker_state else obs["state"]
+        body = json.dumps({
+            "instruction": instruction, "state": state.tolist(),
+            "images": {"head": encode_jpeg(obs["head"]), "wrist": encode_jpeg(obs["wrist"])},
+        }).encode()
+        request = urllib.request.Request(args.policy_url + "/act", data=body, headers={"content-type": "application/json"})
+        with urllib.request.urlopen(request, timeout=30) as response:
+            return obs, np.array(json.loads(response.read())["actions"], dtype=float)
+
+    def command_push_target(self, position: np.ndarray, rotation: np.ndarray) -> bool:
+        try:
+            joints = self.w.solve_ik(self.w.to_world_frame(position), self.w.push_orientation(rotation_to_6d(rotation)), self.w.arm_target)
+        except SimError:
+            return False
+        step = joints - self.w.arm_target
+        self.teleop_joint_jump = float(np.abs(step).max())
+        if self.teleop_joint_jump > TELEOP_IK_JUMP:
+            return False
+        self.w.arm_target = self.w.arm_target + np.clip(step, -TELEOP_MAX_JOINT_STEP, TELEOP_MAX_JOINT_STEP)
+        return True
+
+    def push_teleop(self, instruction: str, blocker: Item, origin: np.ndarray, lateral: np.ndarray, side: float):
+        items = [(item, *item.prim.get_world_pose()) for item in self.w.boxes_at(blocker.location_id, background=True)]
+        ready_joints = self.w.robot.get_joint_positions()[self.w.arm_idx].copy()
+        ready_base = self.w.base_target.copy()
+        retries = 0
+        while True:
+            _, orientation = self.w.hand.get_world_pose()
+            target_position = self.w.to_base_frame(self.w.fingertip())
+            target_rotation = self.w.base_rotation().T @ quat_to_rot_matrix(orientation)
+            controller = "vla" if TELEOP.assist else "human"
+            TELEOP.update(phase="driving", retries=retries)
+            self.teleop_frames = {"head": [], "wrist": [], "state": [], "action": [], "human": []}
+            result = yield from self.teleop_episode(instruction, blocker, origin, lateral, side,
+                                                    target_position, target_rotation, controller)
+            if result != "retry":
+                self.teleop_result = result
+                return
+            retries += 1
+            for item, position, rotation in items:
+                self.w.set_dynamic(item, False)
+                item.prim.set_world_pose(position, rotation)
+            positions = self.w.robot.get_joint_positions()
+            positions[self.w.arm_idx] = ready_joints
+            positions[self.w.base_idx] = ready_base
+            self.w.base_target = ready_base.copy()
+            self.w.robot.set_joint_positions(positions)
+            self.w.robot.set_joint_velocities(np.zeros_like(positions))
+            self.w.arm_target = ready_joints.copy()
+            for item, _, _ in items:
+                self.w.set_dynamic(item, True)
+            for _ in range(10):
+                yield
+
+    def teleop_episode(self, instruction: str, blocker: Item, origin: np.ndarray, lateral: np.ndarray, side: float,
+                       target_position: np.ndarray, target_rotation: np.ndarray, controller: str):
+        chunk, chunk_index, previous_chunk, vla_from, vla_to, tick = None, 0, None, None, None, 0
+        last_reachable = (target_position.copy(), target_rotation.copy())
+        floor = self.w.surface_z(blocker.location_id) + PUSH_HEIGHT - TELEOP_FLOOR_MARGIN
+        while True:
+            command = TELEOP.pop_command()
+            if command == "save":
+                return "save"
+            if command == "next":
+                return "discard"
+            if command == "discard":
+                return "retry"
+            if command == "release" and TELEOP.assist:
+                controller, chunk = "vla", None
+            keys = TELEOP.active_keys()
+            if controller == "vla" and keys & TELEOP_MOTION_KEYS:
+                controller = "human"
+            if TELEOP.paused:
+                TELEOP.update(controller=controller, paused=True)
+                yield
+                continue
+            if controller == "human":
+                speed = TELEOP_FINE_SPEED if "shift" in keys else TELEOP_SPEED
+                velocity = sum((TELEOP_DIRECTIONS[key] for key in keys if key in TELEOP_DIRECTIONS), np.zeros(3))
+                target_position = target_position + velocity * speed * PHYSICS_DT
+                target_position[2] = max(target_position[2], floor)
+                spin = (("q" in keys) - ("e" in keys)) * (TELEOP_FINE_TURN if "shift" in keys else TELEOP_TURN) * PHYSICS_DT
+                if spin:
+                    target_rotation = np.array([[math.cos(spin), -math.sin(spin), 0], [math.sin(spin), math.cos(spin), 0], [0, 0, 1]]) @ target_rotation
+            elif tick % CONTROL_EVERY == 0:
+                if chunk is None or chunk_index >= args.push_execute:
+                    _, fresh = self.query_push_policy(instruction)
+                    if previous_chunk is not None and args.push_blend:
+                        overlap = min(args.push_blend, len(previous_chunk) - args.push_execute, len(fresh))
+                        weights = (np.arange(1, overlap + 1) / (overlap + 1))[:, None]
+                        fresh[:overlap] = weights * fresh[:overlap] + (1 - weights) * previous_chunk[args.push_execute:args.push_execute + overlap]
+                    chunk = previous_chunk = fresh
+                    chunk_index = 0
+                action = chunk[min(chunk_index + args.push_lead, len(chunk) - 1)]
+                chunk_index += 1
+                vla_from = (target_position.copy(), target_rotation.copy())
+                vla_to = (action[:3], rotation_from_6d(action[3:9]))
+            if controller == "vla" and vla_to is not None:
+                t = (tick % CONTROL_EVERY + 1) / CONTROL_EVERY
+                target_position = vla_from[0] + (vla_to[0] - vla_from[0]) * t
+                target_rotation = rotation_from_6d(rotation_to_6d(vla_from[1]) + (rotation_to_6d(vla_to[1]) - rotation_to_6d(vla_from[1])) * t)
+            reachable = self.command_push_target(target_position, target_rotation)
+            if reachable:
+                last_reachable = (target_position.copy(), target_rotation.copy())
+            elif controller == "human":
+                target_position, target_rotation = last_reachable[0].copy(), last_reachable[1].copy()
+            active = controller == "vla" or bool(keys & TELEOP_MOTION_KEYS)
+            if tick % CONTROL_EVERY == 0:
+                obs = self.w.policy_observation()
+                TELEOP.set_cameras(obs["head"], obs["wrist"])
+                if active:
+                    self.teleop_frames["head"].append(obs["head"])
+                    self.teleop_frames["wrist"].append(obs["wrist"])
+                    self.teleop_frames["state"].append(obs["state"])
+                    self.teleop_frames["action"].append(np.concatenate([target_position, rotation_to_6d(target_rotation), [self.w.finger_target]]))
+                    self.teleop_frames["human"].append(controller == "human")
+            moved = float((self.w.sync(blocker) - origin) @ lateral) * side
+            TELEOP.update(controller=controller, paused=False, reachable=reachable, frames=len(self.teleop_frames["state"]),
+                          moved=round(moved, 3), tip=np.round(target_position, 3).tolist(),
+                          base=np.round(self.w.base_pose(), 3).tolist(), joint_jump=round(getattr(self, "teleop_joint_jump", 0.0), 3))
+            tick += 1
+            yield
 
     def reach_seed(self) -> np.ndarray:
         return getattr(self, "push_joints", None) if getattr(self, "push_joints", None) is not None else NATURAL_REACH
@@ -2672,7 +2823,7 @@ class Watch:
         threading.Thread(target=http.serve_forever, daemon=True).start()
 
 
-WATCH = Watch() if args.watch else None
+WATCH = Watch() if args.watch or args.teleop else None
 
 
 def step(warehouse: Warehouse) -> None:
@@ -2682,6 +2833,8 @@ def step(warehouse: Warehouse) -> None:
     warehouse.world.step(render=True)
     if WATCH:
         WATCH.capture(warehouse)
+    if TELEOP_VIEWS:
+        TELEOP_VIEWS.capture(warehouse)
 
 
 def instruction_variants(warehouse: Warehouse, sku: str) -> list[str]:
@@ -2703,6 +2856,227 @@ def run_recorded(warehouse: Warehouse, generator, frames: dict) -> None:
                     frames[key].append(value)
     except StopIteration:
         pass
+
+
+class Teleop:
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.keys: set[str] = set()
+        self.keys_at = 0.0
+        self.commands: list[str] = []
+        self.assist = False
+        self.paused = False
+        self.status: dict = {}
+        self.head = self.wrist = b""
+        self.views: dict[str, bytes] = {}
+
+    def active_keys(self) -> set[str]:
+        with self.lock:
+            return set(self.keys) if time.monotonic() - self.keys_at < TELEOP_KEY_TIMEOUT else set()
+
+    def set_keys(self, keys: list[str]) -> None:
+        with self.lock:
+            self.keys, self.keys_at = {k.lower() for k in keys}, time.monotonic()
+
+    def push_command(self, name: str) -> None:
+        with self.lock:
+            if name == "assist":
+                self.assist = not self.assist
+            elif name == "pause":
+                self.paused = not self.paused
+            else:
+                self.commands.append(name)
+
+    def pop_command(self) -> str | None:
+        with self.lock:
+            return self.commands.pop(0) if self.commands else None
+
+    def update(self, **values) -> None:
+        with self.lock:
+            self.status.update(values)
+
+    def snapshot(self) -> dict:
+        with self.lock:
+            return {**self.status, "assist": self.assist, "paused": self.paused}
+
+    def snapshot_frame(self, name: str) -> bytes:
+        with self.lock:
+            sources = {"wrist": self.wrist, "head": self.head, **self.views}
+        return WATCH.frame if name == "overview" else sources.get(name, b"")
+
+    def set_view(self, name: str, jpeg: bytes) -> None:
+        with self.lock:
+            self.views[name] = jpeg
+
+    def set_cameras(self, head: np.ndarray, wrist: np.ndarray) -> None:
+        head_jpeg, wrist_jpeg = base64.b64decode(encode_jpeg(head, 80)), base64.b64decode(encode_jpeg(wrist, 80))
+        with self.lock:
+            self.head, self.wrist = head_jpeg, wrist_jpeg
+
+    def serve(self) -> None:
+        teleop = self
+        page = (Path(__file__).parent / "teleop.html").read_bytes()
+
+        class Handler(BaseHTTPRequestHandler):
+            def log_message(self, *_):
+                pass
+
+            def _send(self, status: int, body: bytes, content_type: str) -> None:
+                self.send_response(status)
+                self.send_header("content-type", content_type)
+                self.send_header("content-length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def _mjpeg(self, source) -> None:
+                self.send_response(200)
+                self.send_header("content-type", "multipart/x-mixed-replace; boundary=frame")
+                self.end_headers()
+                try:
+                    while True:
+                        frame = source()
+                        if frame:
+                            self.wfile.write(b"--frame\r\ncontent-type: image/jpeg\r\n\r\n" + frame + b"\r\n")
+                        time.sleep(1 / 15)
+                except (BrokenPipeError, ConnectionResetError):
+                    return
+
+            def do_GET(self):
+                if self.path == "/":
+                    self._send(200, page, "text/html")
+                elif self.path == "/status":
+                    self._send(200, json.dumps(teleop.snapshot()).encode(), "application/json")
+                elif self.path == "/stream":
+                    self._mjpeg(lambda: WATCH.frame)
+                elif self.path == "/head":
+                    self._mjpeg(lambda: teleop.head)
+                elif self.path == "/wrist":
+                    self._mjpeg(lambda: teleop.wrist)
+                elif self.path.startswith("/view/"):
+                    name = self.path.split("/")[-1]
+                    self._mjpeg(lambda: teleop.views.get(name, b""))
+                elif self.path.startswith("/snap/"):
+                    name = self.path.split("/")[2].split("?")[0]
+                    frame = teleop.snapshot_frame(name)
+                    self._send(200 if frame else 204, frame, "image/jpeg")
+                else:
+                    self._send(404, b"", "text/plain")
+
+            def do_POST(self):
+                payload = json.loads(self.rfile.read(int(self.headers.get("content-length", 0))) or b"{}")
+                if self.path == "/keys":
+                    teleop.set_keys(payload.get("keys", []))
+                elif self.path == "/command":
+                    teleop.push_command(payload.get("name", ""))
+                self._send(200, b"{}", "application/json")
+
+        http = ThreadingHTTPServer(("0.0.0.0", args.port), Handler)
+        threading.Thread(target=http.serve_forever, daemon=True).start()
+
+
+TELEOP = Teleop()
+
+
+class TeleopViews:
+    def __init__(self):
+        self.annotators: dict = {}
+        self.ticks = 0
+
+    def pose(self, warehouse: Warehouse, name: str) -> tuple[np.ndarray, np.ndarray]:
+        x, y, theta = warehouse.base_pose()
+        turn = np.array([[math.cos(theta), -math.sin(theta)], [math.sin(theta), math.cos(theta)]])
+        local_eye, local_target = TELEOP_VIEW_POSES[name]
+        eye, target = np.array([x, y]) + turn @ np.array(local_eye[:2]), np.array([x, y]) + turn @ np.array(local_target[:2])
+        return np.array([eye[0], eye[1], local_eye[2]]), np.array([target[0], target[1], local_target[2]])
+
+    def capture(self, warehouse: Warehouse) -> None:
+        self.ticks += 1
+        if self.ticks % STREAM_EVERY:
+            return
+        for name in TELEOP_VIEW_POSES:
+            path = f"/World/Teleop{name.capitalize()}Cam"
+            if name not in self.annotators:
+                UsdGeom.Camera.Define(warehouse.stage, path).CreateFocalLengthAttr(TELEOP_VIEW_FOCAL)
+            eye, target = self.pose(warehouse, name)
+            set_camera_view(eye=eye, target=target, camera_prim_path=path)
+            if name not in self.annotators:
+                annotator = rep.AnnotatorRegistry.get_annotator("rgb")
+                annotator.attach([rep.create.render_product(path, TELEOP_VIEW_SIZE)])
+                self.annotators[name] = annotator
+                continue
+            frame = self.annotators[name].get_data()
+            if frame is not None and frame.size:
+                TELEOP.set_view(name, base64.b64decode(encode_jpeg(frame[..., :3], 80)))
+
+
+TELEOP_VIEWS = TeleopViews() if args.teleop else None
+
+
+def teleop_session(warehouse: Warehouse) -> None:
+    rng = np.random.default_rng(args.seed)
+    warehouse.rng = np.random.default_rng(args.seed + 1)
+    out = Path(args.out)
+    out.mkdir(parents=True, exist_ok=True)
+    commands = Commands(warehouse, pose_source="sim")
+    commands.base_carry = False
+    warehouse.push_encoding = True
+    log = open(out / "teleop_log.jsonl", "a")
+    saved = len(list(out.glob("episode_*.npz")))
+    TELEOP.serve()
+    print(f"TELEOP_READY port={args.port}", flush=True)
+    attempt = 0
+    while app.is_running():
+        attempt += 1
+        TELEOP.update(phase="loading", saved=saved, attempt=attempt, moved=0.0, frames=0)
+        restock_blockers(warehouse, rng)
+        for _ in range(SETTLE_STEPS // 2):
+            step(warehouse)
+        targets = [b for b in warehouse.boxes_at(DEEP_BIN) if warehouse.pickable(b.sku)]
+        box = targets[rng.integers(len(targets))]
+        blockers = commands.blockers(box)
+        if not blockers:
+            continue
+        blocker = blockers[0]
+        teleport_base(warehouse, warehouse.approach_pose(DEEP_BIN) + stance_jitter(rng))
+        for _ in range(20):
+            step(warehouse)
+        target_before = warehouse.sync(box).copy()
+        commands.teleop_result = "discard"
+        try:
+            run_silent(warehouse, commands.take_tool("paddle"))
+            warehouse.marker = commands.true_target(blocker).center.copy()
+            TELEOP.update(phase="aligning", blocker=BLOCKER_NAMES[blocker.ycb], yaw=round(blocker.yaw, 2))
+            run_silent(warehouse, commands.push_aside(blocker, box, "teleop"))
+        except SimError as err:
+            TELEOP.update(phase="skipped", last=str(err))
+            print(f"teleop scene skipped: {err}", flush=True)
+        trace = getattr(commands, "push_trace", {}) or {}
+        frames = getattr(commands, "teleop_frames", None)
+        pose = commands.true_target(blocker)
+        record = {"attempt": attempt, "blocker": blocker.ycb, "yaw": round(blocker.yaw, 2), "result": commands.teleop_result,
+                  "moved": trace.get("final_lateral"), "goal": trace.get("goal_lateral"), "depth": trace.get("final_depth"),
+                  "upright": bool(abs(float(pose.axes[2, int(np.argmax(np.abs(pose.axes[2, :])))])) > UPRIGHT_COS),
+                  "target_moved": round(float(np.linalg.norm(warehouse.sync(box) - target_before)), 3),
+                  "instruction": trace.get("instruction"), "assist": TELEOP.assist}
+        warehouse.marker = None
+        commands.recording = False
+        warehouse.trail = None
+        if commands.teleop_result == "save" and frames and len(frames["state"]) > 2:
+            human = np.array(frames["human"])
+            np.savez_compressed(out / f"episode_{saved:04d}.npz", instruction=record["instruction"], head=np.stack(frames["head"]),
+                                wrist=np.stack(frames["wrist"]), state=np.stack(frames["state"]),
+                                action=np.stack(frames["action"]).astype(np.float32), human=human)
+            record.update(episode=saved, frames=len(human), human_frames=int(human.sum()))
+            saved += 1
+        log.write(json.dumps(record) + "\n")
+        log.flush()
+        TELEOP.update(last=record)
+        print(f"teleop {record['result']} attempt {attempt}: {record}", flush=True)
+        try:
+            run_silent(warehouse, commands.return_tool())
+        except SimError:
+            pass
+        warehouse.tool = None
 
 
 def run_silent(warehouse: Warehouse, generator):
@@ -3080,6 +3454,10 @@ def make_handler(server: Server):
 def main() -> None:
     warehouse = Warehouse(streaming=not (args.collect or args.collect_push or args.eval_grasp))
     warehouse.reset_inventory([], args.seed)
+    if args.teleop:
+        teleop_session(warehouse)
+        app.close()
+        return
     if args.collect_push:
         if WATCH:
             WATCH.serve()
