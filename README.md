@@ -1,298 +1,173 @@
-# Agentic Warehouse Automation
-
-**Integrating LLMs, VLMs and robot simulation for autonomous order fulfillment.**
-
-A warehouse manager types *"Prepare order #1042 and move it to the dispatch area."* An LLM agent reads the order
-from the system of record (Postgres), reserves inventory, plans a pick route and dispatches a mobile manipulator in
-Isaac Sim. The robot uses a VLM to check each shelf bin, then picks and carries the items to an outbound conveyor,
-where a VLM audit checks the tote against the order before it ships.
-Every physical step writes back to the database. The dashboard, chat and live simulation stay in sync because they
-all read from that one system of record.
-
-This is an engineering project, not a research one: no foundation models are trained. The work is integration of
-existing models and tools into one reliable, measurable workflow.
-
-![Dashboard](docs/images/dashboard.png)
-
-**Demo video:** [docs/demo/demo.mp4](docs/demo/demo.mp4) (3× speed): fulfillment with an empty bin recovered, VLA picks, restock into an empty bin, and a refused non-pickable request.
+<p align="center">
+  <h1 align="center">Agentic Warehouse Automation</h1>
+  <p align="center">
+    <strong>An LLM agent that runs warehouse workflows end to end, with a VLM for perception and a simulated mobile manipulator for the physical work</strong>
+  </p>
+  <p align="center">
+    <a href="https://github.com/Michae1Park/agentic-warehouse-automation/actions/workflows/ci.yml"><img src="https://github.com/Michae1Park/agentic-warehouse-automation/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+    <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.12+-blue.svg" alt="Python 3.12+"></a>
+    <a href="https://docs.isaacsim.omniverse.nvidia.com/"><img src="https://img.shields.io/badge/Isaac%20Sim-5.1-76b900.svg" alt="Isaac Sim 5.1"></a>
+  </p>
+</p>
 
 ---
 
-## 1. What business problem does this solve?
-
-Warehouse operations run on a warehouse management system (WMS). People turn WMS records into physical work
-(pick lists, walking routes, cycle counts) and then turn the physical results back into records (picked
-quantities, stock adjustments, exception tickets). Both translations are slow, and mismatches between records and
-the shelves cause failed picks, oversells and manual investigations.
-
-The demo covers six operational workflows end to end:
-
-| Workflow | Example request | What happens |
-|---|---|---|
-| Order preparation | "Prepare order #1042 and move it to dispatch" | reserve → route → pick → drop into outbound tote → VLM tote audit → release to conveyor → close order |
-| Package retrieval | (same flow, single line orders) | |
-| Inventory inspection | "Cycle count aisle B" | robot counts bins with the VLM and corrects the WMS |
-| Stock replenishment | "Replenish green tea from receiving" | staging → shelf, inventory moved transactionally |
-| Item relocation | "Move 3 yoga blocks from C-03-1 to A-01-2" | |
-| Exception handling | missing stock, failed grasp, blocked path, shortages | automatic recovery or escalation with a report |
-
-## 2. Why does it require robotic automation?
-
-Picking, carrying and counting are the labour-intensive parts of fulfillment, and they are the steps where WMS
-records and physical reality drift apart. A robot that takes part in the business process, reading the order,
-updating the record and raising the exception, closes that loop. A robot that only moves boxes does not.
-
-## 3. Why these models and frameworks?
-
-| Layer | Choice | Why |
-|---|---|---|
-| Reasoning + tool calling | **Qwen3.8-27B** (FP8, vLLM) | Open weights, strong native tool calling, and multimodal, so one ~29GB model serves as both agent LLM and VLM on a single L40S alongside Isaac Sim |
-| Vision | Same Qwen3.8-27B, image input | Shelf-bin SKU identification and counting. Scored against simulator ground truth (see Results) |
-| Simulation | **Isaac Sim 5.1** (container) | Physically simulated Ridgeback + Franka mobile manipulator, RTX rendering for the VLM camera. `--graphics high` builds the scene from Isaac's warehouse assets (pallet racking, cartons, roller conveyor) |
-| Arm motion | Lula IK (Isaac motion generation) | Reliable scripted front grasps. Also serves as the baseline the VLA is compared against |
-| Agent | Plain tool-calling loop, no framework | One agent with typed tools and persistent state. A deterministic executor does the physical work |
-| System of record | **Postgres** + FastAPI | Transactions for reservations and picks. `LISTEN/NOTIFY` triggers stream every change to the UI |
-| UI | React + Vite | Operations dashboard, agent chat with tool trace, Isaac MJPEG stream, live 2D floor map |
-
-**Deliberately avoided:** multi-agent frameworks. One agent with structured tools, a persistent task state machine
-and deterministic recovery policies proved more reliable than agents passing messages to each other.
-
-## 4. Why is a VLA necessary?
-
-On a tidy shelf the VLA is not needed: a scripted grasp planned from a depth-camera pose estimate succeeds 75% of the
-time, against 55% for the same grasp given the simulator's exact pose (20 trials, physical grasp,
-`eval/results/grasp_depth_phys/`). The VLA has to earn its place, so the scenario includes the cases where the scripted
-pipeline breaks.
-
-**A fair comparison.** The deployed scripted planner never reads the simulator. It segments the target, back-projects the
-head depth camera into a point cloud and fits position, yaw and height against the catalog dimensions (`--pose depth`).
-Only the demonstration expert reads the simulator pose (`--pose sim`). That expert exists only in simulation, so in
-deployment the choice is between a perception-dependent planner and a policy distilled from the expert that acts from
-pixels.
-
-**Division of labour.**
-
-| Layer | Owner | Output |
-|---|---|---|
-| What and where: which object, which bin, blocked or toppled | Qwen VLM | A 2D point on the target and a scene description |
-| How: 6-DoF pose, grasp approach, push then grasp, recovery | SmolVLA | Actions from pixels and language; pose stays implicit |
-| Explicit pose estimation | Scripted baseline only | The module the VLA replaces |
-
-VLMs are weak at precise 3D geometry, so Qwen never outputs poses.
-
-**Three scenes that need a learned policy.**
-
-| Scene | Real-world case | Why the scripted planner struggles |
-|---|---|---|
-| **Toppled items** | Pickable products lying on their side or upside down among upright neighbours | Pose fits from a partial view are ambiguous, and one grasp recipe does not fit every orientation |
-| **Cluttered tote** | Inbound mixed tote at receiving, items piled and partly hidden | Segmentation and pose fail under occlusion; there is no clean geometry to plan against |
-| **Mixed-SKU deep shelving** | The target sits behind a different product ("the mustard behind the sugar box"), normal in dense micro-fulfilment storage | No direct grasp exists; the planner needs a separate, hand-written push module first |
-
-Back-row picks are also driven by FIFO and expiry rotation (pharma, food), where the order needs a specific lot behind
-the front unit.
-
-**Training data beyond imitation.** Demonstrations come from the privileged expert with perturbations (a nudge
-mid-approach, an offset grasp, a partial slip) and its corrections, plus a scripted push primitive that clears
-blockers in deep shelving. The policy therefore sees recoveries, not only clean runs, and can exceed a planner that
-just follows its plan.
-
-**Out of scope.** Deformable items (bags, pouches, blister packs) are another case where scripted grasping has no pose
-to plan against, but deformable simulation is costly and fragile, so they are left as future work.
-
-## 5. How does the architecture work?
-
-The design is an ordinary tool-calling AI agent. The difference is that some of its tools happen to be robots.
-The agent calls `dispatch_task` the way a coding agent calls `run_tests`: it states intent, gets a structured
-result back, and decides what to do next. Underneath, the work is split into three systems that run at different
-speeds:
-
-![Architecture](docs/images/architecture.svg)
-
-| System | Role | Analogy to a software agent |
-|---|---|---|
-| **System 2** | Decides *what* to do: chooses the workflow, handles ambiguity and shortages, reports outcomes | The LLM in the agent loop |
-| **System 1** | Turns a task into skills and runs them reliably: perception, grasping, recovery. Plans are rows in `tasks` / `task_steps`, so a restart resumes a running task | The tool's implementation |
-| **System 0** | Turns skill targets into motion: IK, joint control, physics | The OS / hardware the tool runs on |
-
-## 6. How does the agent interact with enterprise systems?
-
-Through typed tools that wrap SQL transactions, never free-form SQL:
-
-`list_orders`, `get_order`, `find_stock`, `get_location`, `find_empty_bins`, `get_robot_status`,
-`plan_fulfillment`, `inspect_inventory`, `relocate_stock`, `replenish_stock`, `dispatch_task`, `wait_for_task`,
-`get_task_status`, `cancel_task`, `list_exceptions`, `report_exception`
-
-- **Reservations** happen at planning time, in one transaction with `SELECT … FOR UPDATE`, so two plans cannot
-  promise the same unit.
-- **Each pick** decrements `inventory`, releases the reservation, increments `order_lines.picked_qty`, adds the item to
-  the robot's tote and appends an `inventory_transactions` audit row, all in one transaction.
-- **Cycle counts** write `cycle_count` adjustments with the observed delta.
-- **The outbound tote is audited** before it is released down the conveyor: the VLM compares the tote contents with
-  the order and raises a `tote_mismatch` exception (pack-station QA) on any difference.
-- **The order closes** only after a `verify` step confirms every line is fully picked and placed.
-
-## 7. What happens when something fails?
-
-Faults are injected into a **physical world model** that is separate from the database, so the WMS can actually be
-wrong. That is the situation inventory accuracy measures.
-
-| Fault | Recovery policy | Escalation |
-|---|---|---|
-| Grasp slip | Regrasp, up to 3 attempts | Task fails → exception → agent report |
-| Path blocked | Replan, up to 3 attempts | same |
-| Stock missing at bin | VLM sees the bin is empty → cycle-count the bin to 0 → reallocate from an alternate bin → splice new steps into the running task | No alternate stock → task fails, reservations released, agent explains and proposes options |
-| Stock shortage at planning | Agent does not dispatch | Logs exception, checks receiving, offers replenishment |
-
-When a task finishes, the executor sends a `[SYSTEM EVENT]` into the conversation that created it. The agent then
-inspects the task and its exceptions and reports to the manager without being asked.
-
-## 8. What can be measured?
-
-See [Results](#results). All numbers come from simulation and are compared against **our own scripted simulation
-baseline, not a real warehouse.**
+<p align="center">
+  <b>Author:</b> <a href="https://michae1park.github.io">Michael Park</a>
+</p>
 
 ---
 
-## Results
+## Overview
 
-All numbers are simulated and compared against our own scripted baseline, not a real warehouse.
+A warehouse manager types *"Prepare order #1045 and move it to dispatch."* A **Qwen3.8-27B** agent reads the order from **Postgres** (the system of record), reserves stock, plans the route and dispatches a Ridgeback + Franka mobile manipulator in **Isaac Sim**. The same model, used as a VLM, checks each shelf bin and audits the outbound tote. Every physical step writes back to the database, so the dashboard, chat and live simulation stay in sync.
 
-### Fulfillment KPIs (`eval/run_eval.py`)
+<p align="center"><br><b>Demo 1 · Deep-Shelving Pick</b><br><sub>agent + push-then-pick</sub><br></p>
 
-Seeds 1, 2, 3 · 8 generated orders per run · mock robot at 20× time scale · agent = Qwen3.8-27B.
-Fault profile `faulty`: grasp failure 15%, blocked path 10%, missing stock 20%.
+<p align="center">
+  <img src="docs/img/demo-deep-pick.gif" alt="Order 1045: the robot finds the last tomato soup can behind a coffee can, takes the paddle, pushes the blocker aside, picks the can and sends the audited tote down the conveyor" width="820">
+</p>
 
-| Mode | Faults | Orders | Fulfillment | Interventions / order | Avg execution (sim) | Inventory accuracy | Recovery success | Agent turn latency |
-|---|---|---|---|---|---|---|---|---|
-| Scripted baseline | nominal | 24 | 92% | 0.08 | 30.0s | 100% | — | — |
-| Scripted baseline | faulty | 24 | 42% | 0.58 | 24.0s | 77% | 0% (12) | — |
-| Scripted + recovery | nominal | 24 | 92% | 0.08 | 29.4s | 100% | — | — |
-| Scripted + recovery | faulty | 24 | 71% | 0.29 | 30.9s | 91% | 74% (19) | — |
-| **Agent** | nominal | 24 | **100%** | **0.00** | 33.3s | 100% | — | 11.9s |
-| **Agent** | faulty | 24 | **75%** | **0.25** | 32.4s | 94% | 71% (21) | 12.9s |
+<p align="center"><br><b>Demo 2 · Cycle Count</b><br><sub>VLM finds short and misplaced stock</sub><br></p>
 
-### Shelf-bin perception (`eval/vlm_eval.py`)
+<p align="center">
+  <img src="docs/img/demo-cycle-count.gif" alt="Cycle count of an aisle: the VLM inspects each bin, flags a short bin and a misplaced SKU, the agent corrects the records and relocates the stock" width="820">
+</p>
 
-24 bins per seed, 25% of bins with a wrong WMS record, high-graphics scene, Qwen3.8-27B.
+<p align="center"><br><b>Demo 3 · Shortage Recovery</b><br><sub>agent replenishes from receiving, then fulfills</sub><br></p>
 
-| Seed | Presence accuracy | Exact count | Wrong records detected | Latency |
-|---|---|---|---|---|
-| 7 | 100% | 75% | 8 / 8 | 1.2s |
-| 11 | 96% | 67% | 4 / 4 | 1.3s |
-| 23 | 96% | 75% | 6 / 6 | 1.3s |
+<p align="center">
+  <img src="docs/img/demo-shortage.gif" alt="Order 1044 is short on the shelf: the agent finds stock in the receiving tote, replenishes the bin, then fulfills the order and the VLM verifies the tote at dispatch" width="820">
+</p>
 
-Exact counts are limited by boxes hidden behind the front row, so cycle counts use presence (see Limitations).
+<p align="center"><sub><i>Demo 1: the push is done by the scripted expert. The SmolVLA push policy is trained but paused (2/30 on held-out scenes); see <a href="docs/ACTION_ITEMS.md">action items</a>.</i></sub></p>
 
-### Grasping: scripted vs SmolVLA vs diffusion (`--eval-grasp`)
+<br>
 
-> Measured before the side-stance rework (base facing the shelf). The current baseline runs the scripted grasp; both learned policies need new demos from the side stance and are disabled until retrained.
+### What It Does
 
-YCB objects on realistic shelves (same-product clusters, some toppled background items). 30 randomized trials per
-policy, attach-on-grasp, `--graphics basic` (`eval/results/grasp_ycb_smolvla/`, `eval/results/grasp_ycb_diffusion/`).
-Both learned policies were trained on the same 400 successful scripted demonstrations.
+| Workflow | Input | Execution & output |
+|---|---|---|
+| **Order fulfillment** | *"Prepare order #1045"* | • Reserves stock, plans the route, picks into the outbound tote<br>• Clears a blocker with the paddle when the target sits behind another product<br>• VLM audits the tote, then the order closes |
+| **Cycle count** | *"Cycle count aisle B"* | • VLM checks each bin against the WMS record<br>• Writes `cycle_count` adjustments, raises discrepancies, relocates misplaced stock |
+| **Shortage recovery** | An order short on the shelf | • Agent does not dispatch; finds stock in the receiving tote<br>• Replenishes the bin, waits, then fulfills |
+| **Exception handling** | Grasp slip, blocked path, missing stock | • Regrasp / replan / reallocate from an alternate bin<br>• Escalates with a report when recovery fails |
 
-| Policy | Overall | Mustard bottle | Tomato soup can | Mean time (sim) |
-|---|---|---|---|---|
-| Scripted (Lula IK, true pose) | 57% | 21% | 88% | 8.1s |
-| **SmolVLA** (language-conditioned) | **67%** | 36% | 94% | 9.0s |
-| Diffusion policy (vision only) | 63% | 29% | 94% | 8.0s |
+<details>
+<summary><b>Execution trace (Demo 1 example)</b></summary>
 
-The learned policies match or beat the scripted planner they were trained on, because they only saw its successful
-episodes. The mustard bottle (tall, narrow, often on an upper shelf) is the open problem for all three policies.
-In the agent, SmolVLA runs as the primary picker with the scripted grasp as fallback (`GRASP_POLICY=vla_with_fallback`).
-Verified end to end: orders #1040, #1041 and #1042 fulfilled with every pick done by SmolVLA and tote audits passed.
+**Request:** `"Prepare order #1045 and move it to dispatch."` (5× tomato soup)
 
-### Language grounding (`eval/grounding_eval.py`)
+1. **Plan**<br>`get_order` → `plan_fulfillment` reserves 4 cans at A-02-1 and the last one at C-04-1 in one `SELECT … FOR UPDATE` transaction.
+2. **Dispatch**<br>`dispatch_task` hands the plan to the executor; steps are rows in `task_steps`, so a restart resumes the task.
+3. **Blocked pick**<br>At C-04-1 the sim check sees a coffee can in front of the target. The executor pauses the task, raises a `blocked` exception and notifies the agent.
+4. **Recovery**<br>The agent calls `clear_blocker`, which splices `take_tool paddle → push_blocker → return_tool` before the paused pick, then resumes the task.
+5. **Audit and close**<br>The VLM compares the tote with the order; on a match the tote is released down the conveyor and `verify` closes the order. A `[SYSTEM EVENT]` prompts the agent to report back.
 
-Before each pick the VLM points at the described item in the bin image and the simulator grasps the object nearest
-to that point. 3 seeds, three phrasings per stocked bin (name, full description, attribute like "the red can"):
-**72 / 72** correct, 1.2s per query.
+</details>
 
-### Outbound tote audit
+<details>
+<summary><b>Results</b> (fulfillment, perception, grasping, grounding)</summary>
 
-Isaac, high-graphics scene, Qwen3.8-27B. Six generated orders (1–4 units each): **6 / 6** audits correct with exact
-counts, 1.6–3.1s per audit. Mis-packed totes (the order claims different SKUs than the tote holds): the VLM reports
-the actual contents in **2 / 2** cases instead of echoing the order, so the mismatch is raised.
+[Full results and limits](docs/DESIGN.md#results)
 
----
+| Test | Evaluation set | Result |
+|---|---|---|
+| **Fulfillment (faulty)** | 24 orders, 3 seeds, injected faults | Agent 75% vs 42% scripted baseline; inventory accuracy 94% vs 77% |
+| **Shelf-bin perception** | 72 bins, 25% wrong records | 96–100% presence accuracy; every wrong record detected |
+| **Language grounding** | 72 queries (name, description, attribute) | 72 / 72 correct, 1.2s per query |
+| **Tote audit** | 6 orders + 2 mis-packed totes | 6 / 6 correct, 2 / 2 mismatches caught |
+| **Grasping** | 30 trials per policy | SmolVLA 67%, diffusion 63%, scripted 57% |
 
-## Limitations (what is simplified)
-
-This is a portfolio demo, so the simplifications are stated plainly:
-
-- **Grasp physics.** YCB objects are rigid bodies with convex-hull colliders, but the demo uses attach-on-grasp: once
-  the fingers close on the item it is attached to the hand. Physical grasping (`--grasp physical`) reaches 65% and
-  stays experimental until it passes 80%.
-- **Side-stance manipulation.** The base parks parallel to the shelf, receiving pallet or conveyor and slides to line the arm up with the item; the arm grasps with a horizontal gripper, backs straight out and sets the item down in a tote on a raised stand behind it (a horizontal gripper cannot reach the deck itself). Dispatch and stow are the reverse transfer. The scripted grasp plans from a pose estimated from the head depth camera (the target mask comes from simulator instance ids; in deployment it would come from the VLM point and a promptable segmenter); the VLM decides which object.
-- **Two pickable products.** Mustard bottle and tomato soup can are robot-pickable; the other 10 YCB products are
-  real WMS SKUs flagged `robot_pickable = false`, which the agent refuses and routes to manual handling.
-- **Navigation.** A corridor waypoint planner inside the simulator drives the holonomic base. ROS2 / Nav2 and MoveIt2
-  are not integrated. The `RobotGateway` interface is where they would plug in.
-- **VLM counting.** From a single front-facing camera the VLM reliably identifies products and detects empty or wrong
-  bins, but it cannot count boxes hidden behind the front row. Cycle counts therefore use VLM presence (zero-out
-  missing SKUs, flag unexpected ones) rather than VLM quantities.
-- **Faults are injected**, with seeded probabilities, into a physical world model that is separate from the database.
-- **The VLA** is SmolVLA fine-tuned (8k steps, 34 min) on 400 successful scripted demonstrations of the arm phase
-  only, with a 6-D end-effector action space (tip xyz, yaw, pitch, gripper) and three instruction phrasings. Base
-  approach, lifting and placing remain scripted. Data collection and evaluation use `--graphics basic`. The diffusion
-  baseline uses one observation frame and no language.
-- **Conveyor.** Totes are moved kinematically along the roller conveyor and removed at the outbound pallet; there is
-  no packing or shipping workflow behind it. Items are released into the tote at the drop pose rather than dropped
-  with physics.
-- **Background racks** in the high-graphics scene are decoration and are not part of the WMS.
+</details>
 
 ---
 
-## Running it
+## Architecture
 
-Requirements: NVIDIA GPU (tested on an L40S 48GB), Docker with the NVIDIA runtime, and the Qwen3.8-27B-FP8 weights in
-the Hugging Face cache.
+<p align="center">
+  <img src="docs/images/architecture.svg" alt="Architecture: the manager talks to the agent, which calls typed WMS and robot tools. The executor runs tasks against Isaac Sim; Postgres streams every change to the dashboard" width="100%">
+</p>
 
-One-command Isaac demo (high graphics, WebRTC, CPU-pinned, GPU budget check):
+### Architectural Invariants
+
+1. **One system of record**<br>Postgres holds orders, inventory, tasks and exceptions. `LISTEN/NOTIFY` streams every change to the UI, so chat, dashboard and sim never disagree.
+2. **Typed tools, no free-form SQL**<br>The agent acts only through tools that wrap transactions (`plan_fulfillment`, `dispatch_task`, `clear_blocker`, …).
+3. **Separate physical world**<br>Faults are injected into a world model separate from the database, so the WMS can actually be wrong and inventory accuracy means something.
+4. **Models do what they are good at**<br>The VLM says *what and where* (a 2D point, a scene description); it never outputs poses. Motion is scripted IK or a learned policy.
+
+<details>
+<summary><b>System layers: what each part does</b></summary>
+
+| System | Layer | What it does |
+|---|---|---|
+| **System 2** (reasoning) | **Agent** | Plain tool-calling loop on Qwen3.8-27B (FP8, vLLM): picks the workflow, handles shortages and blocked picks, reports outcomes |
+| | **Perception** | Same model with image input: bin checks, grounding the described item, tote audit |
+| **System 1** (skills) | **Executor** | Persistent task state machine: perception, grasp, push, recovery policies, splices new steps into running tasks |
+| | **WMS** | FastAPI + Postgres: reservations, picks, cycle counts and audit rows in single transactions |
+| **System 0** (motion) | **Isaac Sim** | Ridgeback + Franka, Lula IK, depth-based pose estimation, push primitive, conveyor, camera and MJPEG streams |
+| | **Learned policies** | SmolVLA and diffusion policy servers (grasp and push), with the scripted planner as fallback |
+| **Delivery** | **Dashboard** | React + Vite: agent chat with tool trace, live sim stream, 2D floor map, orders and exceptions |
+
+</details>
+
+<details>
+<summary><b>Iterative build progression</b></summary>
+
+| Stage | Core addition | Result |
+|---|---|---|
+| Agent + mock robot | Typed WMS tools, executor, fault injection | [Agent 75% vs 42% scripted under faults](docs/DESIGN.md#fulfillment-kpis-evalrun_evalpy) |
+| Isaac Sim + VLM | Warehouse scene, bin inspection, tote audit | [96–100% presence, 6 / 6 audits](docs/DESIGN.md#shelf-bin-perception-evalvlm_evalpy) |
+| YCB grasping | Rigid YCB items, SmolVLA and diffusion on 400 demos | [SmolVLA 67% vs scripted 57%](docs/DESIGN.md#grasping-scripted-vs-smolvla-vs-diffusion---eval-grasp) |
+| Language grounding | VLM points at the described item | [72 / 72](docs/DESIGN.md#language-grounding-evalgrounding_evalpy) |
+| **Deep shelving** | Side stance, paddle tool, push primitive, push VLA, teleop | [Action items](docs/ACTION_ITEMS.md) |
+
+</details>
+
+Design: [design notes and full results](docs/DESIGN.md), [action items](docs/ACTION_ITEMS.md).
+
+---
+
+## Quickstart
+
+**Prerequisites:** Linux, an NVIDIA GPU (tested on an L40S 48GB), Docker with the NVIDIA runtime, and the Qwen3.8-27B-FP8 weights in the Hugging Face cache.
+
+### 1. Configure
 
 ```bash
-scripts/demo.sh                      # GRASP_POLICY=vla_with_fallback scripts/demo.sh to use the VLA
+git clone https://github.com/Michae1Park/agentic-warehouse-automation.git && cd agentic-warehouse-automation
+cp .env.example .env                        # ROBOT_BACKEND=mock for fast mode
 ```
 
-In the dashboard's Isaac view: drag to orbit, right/shift-drag to pan, scroll to zoom, double-click or
-**reset view** to return to the overview.
-
-GPU memory (L40S, 46GB): Isaac high graphics ~7GB, VLA server ~1.3GB, Qwen3.8-27B at `LLM_GPU_UTIL=0.75` ~34.5GB.
-That fits, but with little headroom; `demo.sh` refuses to start if other GPU jobs would push it over. For
-development, set a lighter model in `.env` (see `.env.example`).
+### 2. Run the Isaac demo
 
 ```bash
-cp .env.example .env                 # ROBOT_BACKEND=mock for fast mode
-docker compose up -d                 # postgres, vLLM, backend, dashboard
+scripts/demo.sh                             # high graphics, WebRTC, CPU-pinned, GPU budget check
+```
+
+GPU memory: Isaac ~7GB, VLA server ~1.3GB, Qwen3.8-27B at `LLM_GPU_UTIL=0.75` ~34.5GB. `demo.sh` refuses to start if other GPU jobs would push it over.
+
+### 3. Or run without the simulator
+
+```bash
+docker compose up -d                        # postgres, vLLM, backend, dashboard
 open http://localhost:5173
-
-# Isaac Sim mode
-echo -e "ROBOT_BACKEND=isaac\nSIM_URL=http://localhost:8020" > .env
-docker compose --profile isaac up -d
-
-# Isaac Sim mode with the WebRTC Streaming Client (connect it to this machine's IP)
-echo 'ISAAC_ARGS="--livestream --graphics high"' >> .env
-docker compose --profile isaac up -d --force-recreate isaac
 ```
 
-The livestream uses TCP 49100 (signaling) and UDP 47998 (media); open them if the client is on another machine.
-
-Evaluation (mock robot, fast):
+### 4. Evaluate
 
 ```bash
-python3 eval/run_eval.py --seeds 1 2 3 --orders 8
-python3 eval/vlm_eval.py            # needs the isaac profile running
+python3 eval/run_eval.py --seeds 1 2 3 --orders 8    # fulfillment KPIs, mock robot
+python3 eval/vlm_eval.py                             # bin perception, needs the isaac profile
 ```
 
-## Repository layout
+<details>
+<summary><b>Once open: what you can do</b></summary>
 
-```
-db/            schema (tables, triggers, views) and seed data
-backend/app/   FastAPI: agent/, executor.py, warehouse.py, perception.py, robot/{mock,isaac}.py, sim/world.py
-isaac/         Isaac Sim warehouse server (scene, conveyor, robot control, camera API, MJPEG stream)
-vla/           SmolVLA dataset conversion, training and policy server
-scripts/       demo launcher
-frontend/      React dashboard
-eval/          KPI harness and VLM perception benchmark
-docs/          action items, images
-```
+- **Chat:** ask the agent to *"Prepare order #1045"*, *"Cycle count aisle B"* or *"Prepare order #1044"* (short on the shelf). Every turn shows the tool trace.
+- **Isaac view:** drag to orbit, right/shift-drag to pan, scroll to zoom, double-click or **reset view** to return to the overview.
+- **Teleop:** `scripts/teleop.sh` opens a browser controller on :8020 for push demos and VLA intervention.
+
+</details>
+
+Full steps, limitations and troubleshooting: [Design notes](docs/DESIGN.md#running-it).
