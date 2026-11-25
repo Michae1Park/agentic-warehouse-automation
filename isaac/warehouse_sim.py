@@ -1,5 +1,6 @@
 import argparse
 import base64
+import collections
 import io
 import json
 import math
@@ -72,7 +73,7 @@ if args.graphics == "high":
 import numpy as np
 import omni.replicator.core as rep
 from isaacsim.core.api import World
-from isaacsim.core.api.objects import FixedCuboid, VisualCuboid, VisualCylinder
+from isaacsim.core.api.objects import FixedCuboid, VisualCuboid
 from isaacsim.core.prims import SingleArticulation, SingleXFormPrim
 from isaacsim.core.utils.rotations import euler_angles_to_quat, quat_to_rot_matrix, rot_matrix_to_quat
 from isaacsim.core.utils.stage import add_reference_to_stage, get_current_stage
@@ -88,8 +89,11 @@ from PIL import Image
 from pxr import Gf, PhysxSchema, Sdf, Usd, UsdGeom, UsdLux, UsdPhysics, UsdShade
 
 PHYSICS_DT = 1 / 60
-BASE_SPEED = 1.0
-BASE_TURN_SPEED = 1.6
+MOTION_SPEEDUP = 2.5
+BASE_SPEED = 1.2
+BASE_TURN_SPEED = 1.8
+BASE_ACCEL = 0.6
+BASE_TURN_ACCEL = 1.0
 YCB_ROOT = "/Isaac/Props/YCB/Axis_Aligned"
 YCB_SIZES = {
     "002_master_chef_can": (0.102, 0.102, 0.140), "003_cracker_box": (0.164, 0.072, 0.213),
@@ -122,13 +126,14 @@ GRASP_BELOW_TOP = 0.035
 GRASP_PITCH_FALLBACKS = (0.0, 0.2, 0.4, 0.6)
 SHORT_ITEM = 0.15
 LINEAR_STEP = 0.01
+LINEAR_MAX_JOINT_STEP = 0.25
 CLEARANCE_X = 0.05
 BACK_OFF = 0.08
 LIFT_HEIGHT = 0.08
 RETRACT = 0.2
-HOLD_STEPS = 60
+HOLD_STEPS = 30
 HOLD_TOLERANCE = 0.08
-CLOSE_STEPS = 40
+CLOSE_STEPS = 24
 FINGER_STIFFNESS = 2000.0
 FINGER_DAMPING = 100.0
 FINGER_MAX_FORCE = 40.0
@@ -146,19 +151,21 @@ IK_REACH_SEEDS = [np.array([pan, shoulder, 0.0, elbow, 0.0, wrist, twist])
                   for twist in (0.785, 0.785 - math.pi / 2, 0.785 + math.pi / 2)]
 SCAN_STANDOFF = 0.8
 CORRIDOR_Y = -0.6
-TOTE_OFFSET = np.array([-0.2, 0.0, 0.86])
-DECK_HEIGHT = 0.4
-TRAY_SIZE = np.array([0.34, 0.34])
-DECK_SLOTS = [np.array([dx, dy]) for dx in (0.08, -0.08) for dy in (-0.1, 0.0, 0.1)]
+TOTE_OFFSET = np.array([0.0, -0.37, 0.60])
+DECK_HEIGHT = 0.28
+DECK_SLOTS = [np.array([dx, dy]) for dx in (0.07, -0.07) for dy in (-0.09, 0.0, 0.09)]
 BASE_HALF_WIDTH = 0.40
 ARM_MOUNT = 0.30
 WORK_HEADING = 0.0
 WORK_REACH = 0.50
+DISPATCH_REACH = 0.20
 STANCE_CLEARANCE = {"storage": 0.10, "staging": 0.10, "dispatch": 0.05}
 PICK_GAP = 0.06
 CONVEYOR_FACE_X = 11.87
 UNDOCK = 0.35
 CARRY_CLEARANCE = 0.12
+HOVER_LIFT = np.array([0.0, 0.0, 0.18])
+SET_DOWN_TURNS = (0.0, math.pi / 2, -math.pi / 2, math.pi, 0.5, -0.5)
 OUTBOUND_CLEARANCE = 0.12
 FRONT_GRASP = euler_angles_to_quat(np.array([0.0, math.pi / 2, 0.0]))
 STREAM_EVERY = 3
@@ -177,14 +184,24 @@ CONVEYOR_X = 12.45
 CONVEYOR_START_Y = 0.6
 CONVEYOR_SEGMENT = 2.719
 CONVEYOR_SEGMENTS = 2
-ROLLER_TOP = 0.769
-TOTE_X = 12.12
-TOTE_SCALE = np.array([1.8, 1.8, 1.2])
+CONVEYOR_WIDTH = 1.15
+CURVE_PIVOT_OFFSET = 1.566
+CURVE_CENTERLINE = 1.53
+CONVEYOR_HIDDEN_PARTS = ("Rubberbands", "SM_ConveyorBelt_A08_Rubberband", "M_ConveyorBelt_A01_Cables",
+                         "M_ConveyorBelt_A01_WirePipes", "M_ConveyorBelt_A01_Pipes")
+CONVEYOR_HEIGHT_SCALE = 0.8
+ROLLER_TOP = 0.769 * CONVEYOR_HEIGHT_SCALE
+TOTE_X = 12.16
+TOTE_SCALE = np.array([1.8, 1.8, 0.6])
 TOTE_SIZE = np.array([0.198, 0.296, 0.146]) * TOTE_SCALE
 TOTE_SPEED = 0.6
-TOTE_INDEX_S = 2.0
 DISPATCH_STANDOFF = 0.6
 DISPATCH_BACKOFF = 0.6
+OUTBOUND_SLOTS = 10
+SAFE_CARRY_Z = 1.08
+CARRY_HEIGHTS = (SAFE_CARRY_Z, 1.03, 0.98)
+DISPATCH_RETREAT = 0.25
+TOTE_LIFT_HEIGHTS = (1.05, 1.0, 0.95, 0.9)
 TOTE_AUDIT_FOCAL = 22.0
 RELEASE_POSES = [euler_angles_to_quat(np.array([0.0, pitch, 0.0])) for pitch in (math.pi * 0.95, math.pi * 0.75, math.pi / 2)]
 POLICY_RES = (256, 256)
@@ -192,14 +209,19 @@ HEAD_FOCAL = 13.0
 CONTROL_EVERY = 6
 FINGERTIP_OFFSET = np.array([0.0, 0.0, 0.1034])
 TOOLBOX_OFFSET = np.array([0.42, -0.30])
-TOOLBOX_SIZE = np.array([0.10, 0.12, 0.12])
 TOOLBOX_TOP = 0.62
-BRACKET_METAL = np.array([0.55, 0.56, 0.58])
-BOLT_METAL = np.array([0.82, 0.82, 0.84])
-TOOLBOX_BRACKET = [((0.0, 0.0), 0.494, (0.12, 0.14, 0.012))] + [
-    ((dx, dy), 0.45, (0.018, 0.018, 0.088)) for dx in (-0.045, 0.045) for dy in (-0.055, 0.055)] + [
-    ((0.0, 0.0), 0.405, (0.16, 0.18, 0.01))]
-TOOLBOX_BOLTS = [(dx, dy) for dx in (-0.068, 0.068) for dy in (-0.078, 0.078)]
+MOUNT_METAL = np.array([0.25, 0.25, 0.28])
+TOTE_TOP = TOTE_OFFSET[2] - 0.08
+TOTE_STAND_OFFSET = np.array([0.0, -0.30])
+ROBOT_TOTE_SCALE = np.array([1.6, 1.1, 0.55])
+ROBOT_TOTE_SIZE = np.array([0.198, 0.296, 0.146]) * ROBOT_TOTE_SCALE
+ROBOT_TOTE_WALL = 0.03
+HAND_RIM_CLEARANCE = 0.04
+HARDWARE = [
+    (tuple(TOTE_STAND_OFFSET), DECK_HEIGHT + 0.003, (0.10, 0.10, 0.006), MOUNT_METAL),
+    (tuple(TOTE_OFFSET[:2]), TOTE_TOP - 0.008, (0.24, 0.24, 0.016), MOUNT_METAL),
+]
+SHOW_TOOLS = False
 TOOL_SLOTS = {"paddle": np.array([0.0, 0.0])}
 TOOL_HOVER = 0.08
 TOOL_SPEED = 0.08
@@ -268,6 +290,8 @@ YAW_SPREAD_PICKABLE = 1.0
 YAW_SPREAD_OTHER = 0.5
 SETTLE_STEPS = 120
 TOP_DOWN_LIFT = 0.15
+SHELF_TOP_DOWN_LIFT = 0.05
+RACK_RETREAT = 0.35
 PUSH_CLEARANCE = 0.04
 PUSH_HEIGHT = 0.075
 PUSH_STANDOFF = 0.08
@@ -424,6 +448,7 @@ class Warehouse:
         self.rng = np.random.default_rng(0)
         self.held: Item | None = None
         self.held_offset = np.zeros(3)
+        self.held_rotation = np.eye(3)
         self.tote: list[Item] = []
         self.views: dict[str, tuple[np.ndarray, np.ndarray, float]] = {}
         self.grasp_failure_next = False
@@ -670,23 +695,33 @@ class Warehouse:
         self.assets_root = get_assets_root_path()
         for i in range(CONVEYOR_SEGMENTS):
             add_reference_to_stage(f"{self.assets_root}/Isaac/Props/Conveyors/ConveyorBelt_A08.usd", f"/World/Conveyor/segment_{i}")
-            self._place_prop(f"/World/Conveyor/segment_{i}", (CONVEYOR_X, CONVEYOR_START_Y + i * CONVEYOR_SEGMENT, 0), -90, (1, 1, 1))
+            self._place_prop(f"/World/Conveyor/segment_{i}", (CONVEYOR_X, CONVEYOR_START_Y + i * CONVEYOR_SEGMENT, 0), -90,
+                             (1, 1, CONVEYOR_HEIGHT_SCALE))
         end_y = CONVEYOR_START_Y + CONVEYOR_SEGMENTS * CONVEYOR_SEGMENT
-        outbound = (CONVEYOR_X + 1.3, end_y - 0.6, 0.0)
-        self._add_prop("SM_PaletteA_01", "/World/Outbound/pallet", outbound, 0, (1, 1, 1))
-        for i, (dx, dy, dz, asset) in enumerate([(-0.3, -0.25, 0, "SM_CardBoxB_01"), (0.25, -0.25, 0, "SM_CardBoxA_01"),
-                                                  (-0.3, 0.25, 0, "SM_CardBoxC_01"), (0.25, 0.25, 0, "SM_CardBoxB_01"),
-                                                  (-0.3, 0.25, 0.25, "SM_CardBoxD_01")]):
-            self._add_prop(asset, f"/World/Outbound/carton_{i}", (outbound[0] + dx, outbound[1] + dy, 0.211 + dz), 0, (1, 1, 1))
+        self.curve_center = np.array([CONVEYOR_X + CURVE_PIVOT_OFFSET, end_y])
+        self.curve_radius = float(self.curve_center[0] - TOTE_X)
+        exit_x = self.curve_center[0]
+        exit_center_y = end_y + CURVE_CENTERLINE
+        self.exit_wall_x = max(float(l["x"]) for l in self.locations.values()) + 4.0 - 0.1
+        add_reference_to_stage(f"{self.assets_root}/Isaac/Props/Conveyors/ConveyorBelt_A02.usd", "/World/Conveyor/curve")
+        self._place_prop("/World/Conveyor/curve", (CONVEYOR_X, end_y, 0), 90, (1, 1, CONVEYOR_HEIGHT_SCALE))
+        add_reference_to_stage(f"{self.assets_root}/Isaac/Props/Conveyors/ConveyorBelt_A08.usd", "/World/Conveyor/exit")
+        self._place_prop("/World/Conveyor/exit", (exit_x, exit_center_y, 0), 180,
+                         ((self.exit_wall_x - exit_x) / CONVEYOR_SEGMENT, 1, CONVEYOR_HEIGHT_SCALE))
+        VisualCuboid("/World/Conveyor/exit_opening", position=np.array([self.exit_wall_x, exit_center_y, ROLLER_TOP + 0.2]),
+                     scale=np.array([0.02, CONVEYOR_WIDTH, 0.45]), color=np.array([0.03, 0.03, 0.035]))
         self.conveyor_end_y = end_y
+        for prim in Usd.PrimRange(self.stage.GetPrimAtPath("/World/Conveyor")):
+            if prim.GetName().startswith(CONVEYOR_HIDDEN_PARTS) and prim.IsA(UsdGeom.Imageable):
+                UsdGeom.Imageable(prim).MakeInvisible()
         self.dispatch_totes: dict[str, str] = {}
         self.shipping: list[tuple[str, list[Item]]] = []
         self.tote_counter = 0
-        self.pending_totes: dict[str, float] = {}
         self.tote_material = self._material("ToteGrey", (0.3, 0.31, 0.33), 0.6)
         for location in self.locations.values():
             if location["kind"] == "dispatch":
                 self.dispatch_totes[location["id"]] = self._spawn_tote(float(location["y"]))
+        self.reset_dispatch_totes()
 
     def _spawn_tote(self, y: float) -> str:
         self.tote_counter += 1
@@ -703,38 +738,57 @@ class Warehouse:
         boxes = []
         for box in [b for b in self.boxes if b.location_id == location_id]:
             box.location_id = None
-            boxes.append((box, box.position - np.array([TOTE_X, tote_y, 0.0])))
+            boxes.append((box, box.position - np.array([TOTE_X, tote_y, 0.0]), box.yaw))
         self.shipping.append((path, boxes))
         self.dispatch_totes[location_id] = self._spawn_tote(float(self.locations[location_id]["y"]))
         self._hide(self.dispatch_totes[location_id])
-        self.pending_totes[location_id] = 0.0
 
     def update_conveyor(self) -> None:
         step = TOTE_SPEED * PHYSICS_DT
         arrived = []
         for path, boxes in self.shipping:
-            translate = UsdGeom.Xformable(self.stage.GetPrimAtPath(path)).GetOrderedXformOps()[0]
-            position = translate.Get()
-            y = position[1] + step
-            translate.Set(Gf.Vec3d(position[0], y, position[2]))
-            for box, offset in boxes:
-                box.move(np.array([TOTE_X, y, 0.0]) + offset)
-            if y > self.conveyor_end_y - TOTE_SIZE[1] / 2:
+            ops = UsdGeom.Xformable(self.stage.GetPrimAtPath(path)).GetOrderedXformOps()
+            position = ops[0].Get()
+            x, y = float(position[0]), float(position[1])
+            cx, cy = self.curve_center
+            if y < cy and x < cx:
+                y = min(y + step, cy)
+                yaw = 0.0
+            elif x < cx:
+                angle = math.atan2(y - cy, x - cx) - step / self.curve_radius
+                if angle <= math.pi / 2:
+                    x, y, yaw = cx, cy + self.curve_radius, -math.pi / 2
+                else:
+                    x, y = cx + self.curve_radius * math.cos(angle), cy + self.curve_radius * math.sin(angle)
+                    yaw = angle - math.pi
+            else:
+                x += step
+                yaw = -math.pi / 2
+            ops[0].Set(Gf.Vec3d(x, y, position[2]))
+            ops[1].Set(float(math.degrees(yaw)))
+            turn = np.array([[math.cos(yaw), -math.sin(yaw), 0.0], [math.sin(yaw), math.cos(yaw), 0.0], [0.0, 0.0, 1.0]])
+            for box, offset, start_yaw in boxes:
+                box.move(np.array([x, y, 0.0]) + turn @ offset, start_yaw + yaw)
+            if x + TOTE_SIZE[1] / 2 > self.exit_wall_x:
                 arrived.append((path, boxes))
         for path, boxes in arrived:
             self.shipping.remove((path, boxes))
             self.stage.RemovePrim(path)
-            for box, _ in boxes:
+            for box, _, _ in boxes:
                 self.stage.RemovePrim(box.path)
                 self.boxes.remove(box)
-        for location_id, waited in list(self.pending_totes.items()):
-            if waited > TOTE_INDEX_S:
-                self.show_tote(location_id)
+
+    def upstream_dispatch(self) -> str:
+        return min(self.dispatch_totes, key=lambda location_id: float(self.locations[location_id]["y"]))
+
+    def reset_dispatch_totes(self) -> None:
+        for location_id, path in self.dispatch_totes.items():
+            if location_id == self.upstream_dispatch():
+                UsdGeom.Imageable(self.stage.GetPrimAtPath(path)).MakeVisible()
             else:
-                self.pending_totes[location_id] = waited + PHYSICS_DT
+                self._hide(path)
 
     def show_tote(self, location_id: str) -> None:
-        self.pending_totes.pop(location_id, None)
         UsdGeom.Imageable(self.stage.GetPrimAtPath(self.dispatch_totes[location_id])).MakeVisible()
 
     def _build_robot(self) -> None:
@@ -745,33 +799,48 @@ class Warehouse:
         self.robot = self.world.scene.add(SingleArticulation("/World/Robot", name="robot"))
         self.tote_stand = VisualCuboid(
             "/World/ToteStand", position=np.array([0.0, 0.0, 0.3]),
-            scale=np.array([0.05, 0.05, TOTE_OFFSET[2] - 0.06 - DECK_HEIGHT]), color=np.array([0.25, 0.25, 0.28]),
+            scale=np.array([0.07, 0.07, TOTE_TOP - DECK_HEIGHT]), color=MOUNT_METAL,
         )
+        self.hardware = [VisualCuboid(f"/World/Mounts/part_{i}", position=np.zeros(3), scale=np.array(size), color=color)
+                         for i, (_, _, size, color) in enumerate(HARDWARE)]
         self._build_tools()
-        self.tote_prim = VisualCuboid(
-            "/World/Tote", position=np.array([0.0, 0.0, 0.3]), scale=np.array([TRAY_SIZE[0], TRAY_SIZE[1], 0.04]),
-            color=np.array([0.2, 0.3, 0.7]),
-        )
-        for path in ("/World/Tote", "/World/ToteStand", "/World/Toolbox", "/World/ToolboxStand"):
-            self.make_deck_collider(path)
+        self._build_robot_tote()
+
+    def _build_robot_tote(self) -> None:
+        root = "/World/RobotTote"
+        UsdGeom.Xform.Define(self.stage, root)
+        self.robot_tote_material = self._material("RobotToteBlue", (0.16, 0.32, 0.62), 0.6)
+        add_reference_to_stage(f"{self.assets_root}/Isaac/Props/KLT_Bin/small_KLT_visual.usd", f"{root}/visual")
+        self._place_prop(f"{root}/visual", (0.0, 0.0, ROBOT_TOTE_SIZE[2] / 2), 0, ROBOT_TOTE_SCALE)
+        for child in Usd.PrimRange(self.stage.GetPrimAtPath(f"{root}/visual")):
+            UsdShade.MaterialBindingAPI.Apply(child).Bind(self.robot_tote_material, UsdShade.Tokens.strongerThanDescendants)
+        length, width, height = ROBOT_TOTE_SIZE
+        wall = ROBOT_TOTE_WALL
+        walls = {
+            "floor": ((0, 0, -wall / 2 + TOTE_WALL), (length, width, wall)),
+            "front": ((-(length + wall) / 2, 0, height / 2), (wall, width, height)),
+            "back": (((length + wall) / 2, 0, height / 2), (wall, width, height)),
+            "left": ((0, -(width + wall) / 2, height / 2), (length + 2 * wall, wall, height)),
+            "right": ((0, (width + wall) / 2, height / 2), (length + 2 * wall, wall, height)),
+        }
+        for name, (offset, extent) in walls.items():
+            cube = UsdGeom.Cube.Define(self.stage, f"{root}/{name}")
+            cube.CreateSizeAttr(1.0)
+            cube.AddTranslateOp().Set(Gf.Vec3d(*map(float, offset)))
+            cube.AddScaleOp().Set(Gf.Vec3f(*map(float, extent)))
+            cube.MakeInvisible()
+            UsdPhysics.CollisionAPI.Apply(cube.GetPrim())
+        self.make_deck_collider(root)
+        self.tote_prim = SingleXFormPrim(root)
 
     def _build_tools(self) -> None:
         self.tool: str | None = None
         self.push_encoding = False
         self.trail: list[np.ndarray] | None = None
-        self.toolbox = VisualCuboid("/World/Toolbox", position=np.array([0.0, 0.0, 0.3]), scale=TOOLBOX_SIZE,
-                                    color=np.array([0.62, 0.1, 0.08]))
-        self.bracket_parts = [VisualCuboid(f"/World/ToolboxBracket/part_{i}", position=np.zeros(3), scale=np.array(size), color=BRACKET_METAL)
-                              for i, (_, _, size) in enumerate(TOOLBOX_BRACKET)]
-        self.bracket_bolts = [VisualCylinder(f"/World/ToolboxBracket/bolt_{i}", position=np.zeros(3), radius=0.008, height=0.008,
-                                             color=BOLT_METAL) for i in range(len(TOOLBOX_BOLTS))]
-        self.toolbox_stand = VisualCuboid(
-            "/World/ToolboxStand", position=np.array([0.0, 0.0, 0.3]),
-            scale=np.array([0.05, 0.05, TOOLBOX_TOP - TOOLBOX_SIZE[2] - DECK_HEIGHT]), color=np.array([0.25, 0.25, 0.28]))
         self.tool_prims: dict[str, list[SingleXFormPrim]] = {}
         robot_parts = ["/World/Robot"] + [str(prim.GetPath()) for prim in Usd.PrimRange(self.stage.GetPrimAtPath("/World/Robot"))
                                           if prim.HasAPI(UsdPhysics.RigidBodyAPI)]
-        for name, parts in TOOL_PARTS.items():
+        for name, parts in TOOL_PARTS.items() if SHOW_TOOLS else ():
             prims = []
             for i, (_, size, collides) in enumerate(parts):
                 path = f"/World/Tools/{name}_{i}"
@@ -788,8 +857,11 @@ class Warehouse:
 
     def make_deck_collider(self, path: str) -> None:
         prim = self.stage.GetPrimAtPath(path)
-        UsdPhysics.CollisionAPI.Apply(prim)
         UsdPhysics.RigidBodyAPI.Apply(prim).CreateKinematicEnabledAttr(True)
+        filtered = UsdPhysics.FilteredPairsAPI.Apply(prim).CreateFilteredPairsRel()
+        for robot_part in Usd.PrimRange(self.stage.GetPrimAtPath("/World/Robot")):
+            if robot_part.HasAPI(UsdPhysics.RigidBodyAPI):
+                filtered.AddTarget(robot_part.GetPath())
 
     def tool_frame(self, name: str) -> tuple[np.ndarray, np.ndarray]:
         if self.tool == name:
@@ -806,21 +878,9 @@ class Warehouse:
         return np.array([xy[0], xy[1], top + TOOL_STOW_HEIGHT[name]]), tool_rotation(theta, math.pi / 2, 0.0)
 
     def update_tools(self) -> None:
-        x, y, theta = self.base_pose()
-        turn = np.array([[math.cos(theta), -math.sin(theta)], [math.sin(theta), math.cos(theta)]])
-        box_xy = np.array([x, y]) + turn @ TOOLBOX_OFFSET
-        self.toolbox.set_world_pose(np.array([box_xy[0], box_xy[1], TOOLBOX_TOP - TOOLBOX_SIZE[2] / 2]),
-                                    euler_angles_to_quat(np.array([0, 0, theta])))
-        heading = euler_angles_to_quat(np.array([0, 0, theta]))
-        for prim, ((dx, dy), z, _) in zip(self.bracket_parts, TOOLBOX_BRACKET):
-            xy = box_xy + turn @ np.array([dx, dy])
-            prim.set_world_pose(np.array([xy[0], xy[1], z]), heading)
-        for prim, (dx, dy) in zip(self.bracket_bolts, TOOLBOX_BOLTS):
-            xy = box_xy + turn @ np.array([dx, dy])
-            prim.set_world_pose(np.array([xy[0], xy[1], 0.414]), heading)
-        self.toolbox_stand.set_world_pose(np.array([box_xy[0], box_xy[1], (TOOLBOX_TOP - TOOLBOX_SIZE[2] + DECK_HEIGHT) / 2]),
-                                          euler_angles_to_quat(np.array([0, 0, theta])))
         for name, parts in TOOL_PARTS.items():
+            if name not in self.tool_prims:
+                continue
             origin, rotation = self.tool_frame(name)
             orientation = rot_matrix_to_quat(rotation)
             for prim, (center, _, _) in zip(self.tool_prims[name], parts):
@@ -1097,8 +1157,10 @@ class Warehouse:
 
     def grab(self, box: Item) -> None:
         hand_position, hand_orientation = self.hand.get_world_pose()
-        box_position, _ = box.prim.get_world_pose()
-        self.held_offset = quat_to_rot_matrix(hand_orientation).T @ (box_position - hand_position)
+        box_position, box_orientation = box.prim.get_world_pose()
+        hand_rotation = quat_to_rot_matrix(hand_orientation)
+        self.held_offset = hand_rotation.T @ (box_position - hand_position)
+        self.held_rotation = hand_rotation.T @ quat_to_rot_matrix(box_orientation)
         self.held = box
 
     def debug(self) -> dict:
@@ -1132,17 +1194,20 @@ class Warehouse:
         self.update_tools()
         if self.held:
             position, orientation = self.hand.get_world_pose()
-            self.held.move(position + quat_to_rot_matrix(orientation) @ self.held_offset)
+            hand_rotation = quat_to_rot_matrix(orientation)
+            self.held.position = position + hand_rotation @ self.held_offset
+            self.held.prim.set_world_pose(self.held.position, rot_matrix_to_quat(hand_rotation @ self.held_rotation))
         x, y, theta = self.base_pose()
         rotation = np.array([[math.cos(theta), -math.sin(theta)], [math.sin(theta), math.cos(theta)]])
         tote_xy = np.array([x, y]) + rotation @ TOTE_OFFSET[:2]
-        self.tote_prim.set_world_pose(np.array([tote_xy[0], tote_xy[1], TOTE_OFFSET[2] - 0.06]),
+        self.tote_prim.set_world_pose(np.array([tote_xy[0], tote_xy[1], TOTE_TOP]),
                                       euler_angles_to_quat(np.array([0, 0, theta])))
-        self.tote_stand.set_world_pose(np.array([tote_xy[0], tote_xy[1], (TOTE_OFFSET[2] - 0.06 + DECK_HEIGHT) / 2]),
+        stand_xy = np.array([x, y]) + rotation @ TOTE_STAND_OFFSET
+        self.tote_stand.set_world_pose(np.array([stand_xy[0], stand_xy[1], (TOTE_TOP + DECK_HEIGHT) / 2]),
                                        euler_angles_to_quat(np.array([0, 0, theta])))
-        for box in self.tote:
-            surface, yaw = self.deck_slot(box.deck_slot)
-            box.rest_on(surface, yaw)
+        for prim, (offset, z, _, _) in zip(self.hardware, HARDWARE):
+            xy = np.array([x, y]) + rotation @ np.array(offset)
+            prim.set_world_pose(np.array([xy[0], xy[1], z]), euler_angles_to_quat(np.array([0, 0, theta])))
 
     def deck_slot(self, index: int) -> tuple[np.ndarray, float]:
         x, y, theta = self.base_pose()
@@ -1150,7 +1215,7 @@ class Warehouse:
         local = TOTE_OFFSET[:2] + DECK_SLOTS[index % len(DECK_SLOTS)]
         xy = np.array([x, y]) + rotation @ local
         radial = local - np.array([ARM_MOUNT, 0.0])
-        return np.array([xy[0], xy[1], TOTE_OFFSET[2] - 0.04]), theta + math.atan2(radial[1], radial[0])
+        return np.array([xy[0], xy[1], TOTE_TOP + TOTE_WALL]), theta + math.atan2(radial[1], radial[0])
 
     def free_deck_slot(self) -> int:
         used = {box.deck_slot for box in self.tote}
@@ -1189,7 +1254,7 @@ class Warehouse:
         location = self.locations[location_id]
         x, y = float(location["x"]), float(location["y"])
         if location["kind"] == "dispatch":
-            return [np.array([TOTE_X + (i % 2 - 0.5) * 0.13, y + (i // 2 % 4 - 1.5) * 0.11, ROLLER_TOP + 0.015])
+            return [np.array([TOTE_X - 0.07 + (i // 5 % 2) * 0.13, y + (i % 5 - 2) * 0.09, ROLLER_TOP + 0.015])
                     for i in range(count)]
         columns, spacing = 8, 0.11
         y0 = y - (columns - 1) * spacing / 2
@@ -1314,6 +1379,12 @@ class Warehouse:
             while columns * cell[1] > usable and rows < max_rows:
                 rows += 1
                 columns = math.ceil(len(group) / rows)
+            capacity = rows * max(1, int(usable // cell[1]))
+            for item in group[capacity:]:
+                self.stage.RemovePrim(item.path)
+                self.boxes.remove(item)
+            group = group[:capacity]
+            columns = math.ceil(len(group) / rows)
             clusters.append((group, cell, columns))
         while len(clusters) > 1 and sum(c[2] * c[1][1] for c in clusters) > usable:
             dropped = next((c for c in reversed(clusters) if c[0][0].sku is None), clusters[-1])
@@ -1410,8 +1481,7 @@ class Warehouse:
         for path, _ in self.shipping:
             self.stage.RemovePrim(path)
         self.shipping = []
-        for location_id in list(self.pending_totes):
-            self.show_tote(location_id)
+        self.reset_dispatch_totes()
         self.boxes, self.tote, self.held, self.tool, self.trail = [], [], None, None, None
         misplaced = misplaced or []
         skip = {(m["location_id"], m["sku"]) for m in missing} | {(m["from"], m["sku"]) for m in misplaced}
@@ -1469,7 +1539,8 @@ class Warehouse:
         x, y = float(location["x"]), float(location["y"])
         if location["kind"] not in STANCE_CLEARANCE:
             return np.array([x, y, 0.0])
-        stance_x = self.face_x(location_id) - ARM_MOUNT - WORK_REACH
+        reach = DISPATCH_REACH if location["kind"] == "dispatch" else WORK_REACH
+        stance_x = self.face_x(location_id) - ARM_MOUNT - reach
         return np.array([stance_x, y, WORK_HEADING])
 
     def face_x(self, location_id: str) -> float:
@@ -1536,6 +1607,7 @@ class Commands:
         return estimate
 
     def drive_to(self, target: np.ndarray, speed: float = BASE_SPEED):
+        velocity, turn_rate = 0.0, 0.0
         while True:
             current = self.w.base_target.copy()
             delta = target[:2] - current[:2]
@@ -1543,22 +1615,36 @@ class Commands:
             heading_error = wrap_angle(target[2] - current[2])
             if distance < 1e-3 and abs(heading_error) < 1e-3:
                 break
-            step = min(distance, speed * PHYSICS_DT)
+            braking = math.sqrt(2 * BASE_ACCEL * distance)
+            velocity = min(speed, velocity + BASE_ACCEL * PHYSICS_DT, braking)
             if distance > 0:
-                current[:2] += delta / distance * step
-            current[2] += float(np.clip(heading_error, -BASE_TURN_SPEED * PHYSICS_DT, BASE_TURN_SPEED * PHYSICS_DT))
+                current[:2] += delta / distance * min(distance, max(velocity, 0.02) * PHYSICS_DT)
+            turn_braking = math.sqrt(2 * BASE_TURN_ACCEL * abs(heading_error))
+            turn_rate = min(BASE_TURN_SPEED, turn_rate + BASE_TURN_ACCEL * PHYSICS_DT, turn_braking)
+            current[2] += math.copysign(min(abs(heading_error), max(turn_rate, 0.02) * PHYSICS_DT), heading_error)
             self.w.base_target = current
             yield
         for _ in range(20):
             yield
 
+    def aisle_center(self, x: float) -> float:
+        racks = sorted({float(l["x"]) for l in self.w.locations.values() if l["kind"] == "storage"})
+        left = max((r + SHELF_DEPTH / 2 for r in racks if r + SHELF_DEPTH / 2 <= x), default=None)
+        right = min((r - SHELF_DEPTH / 2 for r in racks if r - SHELF_DEPTH / 2 >= x), default=None)
+        if left is None or right is None:
+            return x
+        return (left + right) / 2
+
     def waypoints(self, goal: np.ndarray) -> list[np.ndarray]:
         x, y, _ = self.w.base_target
+        lane = self.aisle_center(goal[0])
         points = []
-        if abs(x - goal[0]) > 0.05:
-            points.append(np.array([x, CORRIDOR_Y, 0.0]))
-            points.append(np.array([goal[0], CORRIDOR_Y, 0.0]))
-        points.append(np.array([goal[0], goal[1], 0.0]))
+        if abs(y - CORRIDOR_Y) > 0.05 and abs(x - lane) > 0.05:
+            points.append(np.array([self.aisle_center(x), y, 0.0]))
+            points.append(np.array([self.aisle_center(x), CORRIDOR_Y, 0.0]))
+        if abs(x - lane) > 0.05:
+            points.append(np.array([lane, CORRIDOR_Y, 0.0]))
+        points.append(np.array([lane, goal[1], 0.0]))
         return points
 
     def back_off(self, pose: np.ndarray, distance: float) -> np.ndarray:
@@ -1571,6 +1657,8 @@ class Commands:
         current = self.w.base_target.copy()
         if abs(wrap_angle(current[2] - WORK_HEADING)) < 0.1:
             yield from self.drive_to(self.back_off(current, UNDOCK))
+        if self.w.locations.get(location_id, {}).get("kind") == "storage":
+            goal = self.back_off(goal, SCAN_STANDOFF)
         docked = abs(wrap_angle(goal[2] - WORK_HEADING)) < 1e-3
         final = goal
         if docked:
@@ -1587,12 +1675,19 @@ class Commands:
         return {"x": float(x), "y": float(y), "theta": float(theta)}
 
     def move_arm(self, target: np.ndarray, steps: int = 90):
+        steps = max(8, int(steps / MOTION_SPEEDUP))
         start = self.w.arm_target.copy()
         for i in range(1, steps + 1):
             t = 0.5 - 0.5 * math.cos(math.pi * i / steps)
             self.w.arm_target = start + (target - start) * t
             yield
-        for _ in range(10):
+        yield from self.settle_arm()
+
+    def settle_arm(self, tolerance: float = 0.03, limit: int = 120):
+        for _ in range(limit):
+            error = np.abs(self.w.robot.get_joint_positions()[self.w.arm_idx] - self.w.arm_target).max()
+            if error < tolerance:
+                break
             yield
 
     def gripper(self, opening: float):
@@ -1605,26 +1700,36 @@ class Commands:
         yield from self.move_arm(joints, steps)
 
     def reach_linear(self, position: np.ndarray, orientation: np.ndarray, speed: float = 0.25):
+        speed *= MOTION_SPEEDUP
         start = self.w.fingertip()
         distance = float(np.linalg.norm(position - start))
         segments = max(1, int(distance / LINEAR_STEP))
         ticks = max(1, int(distance / segments / speed / PHYSICS_DT))
+        plan, previous, smooth = [], self.w.arm_target.copy(), True
         for i in range(1, segments + 1):
             point = start + (position - start) * i / segments
             try:
-                goal = self.w.solve_ik(point, orientation)
+                joints = self.w.solve_ik(point, orientation, previous)
             except SimError:
                 if i == segments:
                     raise
                 continue
+            if float(np.abs(joints - previous).max()) > LINEAR_MAX_JOINT_STEP:
+                smooth = False
+            plan.append(joints)
+            previous = joints
+        if not smooth:
+            yield from self.move_arm(plan[-1], max(20, int(distance / speed / PHYSICS_DT) * 2))
+            return
+        for goal in plan:
             begin = self.w.arm_target.copy()
             for k in range(1, ticks + 1):
                 self.w.arm_target = begin + (goal - begin) * k / ticks
                 yield
-        for _ in range(10):
-            yield
+        yield from self.settle_arm()
 
     def reach_blend(self, position: np.ndarray, orientation: np.ndarray, speed: float = 0.3):
+        speed *= MOTION_SPEEDUP
         start = self.w.fingertip()
         start_orientation = np.asarray(self.w.hand.get_world_pose()[1], dtype=float)
         end_orientation = np.asarray(orientation, dtype=float)
@@ -1646,11 +1751,25 @@ class Commands:
                 self.w.arm_target = begin + (goal - begin) * k / ticks
                 yield
 
+    def smooth_approach(self, option: dict) -> tuple[np.ndarray, list[np.ndarray]] | None:
+        above = option["approach"] + np.array([0.0, 0.0, GRASP_READY_LIFT])
+        natural = self.natural_orientation(option["approach"], option["orientation"])
+        flipped = rot_matrix_to_quat(quat_to_rot_matrix(natural) @ np.diag([-1.0, -1.0, 1.0]))
+        for orientation in (natural, flipped):
+            try:
+                plan = self.plan_line(above, option["approach"], orientation)
+            except SimError:
+                continue
+            option["orientation"] = orientation
+            return above, plan
+        return None
+
     def go_to_pregrasp(self, joints: np.ndarray):
-        choice = self.grasp_choice
-        choice["orientation"] = self.natural_orientation(choice["approach"], choice["orientation"])
-        above = choice["approach"] + np.array([0.0, 0.0, GRASP_READY_LIFT])
-        yield from self.approach_along(above, choice["approach"], choice["orientation"], 0.15, "grasp ready")
+        above, plan = self.grasp_choice["plan"]
+        self.last_plan_goal = plan[-1]
+        yield from self.move_arm(plan[0], 90)
+        self.check_tracking(above, "grasp ready")
+        yield from self.follow(plan, GRASP_READY_LIFT, 0.15)
 
     def reach_first(self, targets: list[np.ndarray], orientation: np.ndarray, speed: float):
         for target in targets:
@@ -1815,6 +1934,10 @@ class Commands:
                 option["approach"] = approach
             except SimError:
                 pass
+            plan = self.smooth_approach(option)
+            if plan is None:
+                continue
+            option["plan"] = plan
             self.grasp_choice = option
             break
         self.last_grasp = {**self.last_grasp, "target_upright": round(float(np.abs(self.true_target(box).axes[2]).max()), 2),
@@ -2223,14 +2346,14 @@ class Commands:
         return plan[::-1]
 
     def follow(self, plan: list[np.ndarray], length: float, speed: float):
+        speed *= MOTION_SPEEDUP
         ticks = max(1, int(length / max(1, len(plan) - 1) / speed / PHYSICS_DT))
         for joints in plan[1:]:
             begin = self.w.arm_target.copy()
             for t in range(1, ticks + 1):
                 self.w.arm_target = begin + (joints - begin) * t / ticks
                 yield
-        for _ in range(10):
-            yield
+        yield from self.settle_arm()
 
     def approach_along(self, origin: np.ndarray, goal: np.ndarray, orientation: np.ndarray, speed: float, stage: str):
         plan = self.plan_line(origin, goal, orientation)
@@ -2240,6 +2363,7 @@ class Commands:
         yield from self.follow(plan, float(np.linalg.norm(goal - origin)), speed)
 
     def reach_planned(self, origin: np.ndarray, goal: np.ndarray, orientation: np.ndarray, speed: float):
+        speed *= MOTION_SPEEDUP
         steps = max(1, int(float(np.linalg.norm(goal - origin)) / PUSH_PLAN_STEP))
         plan, previous = [], self.w.arm_target.copy()
         for k in range(1, steps + 1):
@@ -2337,12 +2461,37 @@ class Commands:
     def tip_for(self, box_center: np.ndarray, orientation: np.ndarray, offset: np.ndarray) -> np.ndarray:
         return box_center - quat_to_rot_matrix(orientation) @ offset
 
-    def set_down(self, box: Item, surface: np.ndarray, yaw: float, clearance: float):
+    def set_down(self, box: Item, surface: np.ndarray, yaw: float, clearance: float, direct: bool = False):
         offset = self.hold_offset()
-        orientation = self.carry_orientation(yaw)
-        tip = self.tip_for(surface + np.array([0.0, 0.0, box.footprint[2] / 2 + SURFACE_LIFT]), orientation, offset)
-        above = tip + np.array([0.0, 0.0, clearance])
-        yield from self.move_arm(self.w.solve_ik(above, orientation), 80)
+        center = surface + np.array([0.0, 0.0, box.footprint[2] / 2 + SURFACE_LIFT])
+        choice = self.grasp_choice or {"pitch": GRASP_PITCH, "roll": 0.0}
+        candidates = [rot_matrix_to_quat(tool_rotation(yaw + turn, pitch, choice["roll"]))
+                      for pitch in (choice["pitch"],) for turn in SET_DOWN_TURNS]
+        current = np.asarray(self.w.hand.get_world_pose()[1], dtype=float)
+        candidates.sort(key=lambda q: -abs(float(np.dot(q, current))))
+        plan = None
+        for orientation in candidates:
+            tip = self.tip_for(center, orientation, offset)
+            above = tip + np.array([0.0, 0.0, clearance])
+            try:
+                hover = above if direct else above + HOVER_LIFT
+                hover_joints = self.w.solve_ik(hover, orientation, self.w.work_home)
+                above_joints = self.w.solve_ik(above, orientation, hover_joints)
+                self.w.solve_ik(tip, orientation, above_joints)
+            except SimError:
+                continue
+            plan = tip, above, orientation, hover_joints
+            break
+        if plan is None:
+            raise SimError("ik_failed", f"no arm solution to set {box.sku} down at {np.round(center, 2).tolist()}")
+        tip, above, orientation, hover_joints = plan
+        if direct:
+            yield from self.reach_linear(above, orientation, 0.3)
+        else:
+            if np.abs(self.w.arm_target - self.w.work_home).max() > 0.05:
+                yield from self.move_arm(self.w.work_home, 60)
+            yield from self.move_arm(hover_joints, 80)
+        yield from self.reach_linear(above, orientation, 0.2)
         yield from self.reach_linear(tip, orientation, 0.15)
         self.w.held = None
         return tip, above, orientation
@@ -2350,30 +2499,64 @@ class Commands:
     def stash(self, box: Item):
         slot = self.w.free_deck_slot()
         surface, yaw = self.w.deck_slot(slot)
-        tip, above, orientation = yield from self.set_down(box, surface, yaw, CARRY_CLEARANCE)
+        rim = ROBOT_TOTE_SIZE[2] - TOTE_WALL
+        side_grip = (self.grasp_choice or {"pitch": GRASP_PITCH})["pitch"] < 1.0
+        lift = max(0.0, rim + HAND_RIM_CLEARANCE - box.footprint[2] / 2) if side_grip else 0.0
+        release = surface + np.array([0.0, 0.0, lift])
+        tip, above, orientation = yield from self.set_down(box, release, yaw, CARRY_CLEARANCE)
         box.location_id = None
         box.deck_slot = slot
         self.w.tote.append(box)
+        self.w.set_dynamic(box, True)
         yield from self.gripper(0.04)
         yield from self.reach_linear(above, orientation, 0.25)
+        yield from self.reach_linear(above + HOVER_LIFT, orientation, 0.25)
         yield from self.move_arm(self.w.work_home, 60)
 
     def take_from_deck(self, box: Item):
         self.target = self.true_target(box)
-        self.grasp_choice = next(o for o in self.grasp_options(self.target, self.target.center[2] - self.target.height / 2)
-                                 if o["pitch"] < 1.0)
+        options = self.grasp_options(self.target, self.target.center[2] - self.target.height / 2)
+        reachable = None
+        for option in sorted(options, key=lambda o: o["pitch"] < 1.0):
+            above = option["position"] + np.array([0.0, 0.0, CARRY_CLEARANCE])
+            try:
+                hover_joints = self.w.solve_ik(above + HOVER_LIFT, option["orientation"])
+                joints = self.w.solve_ik(above, option["orientation"], hover_joints)
+                self.w.solve_ik(option["position"], option["orientation"], joints)
+            except SimError:
+                continue
+            reachable = option, hover_joints
+            break
+        if reachable is None:
+            raise SimError("ik_failed", f"no reachable grasp for {box.sku} in the tote")
+        self.grasp_choice, hover_joints = reachable
         position, orientation = self.grasp_choice["position"], self.grasp_choice["orientation"]
         above = position + np.array([0.0, 0.0, CARRY_CLEARANCE])
+        hover = above + HOVER_LIFT
         yield from self.gripper(0.04)
-        yield from self.move_arm(self.w.solve_ik(above, orientation), 80)
+        tip = self.w.fingertip()
+        for height in (tip[2], *TOTE_LIFT_HEIGHTS):
+            if height <= hover[2] + 0.05:
+                break
+            level = np.array([hover[0], hover[1], min(height, tip[2])])
+            try:
+                self.w.solve_ik(level, orientation)
+            except SimError:
+                continue
+            yield from self.reach_linear(level, orientation, 0.3)
+            break
+        yield from self.reach_linear(hover, orientation, 0.3)
+        yield from self.reach_linear(above, orientation, 0.2)
         yield from self.reach_linear(position, orientation, 0.15)
         self.w.finger_target = 0.0
         for _ in range(CLOSE_STEPS):
             yield
         self.grasp_roll = self.grasp_choice["roll"]
         self.w.tote.remove(box)
+        self.w.set_dynamic(box, False)
         self.w.grab(box)
         yield from self.reach_linear(above, orientation, 0.2)
+        yield from self.reach_linear(above + HOVER_LIFT, orientation, 0.2)
 
     def grasp_scripted(self, box: Item):
         self.last_grasp = {}
@@ -2437,7 +2620,9 @@ class Commands:
         if np.linalg.norm(out) < 0.2:
             out = np.array([math.cos(self.work_yaw()), math.sin(self.work_yaw()), 0.0])
         out /= float(np.linalg.norm(out))
-        rise = up * (TOP_DOWN_LIFT if self.grasp_choice["pitch"] > 1.0 else 0.03)
+        in_rack = box.location_id in self.w.locations and self.w.locations[box.location_id]["kind"] == "storage"
+        top_down_rise = SHELF_TOP_DOWN_LIFT if in_rack else TOP_DOWN_LIFT
+        rise = up * (top_down_rise if self.grasp_choice["pitch"] > 1.0 else 0.03)
         yield from self.reach_first([tip + rise], orientation, 0.1)
         yield from self.reach_first([tip + rise - out * RETRACT, tip + rise - out * RETRACT / 2], orientation, 0.2)
         for _ in range(HOLD_STEPS):
@@ -2509,6 +2694,7 @@ class Commands:
             if blocking:
                 names = ", ".join(BLOCKER_NAMES.get(b.ycb, b.ycb[4:].replace("_", " ")) for b in blocking)
                 raise SimError("blocked", f"{sku} at {location_id} is behind the {names}; push it aside with the paddle before picking")
+        yield from self.approach_rack(location_id)
         position, _ = box.prim.get_world_pose()
         used = "scripted"
         vla_success = None
@@ -2537,12 +2723,27 @@ class Commands:
         if self.w.held is not box:
             self.w.set_dynamic(box, False)
             self.w.grab(box)
+        from_rack = self.w.locations[location_id]["kind"] == "storage"
         box.location_id = None
+        if from_rack:
+            yield from self.drive_to(self.retreat_pose(self.w.base_target.copy()))
         yield from self.stash(box)
         yield from self.return_tool()
         self.w.repack(location_id)
         return {"picked": sku, "tote": [b.sku for b in self.w.tote], "policy_used": used, "vla_success": vla_success,
-                "instruction": instruction}
+                "instruction": instruction, "grasp": {k: self.last_grasp.get(k) for k in ("yaw", "pitch", "roll")}}
+
+    def approach_rack(self, location_id: str):
+        if self.w.locations[location_id]["kind"] != "storage":
+            return
+        stance = self.w.approach_pose(location_id)
+        stance[1] = self.w.base_target[1]
+        if np.linalg.norm(stance[:2] - self.w.base_target[:2]) > 0.02:
+            yield from self.drive_to(stance)
+
+    def retreat_pose(self, stance: np.ndarray) -> np.ndarray:
+        heading = float(stance[2])
+        return stance - np.array([math.cos(heading), math.sin(heading), 0.0]) * RACK_RETREAT
 
     def push_blocker(self, sku: str, location_id: str, policy: str = "vla"):
         box = self.target_box(sku, location_id)
@@ -2578,17 +2779,19 @@ class Commands:
                 placed.append(box.sku)
             return {"placed": placed}
         self.w.show_tote(location_id)
+        self.dispatch_location = location_id
         yield from self.face_work()
-        existing = len(self.w.boxes_at(location_id))
-        surfaces = self.w.slot_surfaces(location_id, existing + len(self.w.tote))[existing:]
+        free = self.w.slot_surfaces(location_id, OUTBOUND_SLOTS)
+        for occupant in self.w.boxes_at(location_id):
+            free = [spot for spot in free if np.linalg.norm(spot[:2] - occupant.position[:2]) > 0.05]
         placed = []
-        for box, surface in zip(sorted(self.w.tote, key=lambda b: b.deck_slot), surfaces):
+        stance = self.w.approach_pose(location_id)
+        for box in sorted(self.w.tote, key=lambda b: b.deck_slot):
+            yield from self.drive_to(self.back_off(np.array([stance[0], self.w.base_target[1], stance[2]]), DISPATCH_RETREAT))
             yield from self.take_from_deck(box)
-            tip, above, orientation = yield from self.set_down(box, surface, 0.0, OUTBOUND_CLEARANCE)
-            box.location_id = location_id
-            box.rest_on(surface, 0.0)
-            yield from self.gripper(0.04)
-            yield from self.reach_linear(above, orientation, 0.25)
+            yield from self.lift_to(TOTE_LIFT_HEIGHTS)
+            surface = yield from self.drop_in_free_spot(box, free, stance)
+            free = [spot for spot in free if spot is not surface]
             placed.append(box.sku)
         self.w.tote = []
         yield from self.move_arm(self.w.arm_home, 60)
@@ -2596,6 +2799,59 @@ class Commands:
         backoff[0] -= DISPATCH_BACKOFF
         yield from self.drive_to(backoff)
         return {"placed": placed}
+
+    def lift_to(self, heights: tuple[float, ...]):
+        tip = self.w.fingertip()
+        orientation = np.asarray(self.w.hand.get_world_pose()[1], dtype=float)
+        for height in heights:
+            target = np.array([tip[0], tip[1], height])
+            try:
+                self.w.solve_ik(target, orientation)
+            except SimError:
+                continue
+            yield from self.reach_linear(target, orientation, 0.3)
+            return
+
+    def drop_plan(self, box: Item, surface: np.ndarray):
+        current = quat_to_rot_matrix(np.asarray(self.w.hand.get_world_pose()[1], dtype=float))
+        side_grip = abs(float(current[2, 2])) < 0.7
+        lift = max(0.0, TOTE_SIZE[2] + HAND_RIM_CLEARANCE - box.footprint[2] / 2) if side_grip else 0.0
+        center = surface + np.array([0.0, 0.0, box.footprint[2] / 2 + SURFACE_LIFT + lift])
+        offset = self.hold_offset()
+        for carry in CARRY_HEIGHTS:
+            for turn in SET_DOWN_TURNS:
+                spin = np.array([[math.cos(turn), -math.sin(turn), 0.0], [math.sin(turn), math.cos(turn), 0.0], [0.0, 0.0, 1.0]])
+                orientation = rot_matrix_to_quat(spin @ current)
+                tip = self.tip_for(center, orientation, offset)
+                over = np.array([tip[0], tip[1], carry])
+                try:
+                    joints = self.w.solve_ik(over, orientation)
+                    self.w.solve_ik(tip, orientation, joints)
+                except SimError:
+                    continue
+                return tip, over, orientation
+        raise SimError("ik_failed", f"no drop pose for {box.sku}")
+
+    def drop_in_free_spot(self, box: Item, free: list[np.ndarray], stance: np.ndarray):
+        if not free:
+            raise SimError("tote_full", "no free space left in the outbound tote")
+        for surface in sorted(free, key=lambda spot: (round(float(spot[0]), 2), abs(float(spot[1]) - stance[1]))):
+            yield from self.drive_to(np.array([self.w.base_target[0], float(surface[1]), stance[2]]))
+            yield from self.drive_to(np.array([stance[0], float(surface[1]), stance[2]]))
+            try:
+                tip, over, orientation = self.drop_plan(box, surface)
+            except SimError:
+                continue
+            yield from self.reach_linear(over, orientation, 0.3)
+            yield from self.reach_linear(tip, orientation, 0.12)
+            self.w.held = None
+            rotation = quat_to_rot_matrix(np.asarray(box.prim.get_world_pose()[1], dtype=float))
+            box.location_id = self.dispatch_location
+            box.rest_on(surface, math.atan2(rotation[1, 0], rotation[0, 0]))
+            yield from self.gripper(0.04)
+            yield from self.reach_linear(over, orientation, 0.25)
+            return surface
+        raise SimError("ik_failed", f"no reachable free space for {box.sku} in the outbound tote")
 
     def release(self, location_id: str):
         if self.w.locations[location_id]["kind"] != "dispatch":
@@ -2609,6 +2865,7 @@ class Commands:
         if not box:
             raise SimError("item_not_found", f"{sku} not in tote")
         target, yaw = self.w.cluster_spot(location_id, box)
+        yield from self.approach_rack(location_id)
         yield from self.face_work()
         yield from self.align_to(target)
         yield from self.take_from_deck(box)
@@ -2635,6 +2892,10 @@ class Commands:
         return {"stowed": sku}
 
 
+LIVE_COMMANDS = ("view", "camera", "state", "debug")
+IMMEDIATE_COMMANDS = ("reset", "counts", "probe", "stage_tote", *LIVE_COMMANDS)
+
+
 class Server:
     def __init__(self, warehouse: Warehouse):
         self.w = warehouse
@@ -2642,6 +2903,21 @@ class Server:
         self.inbox: queue.Queue = queue.Queue()
         self.frame: bytes = b""
         self.frame_lock = threading.Condition()
+        self.camera_lock = threading.Lock()
+        self.camera_requests: list[tuple[str, dict]] = []
+
+    def queue_camera(self, name: str, payload: dict) -> None:
+        with self.camera_lock:
+            self.camera_requests.append((name, payload))
+
+    def apply_camera_requests(self) -> None:
+        with self.camera_lock:
+            requests, self.camera_requests = self.camera_requests, []
+        for name, payload in requests:
+            try:
+                self.immediate(name, payload)
+            except Exception:
+                traceback.print_exc()
 
     def submit(self, name: str, payload: dict, timeout: float = 600) -> tuple[int, dict]:
         done = threading.Event()
@@ -2653,12 +2929,24 @@ class Server:
 
     def run(self) -> None:
         current = None
+        waiting: collections.deque = collections.deque()
         step = 0
         while app.is_running():
-            if current is None and not self.inbox.empty():
-                name, payload, done, holder = self.inbox.get()
+            while not self.inbox.empty():
+                request = self.inbox.get()
+                name, payload, done, holder = request
+                if name in LIVE_COMMANDS or (name in IMMEDIATE_COMMANDS and current is None and not waiting):
+                    try:
+                        holder.update(status=200, body=self.immediate(name, payload))
+                    except Exception as err:
+                        holder.update(status=400, body={"error": "bad_request", "message": str(err)})
+                    done.set()
+                else:
+                    waiting.append(request)
+            while current is None and waiting:
+                name, payload, done, holder = waiting.popleft()
                 try:
-                    if name in ("reset", "state", "counts", "view", "camera", "debug", "probe"):
+                    if name in IMMEDIATE_COMMANDS:
                         holder.update(status=200, body=self.immediate(name, payload))
                         done.set()
                     else:
@@ -2684,11 +2972,13 @@ class Server:
                     done.set()
                     current = None
             self.w.apply_targets()
+            self.w.world.step(render=False)
             self.w.update_attachments()
             self.w.update_conveyor()
+            self.apply_camera_requests()
             self.w.update_chase_camera()
             self.w.update_policy_cameras()
-            self.w.world.step(render=True)
+            self.w.world.render()
             step += 1
             if step % STREAM_EVERY == 0:
                 self.capture()
@@ -2702,6 +2992,21 @@ class Server:
         with self.frame_lock:
             self.frame = buffer.getvalue()
             self.frame_lock.notify_all()
+
+    def stage_tote(self, sku: str, count: int, location_id: str) -> dict:
+        teleport_base(self.w, self.w.approach_pose(location_id))
+        for box in list(self.w.tote):
+            self.w.tote.remove(box)
+        stock = [b for b in self.w.boxes if b.sku == sku and b.location_id in self.w.locations
+                 and self.w.locations[b.location_id]["kind"] == "storage"][:count]
+        for slot, box in enumerate(stock):
+            box.location_id = None
+            box.deck_slot = slot
+            surface, yaw = self.w.deck_slot(slot)
+            box.rest_on(surface, yaw)
+            self.w.set_dynamic(box, True)
+            self.w.tote.append(box)
+        return {"staged": len(stock), "at": location_id}
 
     def immediate(self, name: str, payload: dict) -> dict:
         if name == "reset":
@@ -2721,6 +3026,9 @@ class Server:
             return self.w.debug()
         if name == "counts":
             return {"counts": self.w.counts()}
+        if name == "stage_tote":
+            return self.stage_tote(payload.get("sku", "SKU-1002"), int(payload.get("count", 5)),
+                                   payload.get("location_id", "DISPATCH-1"))
         if name == "probe":
             x, y, theta = self.w.base_pose()
             rotation = np.array([[math.cos(theta), -math.sin(theta)], [math.sin(theta), math.cos(theta)]])
@@ -3443,8 +3751,11 @@ def make_handler(server: Server):
             payload = json.loads(self.rfile.read(length) or b"{}")
             name = self.path.strip("/").split("?")[0]
             if name not in ("navigate", "inspect", "pick", "place", "stow", "reset", "view", "camera", "release", "resolve", "probe",
-                            "take_tool", "return_tool", "push_blocker"):
+                            "take_tool", "return_tool", "push_blocker", "stage_tote"):
                 return self._json(404, {"error": "unknown_command"})
+            if name in ("view", "camera"):
+                server.queue_camera(name, payload)
+                return self._json(200, {"queued": name})
             self._json(*server.submit(name, payload))
 
     return Handler
