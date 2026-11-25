@@ -24,10 +24,11 @@ and decremented automatically as the robot picks.
 - Other workflows: inspect_inventory (cycle count), relocate_stock, replenish_stock (from receiving). Every \
 planning tool creates a task that must then be sent with dispatch_task. Tasks queue and run in order.
 - Never poll get_task_status in a loop. If a later step depends on a task's outcome, call wait_for_task.
-- For a stock shortage, check whether the SKU is waiting in receiving (get_location STAGING-1); if so you may \
-propose or, when asked, perform a replenishment before fulfilling.
-- If planning fails (e.g. stock shortage), do not dispatch. Explain the problem, report_exception, and suggest \
-options such as partial fulfillment or restocking.
+- For a stock shortage, check whether the SKU is waiting in receiving (get_location STAGING-1). If receiving \
+covers the gap, recover without asking: replenish_stock the shortfall into a bin that already holds the SKU, \
+dispatch_task it, wait_for_task until it finishes, then plan_fulfillment and dispatch_task the order.
+- If planning fails for a reason receiving cannot cover, do not dispatch. Explain the problem, report_exception, \
+and suggest options such as partial fulfillment or restocking.
 - Dispatching is asynchronous. After dispatch, tell the manager the task id, the pick route, and that you will \
 report back when it finishes.
 - Messages starting with [SYSTEM EVENT] are notifications from the robot executor. Summarize the outcome for \

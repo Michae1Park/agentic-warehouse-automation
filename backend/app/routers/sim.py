@@ -11,6 +11,7 @@ from ..sim.world import FaultConfig, world
 router = APIRouter(prefix="/sim", tags=["simulation"])
 
 SEED_SQL = Path(settings.seed_sql_path)
+SHORTAGE_ORDER, SHORTAGE_SKU, SHORTAGE_SHELF = 1044, "SKU-1001", "A-01-1"
 TABLES = (
     "agent_messages, agent_runs, task_faults, inventory_transactions, exceptions, task_steps, "
     "tasks, robots, order_lines, orders, inventory, locations, products, events"
@@ -24,6 +25,7 @@ class ResetRequest(BaseModel):
     recovery_enabled: bool = True
     route_optimization: bool = True
     time_scale: float = 1.0
+    scenario: str = "default"
 
 
 def _generate_orders(rng: random.Random, count: int, skus: list[str]) -> list[tuple[int, str, int, str, list]]:
@@ -57,6 +59,15 @@ async def reset(request: ResetRequest, http_request: Request):
                     await conn.execute(
                         "INSERT INTO order_lines (order_id, sku, quantity) VALUES (%s, %s, %s)", (order_id, sku, qty)
                     )
+
+        if request.scenario == "shortage":
+            await conn.execute(
+                "UPDATE inventory SET quantity = CASE WHEN location_id = %s THEN 1 ELSE 0 END "
+                "WHERE sku = %s AND location_id IN (SELECT id FROM locations WHERE kind = 'storage')",
+                (SHORTAGE_SHELF, SHORTAGE_SKU),
+            )
+            await conn.execute("UPDATE order_lines SET quantity = 3 WHERE order_id = %s AND sku = %s",
+                               (SHORTAGE_ORDER, SHORTAGE_SKU))
 
     settings.recovery_enabled = request.recovery_enabled
     settings.route_optimization = request.route_optimization

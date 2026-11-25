@@ -262,6 +262,8 @@ HEAD_LOOK_ABOVE = 0.08
 UPPER_LEVEL_Z = 0.6
 UPPER_HEAD_REACH = 0.6
 UPPER_HEAD_HEIGHT = 1.6
+COMFORT_REACH = 0.5
+REPOSITION_LIMIT = 0.3
 MIN_VISIBLE_POINTS = 40
 MAX_GRASP_WIDTH = 0.075
 ATTACH_MARGIN = 0.015
@@ -2591,6 +2593,23 @@ class Commands:
         yield from self.reach_linear(above, orientation, 0.2)
         yield from self.reach_linear(hover, orientation, 0.2)
 
+    def grasp_with_reposition(self, box: Item):
+        try:
+            yield from self.grasp_scripted(box)
+            return
+        except SimError as error:
+            if error.code != "ik_failed":
+                raise
+        local = self.w.to_base_frame(self.w.sync(box))
+        forward = float(np.clip(local[0] - ARM_MOUNT - COMFORT_REACH, -REPOSITION_LIMIT, REPOSITION_LIMIT))
+        target = self.w.base_target.copy()
+        heading = target[2]
+        target[:2] += np.array([math.cos(heading), math.sin(heading)]) * forward
+        target[:2] += np.array([-math.sin(heading), math.cos(heading)]) * float(local[1])
+        yield from self.move_arm(self.w.work_home, 40)
+        yield from self.drive_to(target)
+        yield from self.grasp_scripted(box)
+
     def grasp_scripted(self, box: Item):
         self.last_grasp = {}
         yield from self.face_work()
@@ -2744,7 +2763,7 @@ class Commands:
                 used = "scripted_fallback"
                 yield from self.grasp_scripted(box)
         else:
-            yield from self.grasp_scripted(box)
+            yield from self.grasp_with_reposition(box)
         held = yield from self.lift(box, position[2])
         if fail or not held:
             self.w.held = None
