@@ -6,7 +6,7 @@ CPUS="${CPUS:-16-31}"
 GRASP_POLICY="${GRASP_POLICY:-scripted}"
 PUSH_POLICY="${PUSH_POLICY:-vla}"
 GRAPHICS="${GRAPHICS:-high}"
-CHECKPOINT="${CHECKPOINT:-vla/outputs/smolvla_push/checkpoints/last/pretrained_model}"
+CHECKPOINT="${CHECKPOINT:-vla/outputs/smolvla_push_marker/checkpoints/last/pretrained_model}"
 VLA_PYTHON="${VLA_PYTHON:-$HOME/workspace/robo-learning/.venv/bin/python}"
 
 LLM_SETTINGS=$(grep -E "^LLM_(WEIGHTS|MODEL|GPU_UTIL|ARGS)=" .env 2>/dev/null || true)
@@ -15,7 +15,7 @@ BACKEND_PORT=8010
 LLM_PORT=8001
 ROBOT_BACKEND=isaac
 SIM_URL=http://localhost:8020
-ISAAC_ARGS="--livestream --graphics $GRAPHICS --scenario hard"
+ISAAC_ARGS="--livestream --graphics $GRAPHICS --scenario hard --marker-state"
 GRASP_POLICY=$GRASP_POLICY
 PUSH_POLICY=$PUSH_POLICY
 $LLM_SETTINGS

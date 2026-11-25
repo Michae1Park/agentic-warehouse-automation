@@ -9,7 +9,7 @@ STEPS="${STEPS:-8000}"
 TASK="${TASK:-scenes}"
 OUTPUT="${OUTPUT:-vla/outputs/${POLICY}_${TASK}}"
 if [[ "$TASK" == push ]]; then
-  RAW=vla/data/push_v1 ROOT=vla/data/lerobot_push REPO=local/warehouse_push ORIENTATION=rot6d
+  RAW=vla/data/push_v1 ROOT=vla/data/lerobot_push_marker REPO=local/warehouse_push_marker ORIENTATION="rot6d --marker-state"
 else
   RAW=vla/data/raw_scenes ROOT=vla/data/lerobot_scenes REPO=local/warehouse_scenes_grasp ORIENTATION=euler
 fi
@@ -19,7 +19,7 @@ if docker compose ps --status running --services 2>/dev/null | grep -qx llm; the
   exit 1
 fi
 
-[[ -d "$ROOT" ]] || taskset -c "$CPUS" "$VLA_PYTHON" vla/convert_dataset.py --raw "$RAW" --root "$ROOT" --repo-id "$REPO" --orientation "$ORIENTATION"
+[[ -d "$ROOT" ]] || taskset -c "$CPUS" "$VLA_PYTHON" vla/convert_dataset.py --raw "$RAW" --root "$ROOT" --repo-id "$REPO" --orientation $ORIENTATION
 
 if [[ "$POLICY" == smolvla ]]; then
   POLICY_ARGS=(--policy.path=lerobot/smolvla_base

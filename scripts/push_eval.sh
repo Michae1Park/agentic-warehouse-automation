@@ -2,7 +2,8 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 VLA_PYTHON="${VLA_PYTHON:-$HOME/workspace/robo-learning/.venv/bin/python}"
-CHECKPOINT="${CHECKPOINT:-vla/outputs/smolvla_push/checkpoints/last/pretrained_model}"
+CHECKPOINT="${CHECKPOINT:-vla/outputs/smolvla_push_marker/checkpoints/last/pretrained_model}"
+SIM_ARGS="${SIM_ARGS:---marker-state}"
 TRIALS="${TRIALS:-30}"
 SEED="${SEED:-99}"
 OUT="${OUT:-eval/results/push_vla}"
@@ -14,7 +15,7 @@ until curl -sf localhost:8030/health >/dev/null || curl -sf localhost:8030/ >/de
   kill -0 $server 2>/dev/null || { echo "policy server died" >&2; tail "$OUT/policy_server.log" >&2; exit 1; }
   sleep 2
 done
-ISAAC_MOUNT=$PWD isaac/run.sh isaac/warehouse_sim.py --collect-push "$TRIALS" --push-policy vla --seed "$SEED" \
+ISAAC_MOUNT=$PWD isaac/run.sh isaac/warehouse_sim.py --collect-push "$TRIALS" --push-policy vla $SIM_ARGS --seed "$SEED" \
   --out "/workspace/$OUT" > "$OUT/run.log" 2>&1 || true
 python3 - "$OUT" <<'PY'
 import json, sys, pathlib

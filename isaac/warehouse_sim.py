@@ -17,6 +17,7 @@ parser.add_argument("--height", type=int, default=720)
 parser.add_argument("--collect", type=int, default=0, help="record N scripted grasp demonstrations and exit")
 parser.add_argument("--collect-push", type=int, default=0, help="record N paddle push demonstrations (deep shelving) and exit")
 parser.add_argument("--push-policy", choices=["expert", "vla"], default="expert", help="with --collect-push: vla evaluates the push policy at --policy-url instead of recording expert demos")
+parser.add_argument("--marker-state", action="store_true", help="append the head-image marker center to the push policy state")
 parser.add_argument("--push-speed", type=float, default=0.0, help="override the sideways push speed in m/s for every blocker")
 parser.add_argument("--out", default="/workspace/vla/data/raw")
 parser.add_argument("--seed", type=int, default=0)
@@ -375,6 +376,13 @@ def rotation_from_6d(features: np.ndarray) -> np.ndarray:
     second = features[3:] - first * float(first @ features[3:])
     second = second / np.linalg.norm(second)
     return np.stack([first, second, np.cross(first, second)], axis=1)
+
+
+def marker_center(image: np.ndarray) -> np.ndarray:
+    rows, columns = np.nonzero(np.all(image == MARKER_COLOR, axis=-1))
+    if not len(rows):
+        return np.array([-1.0, -1.0], dtype=np.float32)
+    return np.array([columns.mean() / image.shape[1], rows.mean() / image.shape[0]], dtype=np.float32)
 
 
 def tool_rotation(yaw: float, pitch: float, roll: float) -> np.ndarray:
@@ -1990,8 +1998,9 @@ class Commands:
         self.vla_debug = {"ik_failures": 0, "actions": 0, "first_actions": [], "first_state": None}
         for _ in range(VLA_PUSH_QUERIES):
             obs = self.w.policy_observation()
+            state = np.concatenate([obs["state"], marker_center(obs["head"])]) if args.marker_state else obs["state"]
             body = json.dumps({
-                "instruction": instruction, "state": obs["state"].tolist(),
+                "instruction": instruction, "state": state.tolist(),
                 "images": {"head": encode_jpeg(obs["head"]), "wrist": encode_jpeg(obs["wrist"])},
             }).encode()
             request = urllib.request.Request(args.policy_url + "/act", data=body, headers={"content-type": "application/json"})
