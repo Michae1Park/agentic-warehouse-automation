@@ -4,7 +4,7 @@ cd "$(dirname "$0")/.."
 
 CPUS="${CPUS:-16-31}"
 GRASP_POLICY="${GRASP_POLICY:-scripted}"
-PUSH_POLICY="${PUSH_POLICY:-vla}"
+PUSH_POLICY="${PUSH_POLICY:-expert}"
 GRAPHICS="${GRAPHICS:-high}"
 CHECKPOINT="${CHECKPOINT:-vla/outputs/smolvla_push_marker/checkpoints/last/pretrained_model}"
 VLA_PYTHON="${VLA_PYTHON:-$HOME/workspace/robo-learning/.venv/bin/python}"
