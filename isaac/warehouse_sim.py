@@ -17,6 +17,8 @@ parser.add_argument("--height", type=int, default=720)
 parser.add_argument("--collect", type=int, default=0, help="record N scripted grasp demonstrations and exit")
 parser.add_argument("--collect-push", type=int, default=0, help="record N paddle push demonstrations (deep shelving) and exit")
 parser.add_argument("--push-policy", choices=["expert", "vla"], default="expert", help="with --collect-push: vla evaluates the push policy at --policy-url instead of recording expert demos")
+parser.add_argument("--push-eval", action="store_true", help="with --collect-push: log success per trial instead of saving demos")
+parser.add_argument("--push-execute", type=int, default=5, help="push policy actions executed per query")
 parser.add_argument("--marker-state", action="store_true", help="append the head-image marker center to the push policy state")
 parser.add_argument("--push-speed", type=float, default=0.0, help="override the sideways push speed in m/s for every blocker")
 parser.add_argument("--out", default="/workspace/vla/data/raw")
@@ -1996,7 +1998,7 @@ class Commands:
         ready_tip = self.w.fingertip().copy()
         reached_goal = False
         self.vla_debug = {"ik_failures": 0, "actions": 0, "first_actions": [], "first_state": None}
-        for _ in range(VLA_PUSH_QUERIES):
+        for _ in range(VLA_PUSH_QUERIES * VLA_EXECUTE_ACTIONS // args.push_execute):
             obs = self.w.policy_observation()
             state = np.concatenate([obs["state"], marker_center(obs["head"])]) if args.marker_state else obs["state"]
             body = json.dumps({
@@ -2009,7 +2011,7 @@ class Commands:
             if self.vla_debug["first_state"] is None:
                 self.vla_debug["first_state"] = np.round(obs["state"], 3).tolist()
                 self.vla_debug["first_actions"] = np.round(actions[:3], 3).tolist()
-            for action in actions[:VLA_EXECUTE_ACTIONS]:
+            for action in actions[:args.push_execute]:
                 start_arm = self.w.arm_target.copy()
                 self.vla_debug["actions"] += 1
                 try:
@@ -2819,7 +2821,7 @@ def collect_push_demos(warehouse: Warehouse, episodes: int) -> None:
         ok = ("skipped" not in record and record["moved"] >= record["goal"] and record["upright"]
               and abs(record["depth"]) <= PUSH_MAX_DEPTH_SHIFT and record["target_moved"] < TARGET_MAX_SHIFT
               and len(frames["state"]) > 2)
-        if args.push_policy == "vla":
+        if args.push_policy == "vla" or args.push_eval:
             log.write(json.dumps({**record, "success": bool(ok), "frames": len(frames["state"]), "trace": commands.push_trace,
                                   "instruction": commands.push_trace.get("instruction") if "skipped" not in record else None}) + "\n")
             log.flush()
