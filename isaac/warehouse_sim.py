@@ -38,6 +38,7 @@ parser.add_argument("--eval-grasp", type=int, default=0, help="compare grasp pol
 parser.add_argument("--policies", nargs="+", default=["scripted", "vla"])
 parser.add_argument("--grasp", choices=("kinematic", "physical"), default="kinematic",
                     help="kinematic attaches the item on close; physical lifts it through finger contact")
+parser.add_argument("--no-topple", action="store_true", help="spawn every item upright")
 parser.add_argument("--scenario", choices=("nominal", "hard"), default="hard",
                     help="hard adds toppled pickables, a cluttered receiving tote and mixed-SKU deep shelving")
 parser.add_argument("--eval-scene", choices=("nominal", "toppled", "tote", "deep", "hard"), default="hard")
@@ -1540,6 +1541,8 @@ class Warehouse:
                 continue
             for group in groups:
                 for item in group:
+                    if args.no_topple:
+                        continue
                     if self.products[item.sku]["robot_pickable"]:
                         rate = 0.0 if args.scenario == "nominal" else 1.0 if location["id"] == TOPPLE_BIN else PICK_TOPPLE_RATE
                         if self.rng.random() < rate:

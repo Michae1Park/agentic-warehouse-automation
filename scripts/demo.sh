@@ -15,7 +15,7 @@ BACKEND_PORT=8010
 LLM_PORT=8001
 ROBOT_BACKEND=isaac
 SIM_URL=http://localhost:8020
-ISAAC_ARGS="--livestream --graphics $GRAPHICS --scenario hard --marker-state"
+ISAAC_ARGS="--livestream --graphics $GRAPHICS --scenario hard --marker-state --no-topple"
 GRASP_POLICY=$GRASP_POLICY
 PUSH_POLICY=$PUSH_POLICY
 $LLM_SETTINGS
