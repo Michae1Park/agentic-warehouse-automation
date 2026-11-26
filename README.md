@@ -20,7 +20,7 @@
 
 ## Overview
 
-A warehouse manager types *"Prepare order #1045 and move it to dispatch."* A **Qwen3.8-27B** agent reads the order from **Postgres** (the system of record), reserves stock, plans the route and dispatches a Ridgeback + Franka mobile manipulator in **Isaac Sim**. The same model, used as a VLM, checks each shelf bin and audits the outbound tote. Every physical step writes back to the database, so the dashboard, chat and live simulation stay in sync.
+A warehouse manager types *"Prepare order #1045 and move it to dispatch."* The agent reads the order from the warehouse database, reserves stock, plans the route and sends a mobile manipulator to pick it. The same model, used as a vision-language model, checks each shelf bin and audits the outbound tote before the order closes. Every physical step writes back to the database, so the chat, dashboard and live simulation always agree.
 
 <p align="center"><br><b>Demo 1 · Order Fulfillment</b><br><sub>agent plans, robot picks from two aisles, VLM audits the outbound tote</sub><br></p>
 
@@ -48,28 +48,50 @@ https://github.com/user-attachments/assets/cc10bf65-827f-4978-8fcc-63fc2e3007ab
 <details>
 <summary><b>Execution trace (Demo 1 example)</b></summary>
 
-**Request:** `"Prepare order #1045 and move it to dispatch."` (5× tomato soup)
+**Request:** *"Prepare order #1045 and move it to dispatch."* (5× tomato soup)
 
-1. **Plan**<br>`get_order` → `plan_fulfillment` reserves 4 cans at A-02-1 and the last one at C-01-1 in one `SELECT … FOR UPDATE` transaction.
-2. **Dispatch**<br>`dispatch_task` hands the plan to the executor; steps are rows in `task_steps`, so a restart resumes the task.
-3. **Pick**<br>At each bin the VLM confirms the stock from the scan pose, the base drives in, and the arm grasps each can, backs out of the rack and lowers it into the robot's tote.
-4. **Unload**<br>At DISPATCH-1 the arm lifts each can above the conveyor rails and lowers it into a free spot in the outbound tote.
-5. **Audit and close**<br>The VLM compares the tote with the order; on a match the tote rides the conveyor out through the wall and `verify` closes the order. A `[SYSTEM EVENT]` prompts the agent to report back.
+| Step | What happens |
+|---|---|
+| **1. Plan** | • `get_order` → `plan_fulfillment`<br>• Reserves 4 cans at A-02-1 and 1 at C-01-1 in one transaction |
+| **2. Dispatch** | • `dispatch_task` hands the plan to the executor<br>• Steps are stored in `task_steps`, so a restart resumes the task |
+| **3. Pick** | • VLM confirms the stock from the scan pose<br>• Base drives in, arm grasps each can, backs out, drops it in the robot's tote |
+| **4. Unload** | At DISPATCH-1, each can goes into a free spot in the outbound tote |
+| **5. Audit & close** | • VLM checks the tote against the order<br>• Tote rides the conveyor out, `verify` closes the order, agent reports back |
 
 </details>
 
 <details>
-<summary><b>Results</b> (fulfillment, perception, grasping, grounding)</summary>
+<summary><b>Results</b> (fulfillment, perception, grounding, tote audit)</summary>
 
-[Full results and limits](docs/DESIGN.md#results)
+Simulation only, compared against a scripted baseline.
 
-| Test | Evaluation set | Result |
-|---|---|---|
-| **Fulfillment (faulty)** | 24 orders, 3 seeds, injected faults | Agent 75% vs 42% scripted baseline; inventory accuracy 94% vs 77% |
-| **Shelf-bin perception** | 72 bins, 25% wrong records | 96–100% presence accuracy; every wrong record detected |
-| **Language grounding** | 72 queries (name, description, attribute) | 72 / 72 correct, 1.2s per query |
-| **Tote audit** | 6 orders + 2 mis-packed totes | 6 / 6 correct, 2 / 2 mismatches caught |
-| **Grasping** | 30 trials per policy | SmolVLA 67%, diffusion 63%, scripted 57% |
+| Test | Result |
+|---|---|
+| **Fulfillment under faults** | • **96%** of orders filled (scripted: 58%, scripted + recovery: 88%)<br>• Inventory accuracy **87%** (scripted: 81%)<br>• All modes **100%** without faults |
+| **Shelf-bin perception** | • **100%** presence<br>• **92–96%** exact count<br>• **36 / 36** wrong records detected<br>• 1.5s per bin |
+| **Language grounding** | • **94%** overall<br>• **96%** on the two pickable products<br>• 1.2s per query |
+| **Tote audit** | • **6 / 6** exact<br>• **2 / 2** mis-packed totes caught<br>• 1.4s per audit |
+
+| Test | Setup |
+|---|---|
+| Fulfillment | • `eval/run_eval.py`<br>• 3 seeds × 8 orders<br>• Mock robot<br>• Faults: 15% grasp failure, 10% blocked path, 20% missing stock |
+| Perception | • `eval/vlm_eval.py`<br>• 72 bins over 3 seeds<br>• 36 with a wrong record |
+| Grounding | • `eval/grounding_eval.py`<br>• 306 queries<br>• By name, description or attribute (*"the red can"*) |
+| Tote audit | 6 packed orders + 2 mis-packed totes at the conveyor |
+
+</details>
+
+<details>
+<summary><b>Limitations</b></summary>
+
+| Area | What is simplified |
+|---|---|
+| **Grasping** | • Scripted Lula IK from a depth pose estimate; the item attaches once the fingers close<br>• SmolVLA / diffusion policies in `vla/` are paused until retrained for the current stance |
+| **Products** | • 2 robot-pickable products (mustard, tomato soup)<br>• The other 10 SKUs are flagged non-pickable and routed to manual handling |
+| **Navigation** | • Simulator waypoint planner: straight when clear, aisle center lines otherwise<br>• No ROS 2 / Nav2 / MoveIt 2; `RobotGateway` is where they would plug in |
+| **Perception** | • One fixed inspection camera per location; grasp mask from simulator instance ids<br>• Cycle counts trust presence, not quantities: unseen SKU → 0, unrecorded SKU → flagged |
+| **Faults** | Injected with seeded probabilities into a world model separate from the database |
+| **Conveyor** | Moves totes kinematically out through the wall; no packing or shipping behind it |
 
 </details>
 
@@ -83,23 +105,51 @@ https://github.com/user-attachments/assets/cc10bf65-827f-4978-8fcc-63fc2e3007ab
 
 ### Architectural Invariants
 
-1. **One system of record**<br>Postgres holds orders, inventory, tasks and exceptions. `LISTEN/NOTIFY` streams every change to the UI, so chat, dashboard and sim never disagree.
-2. **Typed tools, no free-form SQL**<br>The agent acts only through tools that wrap transactions (`plan_fulfillment`, `dispatch_task`, `clear_blocker`, …).
-3. **Separate physical world**<br>Faults are injected into a world model separate from the database, so the WMS can actually be wrong and inventory accuracy means something.
-4. **Models do what they are good at**<br>The VLM says *what and where* (a 2D point, a scene description); it never outputs poses. Motion is scripted IK or a learned policy.
+| Invariant | What it means |
+|---|---|
+| **One system of record** | • Postgres holds orders, inventory, tasks and exceptions<br>• `LISTEN/NOTIFY` streams every change to the UI, so chat, dashboard and sim never disagree |
+| **Typed tools, no free-form SQL** | • The agent acts only through tools that wrap transactions (`plan_fulfillment`, `dispatch_task`, …)<br>• Reservations use `SELECT … FOR UPDATE`, so two plans cannot promise the same unit<br>• Each pick updates stock, the order line and an audit row in one transaction |
+| **Separate physical world** | • Faults are injected into a world model separate from the database<br>• The WMS can actually be wrong, so inventory accuracy means something |
+| **Models do what they are good at** | • The VLM says *what and where* (a 2D point, a scene description), never a pose<br>• Motion is scripted IK or a learned policy |
 
 <details>
 <summary><b>System layers: what each part does</b></summary>
 
 | System | Layer | What it does |
 |---|---|---|
-| **System 2** (reasoning) | **Agent** | Plain tool-calling loop on Qwen3.8-27B (FP8, vLLM): picks the workflow, handles shortages and blocked picks, reports outcomes |
-| | **Perception** | Same model with image input: bin checks, grounding the described item, tote audit |
-| **System 1** (skills) | **Executor** | Persistent task state machine: perception, grasp, push, recovery policies, splices new steps into running tasks |
-| | **WMS** | FastAPI + Postgres: reservations, picks, cycle counts and audit rows in single transactions |
-| **System 0** (motion) | **Isaac Sim** | Ridgeback + Franka, Lula IK, depth-based pose estimation, push primitive, conveyor, camera and MJPEG streams |
-| | **Learned policies** | SmolVLA and diffusion policy servers (grasp and push), with the scripted planner as fallback |
-| **Delivery** | **Dashboard** | React + Vite: agent chat with tool trace, live sim stream, 2D floor map, orders and exceptions |
+| **System 2** (reasoning) | **Agent** | • Plain tool-calling loop on Qwen3.8-27B (FP8, vLLM)<br>• Picks the workflow, handles shortages and blocked picks, reports outcomes |
+| | **Perception** | • Same model with image input<br>• Bin checks, grounding the described item, tote audit |
+| **System 1** (skills) | **Executor** | • Persistent task state machine<br>• Perception, grasp, recovery policies<br>• Splices new steps into running tasks |
+| | **WMS** | • FastAPI + Postgres<br>• Reservations, picks, cycle counts and audit rows in single transactions |
+| **System 0** (motion) | **Isaac Sim** | • Ridgeback + Franka<br>• Scripted Lula IK grasps from a depth pose estimate<br>• Base planner, conveyor, camera and MJPEG streams |
+| | **Learned policies** | • SmolVLA and diffusion policy servers (grasp and push)<br>• Paused until retrained for the current stance |
+| **Delivery** | **Dashboard** | • React + Vite<br>• Agent chat with tool trace, live sim stream, 2D floor map, orders and exceptions |
+
+</details>
+
+<details>
+<summary><b>Design choices</b></summary>
+
+| Choice | Why |
+|---|---|
+| **One model for reasoning and vision** | • Qwen3.8-27B (FP8, vLLM): open weights, native tool calling, image input<br>• The same model runs the agent and checks bins and totes |
+| **No agent framework** | • One agent with typed tools, a persistent task state machine and deterministic recovery<br>• Proved more reliable than agents passing messages |
+| **The VLM never outputs poses** | • It names the item and points at it<br>• Grasp geometry comes from depth and IK |
+
+</details>
+
+<details>
+<summary><b>Failure handling</b></summary>
+
+| Fault | Recovery | Escalation |
+|---|---|---|
+| **Grasp slip** | Regrasp, up to 3 attempts | Task fails → exception → agent report |
+| **Blocked path** | Replan the path, up to 3 attempts | Same |
+| **Stock missing at a bin** | • VLM sees the bin is empty → counts it to 0<br>• Reallocates from another bin<br>• Splices new steps into the running task | • No other stock: task fails<br>• Reservations released<br>• Agent explains |
+| **Shortage at planning** | • Receiving covers it: cross-dock in one trip<br>• Put away the surplus | No dispatch, exception and options |
+| **Misplaced stock found by a count** | Agent moves it back to its home bin | — |
+
+When a task finishes, the executor posts a `[SYSTEM EVENT]` to the conversation that created it, and the agent reports back unprompted.
 
 </details>
 
@@ -110,7 +160,7 @@ https://github.com/user-attachments/assets/cc10bf65-827f-4978-8fcc-63fc2e3007ab
 |---|---|---|
 | **Orders** | `list_orders` | List orders, optionally by status |
 | | `get_order` | Order with its lines (SKU, quantity, picked) |
-| | `plan_fulfillment` | Reserve stock and create a pick task with an optimized route; can also pick from the receiving tote (cross-dock); fails with a reason when short |
+| | `plan_fulfillment` | • Reserve stock and create a pick task with an optimized route<br>• Can also pick from the receiving tote (cross-dock)<br>• Fails with a reason when short |
 | **Inventory** | `find_stock` | Shelf locations and available quantity for a SKU or product name |
 | | `get_location` | Contents of a location |
 | | `find_empty_bins` | Empty storage bins, optionally in one aisle |
@@ -127,21 +177,6 @@ https://github.com/user-attachments/assets/cc10bf65-827f-4978-8fcc-63fc2e3007ab
 | | `report_exception` | Record an exception that needs human attention |
 
 </details>
-
-<details>
-<summary><b>Iterative build progression</b></summary>
-
-| Stage | Core addition | Result |
-|---|---|---|
-| Agent + mock robot | Typed WMS tools, executor, fault injection | [Agent 75% vs 42% scripted under faults](docs/DESIGN.md#fulfillment-kpis-evalrun_evalpy) |
-| Isaac Sim + VLM | Warehouse scene, bin inspection, tote audit | [96–100% presence, 6 / 6 audits](docs/DESIGN.md#shelf-bin-perception-evalvlm_evalpy) |
-| YCB grasping | Rigid YCB items, SmolVLA and diffusion on 400 demos | [SmolVLA 67% vs scripted 57%](docs/DESIGN.md#grasping-scripted-vs-smolvla-vs-diffusion---eval-grasp) |
-| Language grounding | VLM points at the described item | [72 / 72](docs/DESIGN.md#language-grounding-evalgrounding_evalpy) |
-| **Deep shelving** | Side stance, paddle tool, push primitive, push VLA, teleop | [Action items](docs/ACTION_ITEMS.md) |
-
-</details>
-
-Design: [design notes and full results](docs/DESIGN.md), [action items](docs/ACTION_ITEMS.md).
 
 ---
 
@@ -162,7 +197,10 @@ cp .env.example .env                        # ROBOT_BACKEND=mock for fast mode
 scripts/demo.sh                             # high graphics, WebRTC, CPU-pinned, GPU budget check
 ```
 
-`demo.sh` checks free GPU memory for Isaac Sim, the LLM (`LLM_GPU_UTIL`, default 0.75) and, when a learned policy is selected, the VLA server, and refuses to start if other GPU jobs leave too little. For a smaller GPU, use the lighter model commented in `.env.example`.
+`demo.sh` checks free GPU memory before starting:
+- Budgets Isaac Sim, the LLM (`LLM_GPU_UTIL`, default 0.75) and, with a learned policy, the VLA server
+- Refuses to start if other GPU jobs leave too little
+- For a smaller GPU, use the lighter model commented in `.env.example`
 
 ### 3. Or run without the simulator
 
@@ -180,10 +218,34 @@ python3 eval/vlm_eval.py                             # bin perception, needs the
 <details>
 <summary><b>Once open: what you can do</b></summary>
 
-- **Chat:** ask the agent to *"Prepare order #1045"*, *"Cycle count aisle B"* or *"Prepare order #1044"* (short on the shelf). Every turn shows the tool trace.
-- **Isaac view:** drag to orbit, right/shift-drag to pan, scroll to zoom, double-click or **reset view** to return to the overview.
-- **Teleop:** `scripts/teleop.sh` opens a browser controller on :8020 for push demos and VLA intervention.
+| Area | What you can do |
+|---|---|
+| **Chat** | • *"Prepare order #1045"*<br>• *"Cycle count aisle B"*<br>• *"Prepare order #1044"* (short on the shelf)<br>• Every turn shows the tool trace |
+| **Isaac view** | • Drag to orbit, right/shift-drag to pan, scroll to zoom<br>• Double-click or **reset view** to return to the overview |
+| **Teleop** | `scripts/teleop.sh` opens a browser controller on :8020 for push demos and VLA intervention |
 
 </details>
 
-Full steps, limitations and troubleshooting: [Design notes](docs/DESIGN.md#running-it).
+<details>
+<summary><b>Isaac mode without <code>demo.sh</code>, and repository layout</b></summary>
+
+```bash
+echo -e "ROBOT_BACKEND=isaac\nSIM_URL=http://localhost:8020" >> .env
+docker compose --profile isaac up -d        # add ISAAC_ARGS="--livestream --graphics high" for WebRTC
+```
+
+WebRTC livestream ports:
+- TCP 49100 (signaling)
+- UDP 47998 (media)
+
+```
+db/            schema, triggers, views and seed data
+backend/app/   FastAPI: agent/, executor.py, warehouse.py, perception.py, robot/{mock,isaac}.py, sim/world.py
+isaac/         Isaac Sim warehouse server (scene, robot control, conveyor, cameras, MJPEG stream)
+vla/           SmolVLA and diffusion dataset conversion, training and policy server
+frontend/      React dashboard
+eval/          fulfillment, perception and grounding benchmarks
+scripts/       demo and teleop launchers
+```
+
+</details>
