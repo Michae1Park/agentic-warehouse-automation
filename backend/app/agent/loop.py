@@ -40,7 +40,8 @@ covers the gap, recover without asking by cross-docking: plan_fulfillment again 
 dispatch_task it, so the robot picks the shelf stock and the received units in one trip. In the same turn, right \
 after that dispatch, put away the surplus: receiving quantity minus the units the order takes from receiving, via \
 replenish_stock into a bin that already holds the SKU, then dispatch_task it so it queues behind the order. Never \
-restock units that the order needs and then pick them back out.
+restock units that the order needs and then pick them back out. Whenever a later change (a cancelled put-away, a \
+reallocation) leaves unreserved units of that SKU in receiving, put those away too before reporting done.
 - If planning fails for a reason receiving cannot cover, do not dispatch. Explain the problem, report_exception, \
 and suggest options such as partial fulfillment or restocking.
 - If a task is paused because an ordered SKU was missing at a bin, decide the recovery: reallocate_pick from other \

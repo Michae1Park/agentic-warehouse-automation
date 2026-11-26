@@ -61,6 +61,11 @@ class TaskExecutor:
             WHERE id = (
                 SELECT id FROM tasks
                 WHERE robot_id = %s AND status IN ('running', 'queued')
+                  AND NOT EXISTS (
+                      SELECT 1 FROM tasks paused
+                      WHERE paused.robot_id = tasks.robot_id AND paused.status = 'planned'
+                        AND paused.error LIKE 'item_not_found%%' AND paused.id < tasks.id
+                  )
                 ORDER BY (status = 'running') DESC, id
                 LIMIT 1 FOR UPDATE SKIP LOCKED
             )
@@ -214,6 +219,8 @@ class TaskExecutor:
         return {"observed": list(counts), **({"found": found} if found else {}), **detail}
 
     async def _record_unexpected(self, task: dict, location_id: str, counts: dict[str, int]) -> list[dict]:
+        if (await self._location(location_id))["kind"] != "storage":
+            return []
         recorded = {r["sku"] for r in await fetch_all(
             "SELECT sku FROM inventory WHERE location_id = %s AND quantity > 0", location_id)}
         pickable = {r["sku"] for r in await fetch_all("SELECT sku FROM products WHERE robot_pickable")}

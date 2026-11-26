@@ -410,9 +410,29 @@ async def reallocate_pick(task_id: int, include_receiving: bool = False) -> dict
         raise WarehouseError(f"task {task_id} is not paused on missing stock")
     sources = await reallocate_missing_stock(task_id, include_receiving)
     if sources is None:
-        raise WarehouseError(f"no other stock covers the missing units for task {task_id}"
-                             + ("" if include_receiving else "; receiving was not included"))
-    return {"task_id": task_id, "rerouted_to": sources, "next": "dispatch_task to resume"}
+        holders = await fetch_all(
+            """
+            SELECT t.id AS task_id, t.kind, s.args->>'location_id' AS location_id, (s.args->>'quantity')::int AS quantity
+            FROM task_steps s JOIN tasks t ON t.id = s.task_id
+            WHERE s.action = 'pick' AND s.status = 'pending' AND t.status IN ('planned', 'queued') AND t.id <> %s
+              AND s.args->>'sku' = (SELECT args->>'sku' FROM task_steps WHERE task_id = %s AND args->>'missing' = 'true'
+                                    ORDER BY seq LIMIT 1)
+            """,
+            task_id, task_id,
+        )
+        held = "; ".join(f"{h['quantity']} at {h['location_id']} reserved by {h['kind']} task {h['task_id']}"
+                         for h in holders)
+        raise WarehouseError(f"no unreserved stock covers the missing units for task {task_id}"
+                             + ("" if include_receiving else "; receiving was not included")
+                             + (f"; held by queued work: {held}" if held else ""))
+    left = await fetch_one(
+        "SELECT COALESCE(SUM(i.quantity - i.reserved), 0) AS n FROM inventory i JOIN locations l ON l.id = i.location_id "
+        "WHERE l.kind = 'staging' AND i.sku = (SELECT args->>'sku' FROM task_steps WHERE task_id = %s "
+        "AND args->>'missing' = 'true' ORDER BY seq LIMIT 1)",
+        task_id,
+    )
+    return {"task_id": task_id, "rerouted_to": sources, "unreserved_in_receiving": int(left["n"]),
+            "next": "dispatch_task to resume"}
 
 
 async def _create_task(
