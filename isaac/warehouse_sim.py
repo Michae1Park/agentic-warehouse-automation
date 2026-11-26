@@ -302,6 +302,10 @@ RACK_RETREAT = 0.35
 STOW_DRIVE_SPEED = 0.4
 STOW_GAPS = (0.14, 0.1)
 PREGRASP_SETTLE_TICKS = 600
+RECEIVING_CAM_BACK = 0.2
+RACK_PATH_MARGIN = 0.15
+RECEIVING_CAM_AIM = 0.12
+RECEIVING_CAM_HEIGHT = 1.35
 PREGRASP_STEPS_PER_RAD = 150
 STOW_SLIDE_LIFT = 0.03
 PUSH_CLEARANCE = 0.04
@@ -1676,7 +1680,22 @@ class Commands:
             return x
         return (left + right) / 2
 
+    def blocked_by_racks(self, start: np.ndarray, goal: np.ndarray) -> bool:
+        storage = [l for l in self.w.locations.values() if l["kind"] == "storage"]
+        margin = BASE_HALF_WIDTH + RACK_PATH_MARGIN
+        ys = [float(l["y"]) for l in storage]
+        y_low, y_high = min(ys) - BIN_LENGTH / 2 - margin, max(ys) + BIN_LENGTH / 2 + margin
+        racks = sorted({float(l["x"]) for l in storage})
+        steps = max(2, int(np.linalg.norm(goal[:2] - start[:2]) / 0.05))
+        for t in np.linspace(0.0, 1.0, steps):
+            px, py = start[:2] + (goal[:2] - start[:2]) * t
+            if y_low <= py <= y_high and any(abs(px - r) <= SHELF_DEPTH / 2 + margin for r in racks):
+                return True
+        return False
+
     def waypoints(self, goal: np.ndarray) -> list[np.ndarray]:
+        if not self.blocked_by_racks(self.w.base_target, goal):
+            return []
         x, y, _ = self.w.base_target
         lane = self.aisle_center(goal[0])
         points = []
@@ -1693,6 +1712,8 @@ class Commands:
         return pose - forward * distance
 
     def navigate(self, location_id: str):
+        if location_id in self.w.locations and self.w.locations[location_id]["kind"] != "charging":
+            self.aim_inspect(location_id)
         goal = self.w.approach_pose(location_id)
         yield from self.move_arm(self.w.arm_home, 40)
         current = self.w.base_target.copy()
@@ -1839,25 +1860,32 @@ class Commands:
             return
         raise SimError("ik_failed", f"no arm solution for target {np.round(position, 2).tolist()}")
 
-    def inspect(self, location_id: str, distance: float = 1.3, height: float = 0.25, focal: float = 16.0):
+    def aim_inspect(self, location_id: str, distance: float = 1.3, height: float = 0.25, focal: float = 16.0) -> None:
         location = self.w.locations[location_id]
         x, y, z = float(location["x"]), float(location["y"]), float(location["z"])
-        if location["kind"] == "staging":
-            x, z = x + 0.12, STAGING_HEIGHT
-        approach = self.w.approach_pose(location_id)
-        tote = location["kind"] == "dispatch"
-        at_bin = not tote and np.linalg.norm(self.w.base_target[:2] - approach[:2]) < 0.3
-        if at_bin:
-            yield from self.drive_to(approach - np.array([SCAN_STANDOFF, 0.0, 0.0]))
-        UsdGeom.Camera(self.w.stage.GetPrimAtPath("/World/InspectCam")).GetFocalLengthAttr().Set(focal)
-        if tote:
-            UsdGeom.Camera(self.w.stage.GetPrimAtPath("/World/InspectCam")).GetFocalLengthAttr().Set(TOTE_AUDIT_FOCAL)
+        camera = UsdGeom.Camera(self.w.stage.GetPrimAtPath("/World/InspectCam"))
+        if location["kind"] == "dispatch":
+            camera.GetFocalLengthAttr().Set(TOTE_AUDIT_FOCAL)
             set_camera_view(eye=np.array([TOTE_X - 0.92, y, ROLLER_TOP + 1.34]), target=np.array([TOTE_X, y, ROLLER_TOP + 0.03]),
                             camera_prim_path="/World/InspectCam")
+            return
+        camera.GetFocalLengthAttr().Set(focal)
+        if location["kind"] == "staging":
+            x, z = x + 0.12, STAGING_HEIGHT
+            eye = np.array([x + RECEIVING_CAM_BACK, y, z + RECEIVING_CAM_HEIGHT])
+            target = np.array([x + RECEIVING_CAM_AIM, y, z])
         else:
             eye, target = np.array([x - distance, y, z + height]), np.array([x, y, z + 0.06])
-            set_camera_view(eye=eye, target=target, camera_prim_path="/World/InspectCam")
-            self.w.views[location_id] = (eye, target, focal)
+        set_camera_view(eye=eye, target=target, camera_prim_path="/World/InspectCam")
+        self.w.views[location_id] = (eye, target, focal)
+
+    def inspect(self, location_id: str, distance: float = 1.3, height: float = 0.25, focal: float = 16.0):
+        location = self.w.locations[location_id]
+        approach = self.w.approach_pose(location_id)
+        at_bin = location["kind"] == "storage" and np.linalg.norm(self.w.base_target[:2] - approach[:2]) < 0.3
+        if at_bin:
+            yield from self.drive_to(approach - np.array([SCAN_STANDOFF, 0.0, 0.0]))
+        self.aim_inspect(location_id, distance, height, focal)
         for _ in range(8):
             yield
         frame = self.w.annotators["inspect"].get_data()
