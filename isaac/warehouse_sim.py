@@ -298,6 +298,11 @@ SETTLE_STEPS = 120
 TOP_DOWN_LIFT = 0.15
 SHELF_TOP_DOWN_LIFT = 0.05
 RACK_RETREAT = 0.35
+STOW_DRIVE_SPEED = 0.4
+STOW_GAPS = (0.14, 0.1)
+PREGRASP_SETTLE_TICKS = 600
+PREGRASP_STEPS_PER_RAD = 150
+STOW_SLIDE_LIFT = 0.03
 PUSH_CLEARANCE = 0.04
 PUSH_HEIGHT = 0.075
 PUSH_STANDOFF = 0.08
@@ -1430,19 +1435,23 @@ class Warehouse:
                 self.set_dynamic(item, True)
             cursor += columns * cell[1]
 
-    def cluster_spot(self, location_id: str, box: Item) -> tuple[np.ndarray, float]:
+    def cluster_spot(self, location_id: str, box: Item, gap: float | None = None,
+                     robot: bool = False) -> tuple[np.ndarray, float] | None:
         location = self.locations[location_id]
         x, y, z = float(location["x"]), float(location["y"]), float(location["z"])
         half = (BIN_LENGTH - 0.2) / 2
         front_x = x - SHELF_DEPTH / 2 + BIN_MARGIN + box.footprint[0] / 2 + CLUSTER_GAP / 2
-        gap = PICK_GAP if self.pickable(box.sku) else CLUSTER_GAP
+        gap = gap if gap is not None else PICK_GAP if self.pickable(box.sku) else CLUSTER_GAP
         width = box.footprint[1] + gap
         others = [b for b in self.boxes_at(location_id, background=True) if b is not box]
         same = sorted((b.position[1] for b in others if b.sku == box.sku and abs(b.position[0] - front_x) < 0.05))
+        scan = list(np.arange(y - half + width / 2, y + half - width / 2 + 1e-6, 0.01))
         if same:
             candidates = [same[-1] + width, same[0] - width]
+            if robot:
+                candidates += sorted(scan, key=lambda c: min(abs(c - v) for v in same))
         else:
-            candidates = list(np.arange(y - half + width / 2, y + half - width / 2 + 1e-6, 0.01))
+            candidates = scan
         for candidate_y in candidates:
             point = np.array([front_x, candidate_y, z])
             inside = y - half + width / 2 - 1e-6 <= candidate_y <= y + half - width / 2 + 1e-6
@@ -1450,6 +1459,8 @@ class Warehouse:
                                          + np.array([0.0, gap])) for o in others):
                 jitter = self.rng.uniform(-CLUSTER_JITTER, CLUSTER_JITTER, 2)
                 return point + np.append(jitter, 0.0), self.rng.uniform(-CLUSTER_YAW, CLUSTER_YAW)
+        if robot:
+            return None
         return self.free_spot(location_id, box, front=True)
 
     def shelve(self, box: Item, location_id: str) -> None:
@@ -1792,7 +1803,9 @@ class Commands:
     def go_to_pregrasp(self, joints: np.ndarray):
         above, plan = self.grasp_choice["plan"]
         self.last_plan_goal = plan[-1]
-        yield from self.move_arm(plan[0], 90)
+        turn = float(np.abs(plan[0] - self.w.arm_target).max())
+        yield from self.move_arm(plan[0], max(90, int(turn * PREGRASP_STEPS_PER_RAD)))
+        yield from self.settle_arm(limit=PREGRASP_SETTLE_TICKS)
         self.check_tracking(above, "grasp ready")
         yield from self.follow(plan, GRASP_READY_LIFT, 0.15)
 
@@ -1915,6 +1928,13 @@ class Commands:
                     options.append({"yaw": yaw, "pitch": pitch, "roll": roll, "position": position,
                                     "direction": rotation[:, 2], "orientation": rot_matrix_to_quat(rotation), "score": score})
         return sorted(options, key=lambda o: o["score"])
+
+    def stow_orientations(self, yaw: float) -> list[np.ndarray]:
+        choice = self.grasp_choice or {"pitch": GRASP_PITCH, "roll": 0.0}
+        if choice["pitch"] < 1.0:
+            return [self.carry_orientation(yaw)]
+        rotations = [tool_rotation(yaw + turn, choice["pitch"], choice["roll"]) for turn in (0.0, math.pi / 2, -math.pi / 2)]
+        return [rot_matrix_to_quat(r) for r in sorted(rotations, key=lambda r: -abs(float(r[0, 1])))]
 
     def carry_orientation(self, yaw: float) -> np.ndarray:
         choice = self.grasp_choice or {"pitch": GRASP_PITCH, "roll": 0.0}
@@ -2551,11 +2571,11 @@ class Commands:
         yield from self.reach_linear(above + HOVER_LIFT, orientation, 0.25)
         yield from self.move_arm(self.w.work_home, 60)
 
-    def take_from_deck(self, box: Item):
+    def take_from_deck(self, box: Item, side_grip: bool = False):
         self.target = self.true_target(box)
         options = self.grasp_options(self.target, self.target.center[2] - self.target.height / 2)
         reachable = None
-        for option in sorted(options, key=lambda o: o["pitch"] < 1.0):
+        for option in sorted(options, key=lambda o: (o["pitch"] < 1.0) != side_grip):
             for lift in TOTE_HOVER_LIFTS:
                 above = option["position"] + np.array([0.0, 0.0, CARRY_CLEARANCE])
                 try:
@@ -2922,32 +2942,44 @@ class Commands:
         box = next((b for b in self.w.tote if b.sku == sku), None)
         if not box:
             raise SimError("item_not_found", f"{sku} not in tote")
-        target, yaw = self.w.cluster_spot(location_id, box)
-        yield from self.approach_rack(location_id)
-        yield from self.face_work()
-        yield from self.align_to(target)
-        yield from self.take_from_deck(box)
+        spot = next((s for s in (self.w.cluster_spot(location_id, box, gap, robot=True) for gap in STOW_GAPS) if s), None)
+        if spot is None:
+            raise SimError("bin_full", f"no room for the gripper to place {sku} in {location_id}")
+        target, yaw = spot
+        stance = self.w.approach_pose(location_id)
+        stance[1] = target[1]
+        heading = float(stance[2])
+        forward = np.array([math.cos(heading), math.sin(heading), 0.0])
+        backed = self.retreat_pose(stance)
+        yield from self.move_arm(self.w.work_home, 40)
+        yield from self.drive_to(backed)
+        yield from self.take_from_deck(box, side_grip=True)
         if fail:
             yield from self.stash(box)
             raise SimError("grasp_failed", f"stow of {sku} at {location_id} failed")
         offset = self.hold_offset()
-        orientation = self.carry_orientation(yaw)
-        direction = quat_to_rot_matrix(orientation)[:, 2]
         center = target + np.array([0.0, 0.0, box.footprint[2] / 2 + SURFACE_LIFT])
-        tip = self.tip_for(center, orientation, offset)
-        out = np.array([direction[0], direction[1], 0.0])
-        entry = tip + np.array([0.0, 0.0, 0.03]) - out * RETRACT
-        yield from self.move_arm(self.w.solve_ik(entry, orientation), 80)
-        yield from self.reach_linear(tip + np.array([0.0, 0.0, 0.03]), orientation, 0.15)
+        for orientation in self.stow_orientations(yaw):
+            tip = self.tip_for(center, orientation, offset)
+            inside = tip + np.array([0.0, 0.0, STOW_SLIDE_LIFT])
+            try:
+                self.w.solve_ik(inside - forward * RACK_RETREAT, orientation)
+                self.w.solve_ik(tip - forward * RACK_RETREAT, orientation)
+            except SimError:
+                continue
+            break
+        yield from self.reach_linear(inside - forward * RACK_RETREAT, orientation, 0.3)
+        yield from self.drive_to(stance, STOW_DRIVE_SPEED)
         yield from self.reach_linear(tip, orientation, 0.08)
         self.w.held = None
         box.move(center, yaw)
         box.location_id = location_id
         self.w.set_dynamic(box, True)
         yield from self.gripper(0.04)
-        yield from self.reach_linear(tip - out * RETRACT, orientation, 0.2)
+        yield from self.reach_linear(inside, orientation, 0.1)
+        yield from self.drive_to(backed, STOW_DRIVE_SPEED)
         yield from self.move_arm(self.w.work_home, 60)
-        return {"stowed": sku}
+        return {"stowed": sku, "target": np.round(target, 3).tolist(), "final": np.round(self.w.sync(box), 3).tolist()}
 
 
 LIVE_COMMANDS = ("view", "camera", "state", "debug")
