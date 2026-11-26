@@ -27,6 +27,7 @@ class ResetRequest(BaseModel):
     time_scale: float = 1.0
     scenario: str = "default"
     agent_recipes: bool = True
+    agent_temperature: float = 0.2
 
 
 def _generate_orders(rng: random.Random, count: int, skus: list[str]) -> list[tuple[int, str, int, str, list]]:
@@ -66,6 +67,7 @@ async def reset(request: ResetRequest, http_request: Request):
     settings.recovery_enabled = request.recovery_enabled
     settings.route_optimization = request.route_optimization
     settings.agent_recipes = request.agent_recipes
+    settings.agent_temperature = request.agent_temperature
     settings.sim_time_scale = request.time_scale
     missing = await world.load(request.seed, request.faults)
     missing += scenarios.physical_faults(world, request.scenario)

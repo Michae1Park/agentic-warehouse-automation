@@ -342,7 +342,7 @@ async def _cycle_count_to_zero(conn: AsyncConnection, inventory_id: int, task_id
     )
 
 
-async def reroute_missing_stock(task_id: int, failed_step_id: int) -> list[str] | None:
+async def record_missing_stock(task_id: int, failed_step_id: int) -> dict:
     async with pool.connection() as conn, conn.transaction():
         cur = await conn.execute("SELECT * FROM task_steps WHERE id = %s", (failed_step_id,))
         failed = await cur.fetchone()
@@ -357,11 +357,23 @@ async def reroute_missing_stock(task_id: int, failed_step_id: int) -> list[str] 
         )
         pick = await cur.fetchone()
         await _cycle_count_to_zero(conn, pick["args"]["inventory_id"], task_id)
-        await conn.execute("UPDATE task_steps SET status = 'skipped' WHERE id = %s", (pick["id"],))
+        await conn.execute("UPDATE task_steps SET status = 'skipped' WHERE id = ANY(%s)", ([pick["id"], failed["id"]],))
+        await conn.execute("UPDATE task_steps SET args = args || '{\"missing\": true}' WHERE id = %s", (pick["id"],))
+    return pick
 
-    remaining = pick["args"]["quantity"] - pick["args"].get("picked", 0)
+
+async def reallocate_missing_stock(task_id: int, include_receiving: bool = False) -> list[str] | None:
     async with pool.connection() as conn, conn.transaction():
-        allocations, short = await _allocate(conn, pick["args"]["sku"], remaining)
+        cur = await conn.execute(
+            "SELECT * FROM task_steps WHERE task_id = %s AND action = 'pick' AND status = 'skipped' "
+            "AND args->>'missing' = 'true' AND NOT args ? 'reallocated' ORDER BY seq LIMIT 1 FOR UPDATE",
+            (task_id,),
+        )
+        pick = await cur.fetchone()
+        if not pick:
+            raise WarehouseError(f"task {task_id} has no pick waiting for reallocation")
+        remaining = pick["args"]["quantity"] - pick["args"].get("picked", 0)
+        allocations, short = await _allocate(conn, pick["args"]["sku"], remaining, include_receiving)
         if short:
             return None
         for alloc in allocations:
@@ -387,7 +399,20 @@ async def reroute_missing_stock(task_id: int, failed_step_id: int) -> list[str] 
                 "INSERT INTO task_steps (task_id, seq, action, args) VALUES (%s, %s, %s, %s)",
                 (task_id, pick["seq"] + offset, action, Jsonb(args)),
             )
+        await conn.execute("UPDATE task_steps SET args = args || '{\"reallocated\": true}' WHERE id = %s", (pick["id"],))
+        await conn.execute("UPDATE tasks SET error = NULL WHERE id = %s", (task_id,))
     return [a["location_id"] for a in allocations]
+
+
+async def reallocate_pick(task_id: int, include_receiving: bool = False) -> dict:
+    task = await fetch_one("SELECT status, error FROM tasks WHERE id = %s", task_id)
+    if not task or task["status"] != "planned" or not (task["error"] or "").startswith("item_not_found"):
+        raise WarehouseError(f"task {task_id} is not paused on missing stock")
+    sources = await reallocate_missing_stock(task_id, include_receiving)
+    if sources is None:
+        raise WarehouseError(f"no other stock covers the missing units for task {task_id}"
+                             + ("" if include_receiving else "; receiving was not included"))
+    return {"task_id": task_id, "rerouted_to": sources, "next": "dispatch_task to resume"}
 
 
 async def _create_task(

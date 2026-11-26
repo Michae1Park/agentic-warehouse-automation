@@ -103,6 +103,10 @@ async def clear_blocker(ctx: ToolContext, task_id: int):
     return await warehouse.clear_blocker(task_id)
 
 
+async def reallocate_pick(ctx: ToolContext, task_id: int, include_receiving: bool = False):
+    return await warehouse.reallocate_pick(task_id, include_receiving)
+
+
 async def cancel_task(ctx: ToolContext, task_id: int):
     return await warehouse.cancel_task(task_id)
 
@@ -220,6 +224,12 @@ TOOLS = [
          "up the paddle tool, push the blocking item aside with the learned push policy (VLA), and put the paddle back, "
          "before the paused pick. Then call dispatch_task to resume the task.",
          _params({"task_id": TASK_ID}, ["task_id"]), clear_blocker),
+    Tool("reallocate_pick",
+         "For a task paused because an ordered SKU was not found at a bin (error 'item_not_found'; the bin is already "
+         "counted to 0): reserve the missing units from other bins, optionally including the receiving tote, and insert "
+         "the new picks. Then call dispatch_task to resume. Fails if no other stock covers the gap.",
+         _params({"task_id": TASK_ID, "include_receiving": {"type": "boolean"}}, ["task_id"]),
+         reallocate_pick),
     Tool("cancel_task", "Cancel a planned or queued task and release its inventory reservations.",
          _params({"task_id": TASK_ID}, ["task_id"]), cancel_task),
     Tool("list_exceptions", "List operational exceptions.",

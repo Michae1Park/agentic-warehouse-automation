@@ -91,6 +91,7 @@ def main() -> None:
     parser.add_argument("--trials", type=int, default=5)
     parser.add_argument("--variants", nargs="+", default=["recipes", "no_recipes"])
     parser.add_argument("--time-scale", type=float, default=20)
+    parser.add_argument("--temperature", type=float, default=0.7)
     parser.add_argument("--limit-s", type=float, default=900)
     parser.add_argument("--out", default=str(Path(__file__).parent / "results" / "agent"))
     args = parser.parse_args()
@@ -102,7 +103,8 @@ def main() -> None:
         for variant in args.variants:
             for trial in range(args.trials):
                 request(args.api, "/api/sim/reset", {"seed": trial, "scenario": scenario, "time_scale": args.time_scale,
-                                                     "agent_recipes": variant == "recipes"})
+                                                     "agent_recipes": variant == "recipes",
+                                                     "agent_temperature": args.temperature})
                 conversation = f"eval-{scenario}-{variant}-{trial}-{uuid.uuid4().hex[:6]}"
                 started = time.time()
                 try:
@@ -115,7 +117,7 @@ def main() -> None:
                 checks = score(scenario, state)
                 runs = request(args.api, "/api/agent/runs?limit=200")
                 row = {
-                    "scenario": scenario, "variant": variant, "trial": trial, "settled": settled,
+                    "scenario": scenario, "variant": variant, "trial": trial, "temperature": args.temperature, "settled": settled,
                     "success": settled and all(checks.values()), "checks": checks,
                     "tool_calls": sum(r.get("tool_calls") or 0 for r in runs),
                     "turns": len(runs), "wall_s": round(time.time() - started, 1),

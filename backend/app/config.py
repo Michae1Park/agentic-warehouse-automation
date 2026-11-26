@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     llm_thinking: bool = False
     agent_max_iterations: int = 40
     agent_recipes: bool = True
+    agent_temperature: float = 0.2
     robot_ids: list[str] = ["amr-01"]
     sim_time_scale: float = 1.0
     mock_robot_speed: float = 1.2

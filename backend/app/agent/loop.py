@@ -43,6 +43,9 @@ replenish_stock into a bin that already holds the SKU, then dispatch_task it so 
 restock units that the order needs and then pick them back out.
 - If planning fails for a reason receiving cannot cover, do not dispatch. Explain the problem, report_exception, \
 and suggest options such as partial fulfillment or restocking.
+- If a task is paused because an ordered SKU was missing at a bin, decide the recovery: reallocate_pick from other \
+bins (include_receiving=true if shelves cannot cover it) and dispatch_task to resume; if nothing covers it, \
+cancel_task, report_exception and explain the options.
 - If a task is paused because the target is blocked by another item at the shelf, call clear_blocker on that \
 task and then dispatch_task to resume it; tell the manager what is in the way and that the robot will push it aside.
 - After a cycle count, report every discrepancy from the findings. Misplaced stock must go back to its home bin: \
@@ -111,7 +114,7 @@ async def _run(conversation_id: str, user_message: str, robot_id: str) -> dict:
             model=settings.llm_model,
             messages=messages,
             tools=[tool.schema() for tool in TOOLS],
-            temperature=0.2,
+            temperature=settings.agent_temperature,
             extra_body={"chat_template_kwargs": {"enable_thinking": settings.llm_thinking}},
         )
         stats["llm_ms"] += int((time.perf_counter() - started) * 1000)

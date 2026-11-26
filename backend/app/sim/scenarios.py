@@ -65,6 +65,7 @@ async def _end_of_shift(conn: AsyncConnection) -> None:
 SETUPS = {"shortage": _shortage, "batch": _batch, "competing": _competing, "end_of_shift": _end_of_shift}
 TRIAGE_MISPLACED = (SOUP, "C-01-1", "C-02-1")
 TRIAGE_MISSING = ("C-04-1", MUSTARD)
+END_OF_SHIFT_MISSING = ("B-01-1", MUSTARD)
 
 
 async def setup(conn: AsyncConnection, scenario: str) -> None:
@@ -73,6 +74,9 @@ async def setup(conn: AsyncConnection, scenario: str) -> None:
 
 
 def physical_faults(world: PhysicalWorld, scenario: str) -> list[dict]:
+    if scenario == "end_of_shift":
+        world.stock[END_OF_SHIFT_MISSING] = 0
+        return [{"location_id": END_OF_SHIFT_MISSING[0], "sku": END_OF_SHIFT_MISSING[1]}]
     if scenario != "triage":
         return []
     sku, home, found = TRIAGE_MISPLACED
