@@ -54,7 +54,7 @@ https://github.com/user-attachments/assets/cc10bf65-827f-4978-8fcc-63fc2e3007ab
 |---|---|
 | **1. Plan** | • `get_order` → `plan_fulfillment`<br>• Reserves 4 cans at A-02-1 and 1 at C-01-1 in one transaction |
 | **2. Dispatch** | • `dispatch_task` hands the plan to the executor<br>• Steps are stored in `task_steps`, so a restart resumes the task |
-| **3. Pick** | • VLM confirms the stock from the scan pose<br>• Base drives in, arm grasps each can, backs out, drops it in the robot's tote |
+| **3. Pick** | • VLM confirms the stock from the scan pose and points at each can<br>• The pose module fits the can's 3D pose from depth<br>• Base drives in, arm grasps the can, backs out, drops it in the robot's tote |
 | **4. Unload** | At DISPATCH-1, each can goes into a free spot in the outbound tote |
 | **5. Audit & close** | • VLM checks the tote against the order<br>• Tote rides the conveyor out, `verify` closes the order, agent reports back |
 
@@ -87,9 +87,11 @@ Simulation only, compared against a scripted baseline.
 | Area | What is simplified |
 |---|---|
 | **Grasping** | • Scripted Lula IK from a depth pose estimate; the item attaches once the fingers close<br>• SmolVLA / diffusion policies in `vla/` are paused until retrained for the current stance |
+| **System 0** | • Minimal: simulated joint drives only<br>• No force, torque, contact or slip control |
 | **Products** | • 2 robot-pickable products (mustard, tomato soup)<br>• The other 10 SKUs are flagged non-pickable and routed to manual handling |
 | **Navigation** | • Simulator waypoint planner: straight when clear, aisle center lines otherwise<br>• No ROS 2 / Nav2 / MoveIt 2; `RobotGateway` is where they would plug in |
-| **Perception** | • One fixed inspection camera per location; grasp mask from simulator instance ids<br>• Cycle counts trust presence, not quantities: unseen SKU → 0, unrecorded SKU → flagged |
+| **Perception** | • One fixed inspection camera per location<br>• Cycle counts trust presence, not quantities: unseen SKU → 0, unrecorded SKU → flagged |
+| **◆ Sim-assisted perception** | • The VLM outputs a 2D point on the item<br>• 3D pose estimation is sim-assisted: the point is matched to an item and its outline using simulator ground truth, then fitted to depth. A real robot would get the outline from a segmentation model such as SAM, prompted with the VLM's point<br>• Items in the robot's own tote use the simulator pose directly |
 | **Faults** | Injected with seeded probabilities into a world model separate from the database |
 | **Conveyor** | Moves totes kinematically out through the wall; no packing or shipping behind it |
 
@@ -110,20 +112,27 @@ Simulation only, compared against a scripted baseline.
 | **One system of record** | • Postgres holds orders, inventory, tasks and exceptions<br>• `LISTEN/NOTIFY` streams every change to the UI, so chat, dashboard and sim never disagree |
 | **Typed tools, no free-form SQL** | • The agent acts only through tools that wrap transactions (`plan_fulfillment`, `dispatch_task`, …)<br>• Reservations use `SELECT … FOR UPDATE`, so two plans cannot promise the same unit<br>• Each pick updates stock, the order line and an audit row in one transaction |
 | **Separate physical world** | • Faults are injected into a world model separate from the database<br>• The WMS can actually be wrong, so inventory accuracy means something |
-| **Models do what they are good at** | • The VLM says *what and where* (a 2D point, a scene description), never a pose<br>• Motion is scripted IK or a learned policy |
+| **Models do what they are good at** | • The VLM says *what and where* (a 2D point, a scene description), never a pose<br>• A 3D pose estimation module turns the point into a pose from depth; motion is scripted IK<br>• ◆ The point-to-object step is sim-assisted (see Limitations) |
 
 <details>
 <summary><b>System layers: what each part does</b></summary>
 
-| System | Layer | What it does |
-|---|---|---|
-| **System 2** (reasoning) | **Agent** | • Plain tool-calling loop on Qwen3.8-27B (FP8, vLLM)<br>• Picks the workflow, handles shortages and blocked picks, reports outcomes |
-| | **Perception** | • Same model with image input<br>• Bin checks, grounding the described item, tote audit |
-| **System 1** (skills) | **Executor** | • Persistent task state machine<br>• Perception, grasp, recovery policies<br>• Splices new steps into running tasks |
-| | **WMS** | • FastAPI + Postgres<br>• Reservations, picks, cycle counts and audit rows in single transactions |
-| **System 0** (motion) | **Isaac Sim** | • Ridgeback + Franka<br>• Scripted Lula IK grasps from a depth pose estimate<br>• Base planner, conveyor, camera and MJPEG streams |
-| | **Learned policies** | • SmolVLA and diffusion policy servers (grasp and push)<br>• Paused until retrained for the current stance |
-| **Delivery** | **Dashboard** | • React + Vite<br>• Agent chat with tool trace, live sim stream, 2D floor map, orders and exceptions |
+Layers are organized by how fast they must react (System 2 / 1 / 0).
+
+| Layer | Rate | Part | What it does |
+|---|---|---|---|
+| **System 2** (reasoning) | seconds, ~0.1 Hz | **Agent** | • Tool-calling loop on Qwen3.8-27B (FP8, vLLM)<br>• Picks the workflow, plans, dispatches, replans on results |
+| | | **VLM perception** | • Same model with image input<br>• Bin checks, grounding the described item, tote audit |
+| | | **3D pose estimation** | • Plugged in after the VLM, which only outputs a 2D point<br>• ◆ Sim-assisted: the item and its outline come from simulator ground truth, then a depth fit gives position, yaw and height |
+| **S2 → S1 interface** | per step | **Task executor** | • Deterministic state machine stored in Postgres<br>• Sequences skills, retries (regrasp, replan, reallocate), resumes after restart<br>• Reports results and findings back up |
+| **System 1** (action) | 60 Hz | **Grasp & arm motion** | • Grasp planned from the estimated pose<br>• Lula IK targets, Cartesian arm trajectories |
+| | | **Base motion** | • Waypoint planner, straight when no rack blocks<br>• Smooth start and stop |
+| | | **Learned policy slot** | • SmolVLA and diffusion policy servers<br>• Paused until retrained for the current stance |
+| **System 0** (execution) | 60 Hz sim step | **Simulated drives** | • PD position control of the Franka joints<br>• Pose-driven holonomic base<br>• No force, torque or tactile control |
+| **Outside the layers** | — | **Postgres WMS** | • System of record: orders, stock, tasks, exceptions<br>• Every step writes back; changes stream to the dashboard |
+| | | **Robot gateway** | • One interface: mock robot for evals, Isaac Sim over HTTP |
+| | | **Isaac Sim 5.1** | • The environment: Ridgeback + Franka, physics, cameras<br>• Scene built from the WMS, seeded faults |
+| | | **Dashboard** | • React + Vite: agent chat with tool trace, live sim stream, 2D floor map, orders and exceptions |
 
 </details>
 
@@ -134,20 +143,21 @@ Simulation only, compared against a scripted baseline.
 |---|---|
 | **One model for reasoning and vision** | • Qwen3.8-27B (FP8, vLLM): open weights, native tool calling, image input<br>• The same model runs the agent and checks bins and totes |
 | **No agent framework** | • One agent with typed tools, a persistent task state machine and deterministic recovery<br>• Proved more reliable than agents passing messages |
-| **The VLM never outputs poses** | • It names the item and points at it<br>• Grasp geometry comes from depth and IK |
+| **The VLM never outputs poses** | • It names the item and points at it (2D)<br>• A 3D pose estimation module turns that point into a pose from depth; IK plans the grasp |
 
 </details>
 
 <details>
 <summary><b>Failure handling</b></summary>
 
-| Fault | Recovery | Escalation |
-|---|---|---|
-| **Grasp slip** | Regrasp, up to 3 attempts | Task fails → exception → agent report |
-| **Blocked path** | Replan the path, up to 3 attempts | Same |
-| **Stock missing at a bin** | • VLM sees the bin is empty → counts it to 0<br>• Reallocates from another bin<br>• Splices new steps into the running task | • No other stock: task fails<br>• Reservations released<br>• Agent explains |
-| **Shortage at planning** | • Receiving covers it: cross-dock in one trip<br>• Put away the surplus | No dispatch, exception and options |
-| **Misplaced stock found by a count** | Agent moves it back to its home bin | — |
+| Fault | Handled by | Recovery | Escalation |
+|---|---|---|---|
+| **Grasp slip** | Executor | Regrasp, up to 3 attempts | • Task fails, reservations released<br>• Exception raised, agent reports |
+| **Blocked path** | Executor | Replan the path, up to 3 attempts | Same |
+| **Ordered SKU not seen at a bin** | Executor | • Counts that SKU at the bin to 0<br>• Reallocates from another bin<br>• Splices new steps into the running task | No other stock: same as above |
+| **Item blocking the target** | Executor → agent | • Task pauses<br>• Agent calls `clear_blocker`, then resumes the task | Push demo paused (see the tools table) |
+| **Shortage at planning** | Agent | • Receiving covers it: cross-dock in one trip<br>• Put away the surplus | Otherwise: no dispatch, exception and options |
+| **Misplaced stock found by a count** | Agent | Moves it back to its home bin | — |
 
 When a task finishes, the executor posts a `[SYSTEM EVENT]` to the conversation that created it, and the agent reports back unprompted.
 
@@ -161,7 +171,7 @@ When a task finishes, the executor posts a `[SYSTEM EVENT]` to the conversation 
 | **Orders** | `list_orders` | List orders, optionally by status |
 | | `get_order` | Order with its lines (SKU, quantity, picked) |
 | | `plan_fulfillment` | • Reserve stock and create a pick task with an optimized route<br>• Can also pick from the receiving tote (cross-dock)<br>• Fails with a reason when short |
-| **Inventory** | `find_stock` | Shelf locations and available quantity for a SKU or product name |
+| **Inventory** | `find_stock` | Every location holding a SKU or product name, with available quantity (shelves and receiving) |
 | | `get_location` | Contents of a location |
 | | `find_empty_bins` | Empty storage bins, optionally in one aisle |
 | | `inspect_inventory` | Plan a VLM cycle count over bins or an aisle; corrects the records |
@@ -171,8 +181,8 @@ When a task finishes, the executor posts a `[SYSTEM EVENT]` to the conversation 
 | | `dispatch_task` | Send a planned task to the robot (asynchronous) |
 | | `get_task_status` | Task status and per-step progress |
 | | `wait_for_task` | Block until a task finishes, when the next step depends on it |
-| | `clear_blocker` | Splice `take_tool paddle → push_blocker → return_tool` before a blocked pick |
-| | `cancel_task` | Cancel a task and release its reservations |
+| | `clear_blocker` | • Splice `take_tool paddle → push_blocker → return_tool` before a blocked pick<br>• Paused: the push policy and paddle are not in the current demo scene |
+| | `cancel_task` | Cancel a planned or queued task and release its reservations |
 | **Exceptions** | `list_exceptions` | List open, resolved or escalated exceptions |
 | | `report_exception` | Record an exception that needs human attention |
 

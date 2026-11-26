@@ -214,3 +214,9 @@ Goal: three realistic warehouse tasks, each showing one applied AI technology.
    - [ ] Tote pick inside a replenishment task (grounded by the VLM, top-down grasp)
    - [x] E2E run: shortage → replenish → wait_for_task → fulfill → verify_tote, recorded with reset `scenario: "shortage"` (order 1044 = 3 mustards, 1 on the shelf at A-01-1, 4 in receiving); the seeded 12-mustard order was not actually short (shelves hold 12) and needed 12 picks
    - [x] Prompt recovers shortages covered by receiving without asking; tall items stay pinned in the robot tote (a mustard tipped over the 8 cm wall); base repositions up to 0.3 m and retries when no grasp is reachable (far side of the receiving tote)
+
+## Later: honest perception pipeline (agent is the focus; not blocking)
+- [ ] VLM point → object: take the object under the point in the depth image (depth discontinuity or a promptable segmenter), not via true item positions (`grounded_box`)
+- [ ] Grasp mask from that segmentation instead of simulator instance ids (`visible_points`)
+- [ ] Robot-tote picks (`take_from_deck`) from a depth fit instead of `true_target`
+- [ ] Re-enable toppled items for all demos once the above holds (Demo 1 was recorded with them on and picks one lying can at A-02-1)
