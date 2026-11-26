@@ -220,3 +220,9 @@ Goal: three realistic warehouse tasks, each showing one applied AI technology.
 - [ ] Grasp mask from that segmentation instead of simulator instance ids (`visible_points`)
 - [ ] Robot-tote picks (`take_from_deck`) from a depth fit instead of `true_target`
 - [ ] Re-enable toppled items for all demos once the above holds (Demo 1 was recorded with them on and picks one lying can at A-02-1)
+
+## Agent reasoning eval (2026-11-27)
+- [x] `eval/agent_eval.py`: batch, triage, competing orders, end-of-shift; with / without workflow recipes; mock robot; 5 trials at T=0.7 (T=0.2 was effectively deterministic, 5 identical runs)
+- [x] With recipes 18/20, without 9/20. End-of-shift with recipes fails 2/5 on surplus put-away (once because the mid-run reallocation consumed the receiving surplus); without recipes the agent never does unrequested follow-up (surplus put-away, moving misplaced stock home)
+- [x] Missing stock on agent-owned tasks now pauses for the agent (`reallocate_pick`); scripted tasks keep automatic reallocation
+- [x] Fulfillment eval rerun with agent-owned missing stock: agent 100% (was 96%) vs scripted 50% / scripted + recovery 88% under faults; average execution 84s vs 28s (sim time) because each missing-stock pause waits for an agent turn

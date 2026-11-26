@@ -43,7 +43,7 @@ https://github.com/user-attachments/assets/cc10bf65-827f-4978-8fcc-63fc2e3007ab
 | **Order fulfillment** | *"Prepare order #1045"* | • Reserves stock across bins, plans the route, picks into the robot's tote<br>• Unloads into the outbound tote on the conveyor<br>• VLM audits the tote, then the order closes |
 | **Cycle count** | *"Cycle count aisle B"* | • VLM checks each bin against the WMS record<br>• Writes `cycle_count` adjustments, raises discrepancies, moves misplaced stock back to its home bin |
 | **Shortage recovery** | *"Prepare order #1044"* (short on the shelf) | • Finds the gap covered by the receiving tote<br>• Cross-docks: picks the shelf stock and the received units in one trip<br>• Puts away only the surplus |
-| **Exception handling** | Grasp slip, blocked path, missing stock | • Regrasp / replan the path / reallocate from an alternate bin<br>• Escalates with a report when recovery fails |
+| **Exception handling** | Grasp slip, blocked path, missing stock | • Executor regrasps and replans the path<br>• Missing stock pauses the task; the agent reallocates or escalates |
 
 <details>
 <summary><b>Execution trace (Demo 1 example)</b></summary>
@@ -61,16 +61,17 @@ https://github.com/user-attachments/assets/cc10bf65-827f-4978-8fcc-63fc2e3007ab
 </details>
 
 <details>
-<summary><b>Results</b> (fulfillment, perception, grounding, tote audit)</summary>
+<summary><b>Results</b> (fulfillment, perception, grounding, tote audit, agent reasoning)</summary>
 
 Simulation only, compared against a scripted baseline.
 
 | Test | Result |
 |---|---|
-| **Fulfillment under faults** | • **96%** of orders filled (scripted: 58%, scripted + recovery: 88%)<br>• Inventory accuracy **87%** (scripted: 81%)<br>• All modes **100%** without faults |
+| **Fulfillment under faults** | • **100%** of orders filled (scripted: 50%, scripted + recovery: 88%)<br>• Inventory accuracy **87%** (scripted: 81%)<br>• Cost: the agent pauses to decide on missing stock, so average execution rises to 84s from 28s (sim time)<br>• All modes **100%** without faults |
 | **Shelf-bin perception** | • **100%** presence<br>• **92–96%** exact count<br>• **36 / 36** wrong records detected<br>• 1.5s per bin |
 | **Language grounding** | • **94%** overall<br>• **96%** on the two pickable products<br>• 1.2s per query |
 | **Tote audit** | • **6 / 6** exact<br>• **2 / 2** mis-packed totes caught<br>• 1.4s per audit |
+| **Agent reasoning** | • With workflow recipes: **18 / 20** (batch 5/5, triage 5/5, competing orders 5/5, end-of-shift 3/5)<br>• Without recipes: **9 / 20** (batch 5/5, competing orders 4/5, triage 0/5, end-of-shift 0/5)<br>• Up to 20 tool calls per scenario<br>• Main gap without recipes: follow-up the request did not ask for (putting away surplus, moving misplaced stock home) |
 
 | Test | Setup |
 |---|---|
@@ -78,6 +79,7 @@ Simulation only, compared against a scripted baseline.
 | Perception | • `eval/vlm_eval.py`<br>• 72 bins over 3 seeds<br>• 36 with a wrong record |
 | Grounding | • `eval/grounding_eval.py`<br>• 306 queries<br>• By name, description or attribute (*"the red can"*) |
 | Tote audit | 6 packed orders + 2 mis-packed totes at the conveyor |
+| Agent reasoning | • `eval/agent_eval.py`<br>• 4 scenarios × with / without workflow recipes × 5 trials at temperature 0.7<br>• Mock robot, so only the agent's decisions are scored<br>• Scenarios: batch of 6 orders, open-ended triage, competing orders, end-of-shift with a mid-run missing-stock surprise |
 
 </details>
 
@@ -124,7 +126,7 @@ Layers are organized by how fast they must react (System 2 / 1 / 0).
 | **System 2** (reasoning) | seconds, ~0.1 Hz | **Agent** | • Tool-calling loop on Qwen3.8-27B (FP8, vLLM)<br>• Picks the workflow, plans, dispatches, replans on results |
 | | | **VLM perception** | • Same model with image input<br>• Bin checks, grounding the described item, tote audit |
 | | | **3D pose estimation** | • Plugged in after the VLM, which only outputs a 2D point<br>• ◆ Sim-assisted: the item and its outline come from simulator ground truth, then a depth fit gives position, yaw and height |
-| **S2 → S1 interface** | per step | **Task executor** | • Deterministic state machine stored in Postgres<br>• Sequences skills, retries (regrasp, replan, reallocate), resumes after restart<br>• Reports results and findings back up |
+| **S2 → S1 interface** | per step | **Task executor** | • Deterministic state machine stored in Postgres<br>• Sequences skills, retries (regrasp, replan), pauses on missing stock, resumes after restart<br>• Reports results and findings back up |
 | **System 1** (action) | 60 Hz | **Grasp & arm motion** | • Grasp planned from the estimated pose<br>• Lula IK targets, Cartesian arm trajectories |
 | | | **Base motion** | • Waypoint planner, straight when no rack blocks<br>• Smooth start and stop |
 | | | **Learned policy slot** | • SmolVLA and diffusion policy servers<br>• Paused until retrained for the current stance |
@@ -154,7 +156,7 @@ Layers are organized by how fast they must react (System 2 / 1 / 0).
 |---|---|---|---|
 | **Grasp slip** | Executor | Regrasp, up to 3 attempts | • Task fails, reservations released<br>• Exception raised, agent reports |
 | **Blocked path** | Executor | Replan the path, up to 3 attempts | Same |
-| **Ordered SKU not seen at a bin** | Executor | • Counts that SKU at the bin to 0<br>• Reallocates from another bin<br>• Splices new steps into the running task | No other stock: same as above |
+| **Ordered SKU not seen at a bin** | Executor → agent | • Executor counts that SKU at the bin to 0, pauses the task, reports up<br>• Agent decides: `reallocate_pick` from other bins or receiving, then resumes | • Nothing covers it: agent cancels and escalates<br>• No agent (scripted mode): executor reallocates itself |
 | **Item blocking the target** | Executor → agent | • Task pauses<br>• Agent calls `clear_blocker`, then resumes the task | Push demo paused (see the tools table) |
 | **Shortage at planning** | Agent | • Receiving covers it: cross-dock in one trip<br>• Put away the surplus | Otherwise: no dispatch, exception and options |
 | **Misplaced stock found by a count** | Agent | Moves it back to its home bin | — |
@@ -164,7 +166,7 @@ When a task finishes, the executor posts a `[SYSTEM EVENT]` to the conversation 
 </details>
 
 <details>
-<summary><b>Agent tools: the 17 typed tools the agent can call</b></summary>
+<summary><b>Agent tools: the 18 typed tools the agent can call</b></summary>
 
 | Group | Tool | What it does |
 |---|---|---|
@@ -182,6 +184,7 @@ When a task finishes, the executor posts a `[SYSTEM EVENT]` to the conversation 
 | | `get_task_status` | Task status and per-step progress |
 | | `wait_for_task` | Block until a task finishes, when the next step depends on it |
 | | `clear_blocker` | • Splice `take_tool paddle → push_blocker → return_tool` before a blocked pick<br>• Paused: the push policy and paddle are not in the current demo scene |
+| | `reallocate_pick` | • For a task paused on missing stock<br>• Reserves the gap from other bins (optionally receiving) and splices in new picks |
 | | `cancel_task` | Cancel a planned or queued task and release its reservations |
 | **Exceptions** | `list_exceptions` | List open, resolved or escalated exceptions |
 | | `report_exception` | Record an exception that needs human attention |
