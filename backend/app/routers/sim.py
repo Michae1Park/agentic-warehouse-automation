@@ -6,12 +6,12 @@ from pydantic import BaseModel
 
 from ..config import settings
 from ..db import fetch_all, fetch_one, pool
+from ..sim import scenarios
 from ..sim.world import FaultConfig, world
 
 router = APIRouter(prefix="/sim", tags=["simulation"])
 
 SEED_SQL = Path(settings.seed_sql_path)
-SHORTAGE_ORDER, SHORTAGE_SKU, SHORTAGE_SHELF = 1044, "SKU-1001", "A-01-1"
 TABLES = (
     "agent_messages, agent_runs, task_faults, inventory_transactions, exceptions, task_steps, "
     "tasks, robots, order_lines, orders, inventory, locations, products, events"
@@ -26,6 +26,7 @@ class ResetRequest(BaseModel):
     route_optimization: bool = True
     time_scale: float = 1.0
     scenario: str = "default"
+    agent_recipes: bool = True
 
 
 def _generate_orders(rng: random.Random, count: int, skus: list[str]) -> list[tuple[int, str, int, str, list]]:
@@ -60,19 +61,14 @@ async def reset(request: ResetRequest, http_request: Request):
                         "INSERT INTO order_lines (order_id, sku, quantity) VALUES (%s, %s, %s)", (order_id, sku, qty)
                     )
 
-        if request.scenario == "shortage":
-            await conn.execute(
-                "UPDATE inventory SET quantity = CASE WHEN location_id = %s THEN 1 ELSE 0 END "
-                "WHERE sku = %s AND location_id IN (SELECT id FROM locations WHERE kind = 'storage')",
-                (SHORTAGE_SHELF, SHORTAGE_SKU),
-            )
-            await conn.execute("UPDATE order_lines SET quantity = 3 WHERE order_id = %s AND sku = %s",
-                               (SHORTAGE_ORDER, SHORTAGE_SKU))
+        await scenarios.setup(conn, request.scenario)
 
     settings.recovery_enabled = request.recovery_enabled
     settings.route_optimization = request.route_optimization
+    settings.agent_recipes = request.agent_recipes
     settings.sim_time_scale = request.time_scale
     missing = await world.load(request.seed, request.faults)
+    missing += scenarios.physical_faults(world, request.scenario)
     for robot in http_request.app.state.robots.values():
         if hasattr(robot, "reset"):
             await robot.reset(missing, request.seed, world.misplaced)

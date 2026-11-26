@@ -7,7 +7,8 @@ class Settings(BaseSettings):
     llm_base_url: str = "http://localhost:8001/v1"
     llm_model: str = "qwen3.8-27b"
     llm_thinking: bool = False
-    agent_max_iterations: int = 12
+    agent_max_iterations: int = 40
+    agent_recipes: bool = True
     robot_ids: list[str] = ["amr-01"]
     sim_time_scale: float = 1.0
     mock_robot_speed: float = 1.2
