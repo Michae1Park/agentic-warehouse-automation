@@ -84,16 +84,18 @@ def _sequence_stops(start: tuple[float, float], stops: list[dict]) -> list[dict]
     return ordered
 
 
-async def _allocate(conn: AsyncConnection, sku: str, needed: int) -> tuple[list[dict], int]:
+async def _allocate(conn: AsyncConnection, sku: str, needed: int,
+                    include_receiving: bool = False) -> tuple[list[dict], int]:
+    kinds = ["storage", "staging"] if include_receiving else ["storage"]
     cur = await conn.execute(
         """
         SELECT i.id, i.location_id, i.quantity - i.reserved AS available, l.x, l.y
         FROM inventory i JOIN locations l ON l.id = i.location_id
-        WHERE i.sku = %s AND i.quantity > i.reserved AND l.kind = 'storage'
-        ORDER BY available DESC
+        WHERE i.sku = %s AND i.quantity > i.reserved AND l.kind = ANY(%s)
+        ORDER BY l.kind = 'staging', available DESC
         FOR UPDATE OF i
         """,
-        (sku,),
+        (sku, kinds),
     )
     allocations = []
     for row in await cur.fetchall():
@@ -116,7 +118,8 @@ async def _ensure_pickable(conn: AsyncConnection, sku: str) -> None:
 
 
 async def plan_fulfillment(
-    order_id: int, robot_id: str, dispatch_location: str | None, conversation_id: str | None
+    order_id: int, robot_id: str, dispatch_location: str | None, conversation_id: str | None,
+    include_receiving: bool = False,
 ) -> dict[str, Any]:
     async with pool.connection() as conn, conn.transaction():
         cur = await conn.execute("SELECT * FROM orders WHERE id = %s FOR UPDATE", (order_id,))
@@ -144,10 +147,17 @@ async def plan_fulfillment(
         allocations, shortages = [], []
         for line in await cur.fetchall():
             await _ensure_pickable(conn, line["sku"])
-            allocated, short = await _allocate(conn, line["sku"], line["needed"])
+            allocated, short = await _allocate(conn, line["sku"], line["needed"], include_receiving)
             allocations += allocated
             if short:
-                shortages.append({"sku": line["sku"], "requested": line["needed"], "short_by": short})
+                cur = await conn.execute(
+                    "SELECT COALESCE(SUM(i.quantity - i.reserved), 0) AS n FROM inventory i "
+                    "JOIN locations l ON l.id = i.location_id WHERE i.sku = %s AND l.kind = 'staging'",
+                    (line["sku"],),
+                )
+                in_receiving = 0 if include_receiving else int((await cur.fetchone())["n"])
+                shortages.append({"sku": line["sku"], "requested": line["needed"], "short_by": short,
+                                  "in_receiving": in_receiving})
         if shortages:
             raise WarehouseError(f"insufficient stock for order {order_id}: {shortages}")
 

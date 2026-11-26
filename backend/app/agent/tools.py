@@ -63,8 +63,10 @@ async def get_robot_status(ctx: ToolContext):
     )
 
 
-async def plan_fulfillment(ctx: ToolContext, order_id: int, dispatch_location: str | None = None):
-    return await warehouse.plan_fulfillment(order_id, ctx.robot_id, dispatch_location, ctx.conversation_id)
+async def plan_fulfillment(ctx: ToolContext, order_id: int, dispatch_location: str | None = None,
+                           include_receiving: bool = False):
+    return await warehouse.plan_fulfillment(order_id, ctx.robot_id, dispatch_location, ctx.conversation_id,
+                                            include_receiving)
 
 
 async def dispatch_task(ctx: ToolContext, task_id: int):
@@ -181,7 +183,9 @@ TOOLS = [
          "Reserve inventory for a pending order and create a pick task with an optimized route. "
          "Fails with a reason if stock is insufficient. Does not move the robot.",
          _params({"order_id": ORDER_ID, "dispatch_location": {
-             "type": "string", "description": "Dispatch area, e.g. DISPATCH-1. Defaults to the order's assigned area."}},
+             "type": "string", "description": "Dispatch area, e.g. DISPATCH-1. Defaults to the order's assigned area."},
+             "include_receiving": {"type": "boolean", "description":
+                 "Also pick straight from the receiving tote (cross-dock) when shelves are short. Default false."}},
              ["order_id"]),
          plan_fulfillment),
     Tool("get_location", "Get a location's contents.",
