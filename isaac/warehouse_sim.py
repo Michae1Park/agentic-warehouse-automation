@@ -1674,11 +1674,17 @@ class Commands:
         goal = self.w.approach_pose(location_id)
         yield from self.move_arm(self.w.arm_home, 40)
         current = self.w.base_target.copy()
-        if abs(wrap_angle(current[2] - WORK_HEADING)) < 0.1:
-            yield from self.drive_to(self.back_off(current, UNDOCK))
-        if self.w.locations.get(location_id, {}).get("kind") == "storage":
+        storage = self.w.locations.get(location_id, {}).get("kind") == "storage"
+        if storage:
             goal = self.back_off(goal, SCAN_STANDOFF)
-        docked = abs(wrap_angle(goal[2] - WORK_HEADING)) < 1e-3
+        facing_racks = abs(wrap_angle(current[2] - WORK_HEADING)) < 0.1
+        if storage and facing_racks and abs(self.aisle_center(current[0]) - self.aisle_center(goal[0])) < 0.05:
+            yield from self.drive_to(goal)
+            x, y, theta = self.w.base_pose()
+            return {"x": float(x), "y": float(y), "theta": float(theta)}
+        if facing_racks:
+            yield from self.drive_to(self.back_off(current, UNDOCK))
+        docked = not storage and abs(wrap_angle(goal[2] - WORK_HEADING)) < 1e-3
         final = goal
         if docked:
             goal = self.back_off(goal, UNDOCK)
