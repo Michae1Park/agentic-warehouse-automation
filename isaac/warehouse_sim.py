@@ -1377,12 +1377,8 @@ class Warehouse:
         for item in items:
             self.set_dynamic(item, True)
 
-    def layout_bin(self, location_id: str, groups: list[list[Item]]) -> None:
-        location = self.locations[location_id]
-        x, y, z = float(location["x"]), float(location["y"]), float(location["z"])
-        front_x = x - SHELF_DEPTH / 2 + BIN_MARGIN
-        depth = SHELF_DEPTH - 2 * BIN_MARGIN
-        usable = BIN_LENGTH - 0.2
+    def pack_clusters(self, groups: list[list[Item]], depth: float, usable: float,
+                      single_row: bool) -> list:
         clusters = []
         for group in groups:
             pickable = self.pickable(group[0].sku)
@@ -1394,18 +1390,30 @@ class Warehouse:
                 extent = np.max([np.maximum(b.footprint[:2], rotation @ b.footprint[:2]) for b in group], axis=0)
             cell = extent + np.array([CLUSTER_GAP, PICK_GAP if pickable else CLUSTER_GAP])
             max_rows = max(1, int(depth // cell[0]))
-            rows = 1 if pickable else min(max_rows, 1 if len(group) <= 3 else 2)
+            rows = 1 if pickable or single_row else min(max_rows, 1 if len(group) <= 3 else 2)
             columns = math.ceil(len(group) / rows)
             while columns * cell[1] > usable and rows < max_rows:
                 rows += 1
                 columns = math.ceil(len(group) / rows)
             capacity = rows * max(1, int(usable // cell[1]))
-            for item in group[capacity:]:
-                self.stage.RemovePrim(item.path)
-                self.boxes.remove(item)
-            group = group[:capacity]
+            if not single_row:
+                for item in group[capacity:]:
+                    self.stage.RemovePrim(item.path)
+                    self.boxes.remove(item)
+                group = group[:capacity]
             columns = math.ceil(len(group) / rows)
             clusters.append((group, cell, columns))
+        return clusters
+
+    def layout_bin(self, location_id: str, groups: list[list[Item]]) -> None:
+        location = self.locations[location_id]
+        x, y, z = float(location["x"]), float(location["y"]), float(location["z"])
+        front_x = x - SHELF_DEPTH / 2 + BIN_MARGIN
+        depth = SHELF_DEPTH - 2 * BIN_MARGIN
+        usable = BIN_LENGTH - 0.2
+        clusters = self.pack_clusters(groups, depth, usable, single_row=True)
+        if sum(c[2] * c[1][1] for c in clusters) > usable:
+            clusters = self.pack_clusters(groups, depth, usable, single_row=False)
         while len(clusters) > 1 and sum(c[2] * c[1][1] for c in clusters) > usable:
             dropped = next((c for c in reversed(clusters) if c[0][0].sku is None), clusters[-1])
             clusters.remove(dropped)
