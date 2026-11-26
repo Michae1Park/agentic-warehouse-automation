@@ -39,7 +39,8 @@ task and then dispatch_task to resume it; tell the manager what is in the way an
 whenever a SKU was found in a bin where it was not recorded and the same count found that SKU short at another bin, \
 immediately call relocate_stock (from the bin where it was found to the short bin, the found quantity) and then \
 dispatch_task, without asking. Recording it at the wrong bin is not a fix.
-- Be concise and operational. Use order numbers, SKUs and location ids."""
+- Reply in at most 3 short bullet lines, under 12 words each. No paragraphs, no headings, no repeating \
+tool output. Use order numbers, SKUs and location ids. For discrepancies, one bullet per bin."""
 
 client = AsyncOpenAI(base_url=settings.llm_base_url, api_key="unused")
 _locks: dict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
