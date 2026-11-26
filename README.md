@@ -22,17 +22,17 @@
 
 A warehouse manager types *"Prepare order #1045 and move it to dispatch."* The agent reads the order from the warehouse database, reserves stock, plans the route and sends a mobile manipulator to pick it. The same model, used as a vision-language model, checks each shelf bin and audits the outbound tote before the order closes. Every physical step writes back to the database, so the chat, dashboard and live simulation always agree.
 
-<p align="center"><br><b>Demo 1 · Order Fulfillment</b><br><sub>agent plans, robot picks from two aisles, VLM audits the outbound tote</sub><br></p>
+<p align="center"><br><b>Demo 1 · End-of-Shift Dispatch</b><br><sub>24 tool calls: prioritizes 5 orders, cross-docks, re-plans mid-run, puts away surplus</sub><br></p>
+
+https://github.com/user-attachments/assets/a3f75015-5123-4154-bdc9-0be13b5c32a7
+
+<p align="center"><br><b>Demo 2 · Order Fulfillment</b><br><sub>agent plans, robot picks from two aisles, VLM audits the outbound tote</sub><br></p>
 
 https://github.com/user-attachments/assets/579ce229-5820-4dac-ae7e-f9722ef72d01
 
-<p align="center"><br><b>Demo 2 · Cycle Count</b><br><sub>VLM finds misplaced stock, robot moves it back to its home bin</sub><br></p>
+<p align="center"><br><b>Demo 3 · Cycle Count</b><br><sub>VLM finds misplaced stock, robot moves it back to its home bin</sub><br></p>
 
 https://github.com/user-attachments/assets/a814f8e2-9a30-4e69-a709-75e48ea83947
-
-<p align="center"><br><b>Demo 3 · Shortage Recovery</b><br><sub>agent cross-docks from receiving to fill a short order, then puts away the surplus</sub><br></p>
-
-https://github.com/user-attachments/assets/cc10bf65-827f-4978-8fcc-63fc2e3007ab
 
 <br>
 
@@ -40,6 +40,7 @@ https://github.com/user-attachments/assets/cc10bf65-827f-4978-8fcc-63fc2e3007ab
 
 | Workflow | Input | Execution & output |
 |---|---|---|
+| **End-of-shift dispatch** | *"Get all pending DISPATCH-1 orders out before the truck leaves"* | • Plans 5 orders by priority, holds what it can't fill and flags it<br>• Cross-docks a shortage from the receiving tote<br>• Re-plans when a bin turns out empty mid-run, then puts away the surplus |
 | **Order fulfillment** | *"Prepare order #1045"* | • Reserves stock across bins, plans the route, picks into the robot's tote<br>• Unloads into the outbound tote on the conveyor<br>• VLM audits the tote, then the order closes |
 | **Cycle count** | *"Cycle count aisle B"* | • VLM checks each bin against the WMS record<br>• Writes `cycle_count` adjustments, raises discrepancies, moves misplaced stock back to its home bin |
 | **Shortage recovery** | *"Prepare order #1044"* (short on the shelf) | • Finds the gap covered by the receiving tote<br>• Cross-docks: picks the shelf stock and the received units in one trip<br>• Puts away only the surplus |
@@ -48,15 +49,16 @@ https://github.com/user-attachments/assets/cc10bf65-827f-4978-8fcc-63fc2e3007ab
 <details>
 <summary><b>Execution trace (Demo 1 example)</b></summary>
 
-**Request:** *"Prepare order #1045 and move it to dispatch."* (5× tomato soup)
+**Request:** *"Get all pending DISPATCH-1 orders out before the truck leaves."* (24 tool calls over 6 turns)
 
 | Step | What happens |
 |---|---|
-| **1. Plan** | • `get_order` → `plan_fulfillment`<br>• Reserves 4 cans at A-02-1 and 1 at C-01-1 in one transaction |
-| **2. Dispatch** | • `dispatch_task` hands the plan to the executor<br>• Steps are stored in `task_steps`, so a restart resumes the task |
-| **3. Pick** | • VLM confirms the stock from the scan pose and points at each can<br>• The pose module fits the can's 3D pose from depth<br>• Base drives in, arm grasps the can, backs out, drops it in the robot's tote |
-| **4. Unload** | At DISPATCH-1, each can goes into a free spot in the outbound tote |
-| **5. Audit & close** | • VLM checks the tote against the order<br>• Tote rides the conveyor out, `verify` closes the order, agent reports back |
+| **1. Survey** | • `list_orders`, `get_order` ×5, `find_stock`<br>• 5 orders: #1042 and #1045 (P1), #1044 and #1046 (P2), #1040 (P3) |
+| **2. Prioritize** | • P1 first: #1042 and #1045 take the shelf mustard and all the soup<br>• #1044 (3× mustard) is short on the shelf, so it is cross-docked from receiving<br>• #1040 is left short of soup: held and flagged with `report_exception`<br>• #1046 (crackers) is non-pickable: flagged for manual handling, never dispatched |
+| **3. Dispatch** | `plan_fulfillment` → `dispatch_task` per order, in priority order |
+| **4. Mid-run surprise** | • B-01-1 turns out empty: the executor records 0 and pauses #1044<br>• Agent calls `reallocate_pick` to take the missing unit from receiving, and the task resumes |
+| **5. Surplus** | • Receiving holds 1 unreserved mustard after the change<br>• Agent plans `replenish_stock` and dispatches the put-away |
+| **6. Report** | 3 orders shipped, 2 flagged with reasons, receiving empty |
 
 </details>
 
@@ -71,7 +73,7 @@ Simulation only, compared against a scripted baseline.
 | **Shelf-bin perception** | • **100%** presence<br>• **92–96%** exact count<br>• **36 / 36** wrong records detected<br>• 1.5s per bin |
 | **Language grounding** | • **94%** overall<br>• **96%** on the two pickable products<br>• 1.2s per query |
 | **Tote audit** | • **6 / 6** exact<br>• **2 / 2** mis-packed totes caught<br>• 1.4s per audit |
-| **Agent reasoning** | • With workflow recipes: **18 / 20** (batch 5/5, triage 5/5, competing orders 5/5, end-of-shift 3/5)<br>• Without recipes: **9 / 20** (batch 5/5, competing orders 4/5, triage 0/5, end-of-shift 0/5)<br>• Up to 20 tool calls per scenario<br>• Main gap without recipes: follow-up the request did not ask for (putting away surplus, moving misplaced stock home) |
+| **Agent reasoning** | • With workflow recipes: **16 / 20** (batch 5/5, competing orders 5/5, end-of-shift 4/5, triage 2/5)<br>• Without recipes: **9 / 20** (batch 5/5, competing orders 4/5, triage 0/5, end-of-shift 0/5)<br>• End-of-shift averages 25 tool calls (up to 28), including a mid-run re-plan<br>• Failures are judgment, not crashes: skipping unrequested follow-up (surplus put-away, moving misplaced stock home), refilling a bin the count had just corrected, one 42-call lookup loop |
 
 | Test | Setup |
 |---|---|
@@ -233,7 +235,7 @@ python3 eval/vlm_eval.py                             # bin perception, needs the
 
 | Area | What you can do |
 |---|---|
-| **Chat** | • *"Prepare order #1045"*<br>• *"Cycle count aisle B"*<br>• *"Prepare order #1044"* (short on the shelf)<br>• Every turn shows the tool trace |
+| **Chat** | • *"Get all pending DISPATCH-1 orders out before the truck leaves"*<br>• *"Prepare order #1045"*<br>• *"Cycle count aisle B"*<br>• Every turn shows the tool trace |
 | **Isaac view** | • Drag to orbit, right/shift-drag to pan, scroll to zoom<br>• Double-click or **reset view** to return to the overview |
 | **Teleop** | `scripts/teleop.sh` opens a browser controller on :8020 for push demos and VLA intervention |
 
