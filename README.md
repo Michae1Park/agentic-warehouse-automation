@@ -43,7 +43,7 @@ https://github.com/user-attachments/assets/cc10bf65-827f-4978-8fcc-63fc2e3007ab
 | **Order fulfillment** | *"Prepare order #1045"* | • Reserves stock across bins, plans the route, picks into the robot's tote<br>• Unloads into the outbound tote on the conveyor<br>• VLM audits the tote, then the order closes |
 | **Cycle count** | *"Cycle count aisle B"* | • VLM checks each bin against the WMS record<br>• Writes `cycle_count` adjustments, raises discrepancies, moves misplaced stock back to its home bin |
 | **Shortage recovery** | *"Prepare order #1044"* (short on the shelf) | • Finds the gap covered by the receiving tote<br>• Cross-docks: picks the shelf stock and the received units in one trip<br>• Puts away only the surplus |
-| **Exception handling** | Grasp slip, blocked path, missing stock | • Regrasp / replan / reallocate from an alternate bin<br>• Escalates with a report when recovery fails |
+| **Exception handling** | Grasp slip, blocked path, missing stock | • Regrasp / replan the path / reallocate from an alternate bin<br>• Escalates with a report when recovery fails |
 
 <details>
 <summary><b>Execution trace (Demo 1 example)</b></summary>
@@ -110,13 +110,13 @@ https://github.com/user-attachments/assets/cc10bf65-827f-4978-8fcc-63fc2e3007ab
 |---|---|---|
 | **Orders** | `list_orders` | List orders, optionally by status |
 | | `get_order` | Order with its lines (SKU, quantity, picked) |
-| | `plan_fulfillment` | Reserve stock and create a pick task with an optimized route; fails with a reason when short |
+| | `plan_fulfillment` | Reserve stock and create a pick task with an optimized route; can also pick from the receiving tote (cross-dock); fails with a reason when short |
 | **Inventory** | `find_stock` | Shelf locations and available quantity for a SKU or product name |
 | | `get_location` | Contents of a location |
 | | `find_empty_bins` | Empty storage bins, optionally in one aisle |
 | | `inspect_inventory` | Plan a VLM cycle count over bins or an aisle; corrects the records |
 | | `relocate_stock` | Plan a move of stock between storage bins |
-| | `replenish_stock` | Plan a move of received stock from staging to a bin |
+| | `replenish_stock` | Plan a put-away of received stock from the receiving tote to a bin |
 | **Robot & tasks** | `get_robot_status` | Robot status, position, battery and tote contents |
 | | `dispatch_task` | Send a planned task to the robot (asynchronous) |
 | | `get_task_status` | Task status and per-step progress |
@@ -147,7 +147,7 @@ Design: [design notes and full results](docs/DESIGN.md), [action items](docs/ACT
 
 ## Quickstart
 
-**Prerequisites:** Linux, an NVIDIA GPU (tested on an L40S 48GB), Docker with the NVIDIA runtime, and the Qwen3.8-27B-FP8 weights in the Hugging Face cache.
+**Prerequisites:** Linux, an NVIDIA GPU, Docker with the NVIDIA runtime, and the Qwen3.8-27B-FP8 weights in the Hugging Face cache.
 
 ### 1. Configure
 
@@ -162,13 +162,12 @@ cp .env.example .env                        # ROBOT_BACKEND=mock for fast mode
 scripts/demo.sh                             # high graphics, WebRTC, CPU-pinned, GPU budget check
 ```
 
-GPU memory: Isaac ~7GB, VLA server ~1.3GB, Qwen3.8-27B at `LLM_GPU_UTIL=0.75` ~34.5GB. `demo.sh` refuses to start if other GPU jobs would push it over.
+`demo.sh` checks free GPU memory for Isaac Sim, the LLM (`LLM_GPU_UTIL`, default 0.75) and, when a learned policy is selected, the VLA server, and refuses to start if other GPU jobs leave too little. For a smaller GPU, use the lighter model commented in `.env.example`.
 
 ### 3. Or run without the simulator
 
 ```bash
-docker compose up -d                        # postgres, vLLM, backend, dashboard
-open http://localhost:5173
+docker compose up -d                        # postgres, vLLM, backend, dashboard on http://localhost:5173
 ```
 
 ### 4. Evaluate
