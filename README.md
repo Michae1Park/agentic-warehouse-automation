@@ -26,11 +26,9 @@ A warehouse manager types *"Prepare order #1045 and move it to dispatch."* A **Q
 
 https://github.com/user-attachments/assets/579ce229-5820-4dac-ae7e-f9722ef72d01
 
-<p align="center"><br><b>Demo 2 · Cycle Count</b><br><sub>VLM finds short and misplaced stock</sub><br></p>
+<p align="center"><br><b>Demo 2 · Cycle Count</b><br><sub>VLM finds misplaced stock, robot moves it back to its home bin</sub><br></p>
 
-<p align="center">
-  <img src="docs/img/demo-2-cycle-count.jpg" alt="Cycle count of aisle B: the VLM inspects each bin, finds four short bins and two soup cans misplaced in B-02-1, the agent corrects the records and moves the cans back to B-01-1" width="820">
-</p>
+https://github.com/user-attachments/assets/a814f8e2-9a30-4e69-a709-75e48ea83947
 
 <p align="center"><br><b>Demo 3 · Shortage Recovery</b><br><sub>agent replenishes from receiving, then fulfills</sub><br></p>
 
@@ -45,7 +43,7 @@ https://github.com/user-attachments/assets/579ce229-5820-4dac-ae7e-f9722ef72d01
 | Workflow | Input | Execution & output |
 |---|---|---|
 | **Order fulfillment** | *"Prepare order #1045"* | • Reserves stock across bins, plans the route, picks into the robot's tote<br>• Unloads into the outbound tote on the conveyor<br>• VLM audits the tote, then the order closes |
-| **Cycle count** | *"Cycle count aisle B"* | • VLM checks each bin against the WMS record<br>• Writes `cycle_count` adjustments, raises discrepancies, relocates misplaced stock |
+| **Cycle count** | *"Cycle count aisle B"* | • VLM checks each bin against the WMS record<br>• Writes `cycle_count` adjustments, raises discrepancies, moves misplaced stock back to its home bin |
 | **Shortage recovery** | *"Prepare order #1044"* (short on the shelf) | • Finds the gap covered by the receiving tote<br>• Replenishes the home bin, waits for the task, then fulfills |
 | **Exception handling** | Grasp slip, blocked path, missing stock | • Regrasp / replan / reallocate from an alternate bin<br>• Escalates with a report when recovery fails |
 
