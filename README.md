@@ -30,11 +30,9 @@ https://github.com/user-attachments/assets/579ce229-5820-4dac-ae7e-f9722ef72d01
 
 https://github.com/user-attachments/assets/a814f8e2-9a30-4e69-a709-75e48ea83947
 
-<p align="center"><br><b>Demo 3 · Shortage Recovery</b><br><sub>agent replenishes from receiving, then fulfills</sub><br></p>
+<p align="center"><br><b>Demo 3 · Shortage Recovery</b><br><sub>agent cross-docks from receiving to fill a short order, then puts away the surplus</sub><br></p>
 
-<p align="center">
-  <img src="docs/img/demo-3-shortage.jpg" alt="Order 1044 needs three mustard bottles but the shelf holds one: the agent replenishes two from the receiving tote into A-01-1, waits for the task, then fulfills the order and the VLM verifies the tote at dispatch" width="820">
-</p>
+https://github.com/user-attachments/assets/cc10bf65-827f-4978-8fcc-63fc2e3007ab
 
 <br>
 
@@ -44,7 +42,7 @@ https://github.com/user-attachments/assets/a814f8e2-9a30-4e69-a709-75e48ea83947
 |---|---|---|
 | **Order fulfillment** | *"Prepare order #1045"* | • Reserves stock across bins, plans the route, picks into the robot's tote<br>• Unloads into the outbound tote on the conveyor<br>• VLM audits the tote, then the order closes |
 | **Cycle count** | *"Cycle count aisle B"* | • VLM checks each bin against the WMS record<br>• Writes `cycle_count` adjustments, raises discrepancies, moves misplaced stock back to its home bin |
-| **Shortage recovery** | *"Prepare order #1044"* (short on the shelf) | • Finds the gap covered by the receiving tote<br>• Replenishes the home bin, waits for the task, then fulfills |
+| **Shortage recovery** | *"Prepare order #1044"* (short on the shelf) | • Finds the gap covered by the receiving tote<br>• Cross-docks: picks the shelf stock and the received units in one trip<br>• Puts away only the surplus |
 | **Exception handling** | Grasp slip, blocked path, missing stock | • Regrasp / replan / reallocate from an alternate bin<br>• Escalates with a report when recovery fails |
 
 <details>
