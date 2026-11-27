@@ -62,7 +62,7 @@ async def reset(request: ResetRequest, http_request: Request):
                         "INSERT INTO order_lines (order_id, sku, quantity) VALUES (%s, %s, %s)", (order_id, sku, qty)
                     )
 
-        await scenarios.setup(conn, request.scenario)
+        await scenarios.setup(conn, request.scenario, request.seed)
 
     settings.recovery_enabled = request.recovery_enabled
     settings.route_optimization = request.route_optimization

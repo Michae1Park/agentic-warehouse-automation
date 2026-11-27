@@ -10,7 +10,11 @@ SCENARIOS = {
     "triage": "Something is off in aisle C. Sort it out.",
     "competing": "Prepare orders #1040 and #1042 for dispatch.",
     "end_of_shift": "Get all pending DISPATCH-1 orders out before the truck leaves.",
+    "stress": "Get all pending DISPATCH-1 orders out before the truck leaves.",
+    "stress_xl": "Get all pending DISPATCH-1 orders out before the truck leaves.",
 }
+STRESS = ("stress", "stress_xl")
+RECEIVING = "STAGING-1"
 
 
 def request(api: str, path: str, body: dict | None = None, timeout: float = 900):
@@ -41,7 +45,10 @@ def snapshot(api: str) -> dict:
     tasks = request(api, "/api/tasks?limit=200")
     stock = {(l["id"], s["sku"]): s["quantity"] for l in request(api, "/api/locations") for s in l["stock"]}
     exceptions = request(api, "/api/exceptions")
-    return {"orders": orders, "tasks": tasks, "stock": stock, "exceptions": exceptions}
+    products = request(api, "/api/products")
+    lines = {i: request(api, f"/api/orders/{i}").get("lines", []) for i in orders}
+    return {"orders": orders, "tasks": tasks, "stock": stock, "exceptions": exceptions, "lines": lines,
+            "products": products}
 
 
 def task_for(state: dict, order_id: int) -> list[dict]:
@@ -50,6 +57,45 @@ def task_for(state: dict, order_id: int) -> list[dict]:
 
 def flagged(state: dict, order_id: int) -> bool:
     return any(e.get("order_id") == order_id for e in state["exceptions"])
+
+
+def physical_supply(initial: dict, missing: list[dict], pickable: set[str]) -> dict[str, int]:
+    lost = {(m["location_id"], m["sku"]) for m in missing}
+    supply: dict[str, int] = {}
+    for (location_id, sku), quantity in initial["stock"].items():
+        if sku in pickable and (location_id, sku) not in lost and not location_id.startswith("DISPATCH"):
+            supply[sku] = supply.get(sku, 0) + quantity
+    return supply
+
+
+def score_stress(initial: dict, missing: list[dict], state: dict) -> dict[str, bool]:
+    pickable = {p["sku"] for p in initial["products"] if p["robot_pickable"]}
+    supply = physical_supply(initial, missing, pickable)
+    orders = state["orders"]
+    lines = {i: {l["sku"]: l["quantity"] for l in initial["lines"][i]} for i in orders}
+    shift = [i for i, o in orders.items() if o["dispatch_location"] == "DISPATCH-1"]
+    robot = [i for i in shift if set(lines[i]) <= pickable]
+    manual = [i for i in shift if i not in robot]
+    done = {i for i in robot if orders[i]["status"] == "completed"}
+
+    def fits(order_id: int) -> bool:
+        used: dict[str, int] = {}
+        for other in done:
+            if orders[other]["priority"] <= orders[order_id]["priority"]:
+                for sku, quantity in lines[other].items():
+                    used[sku] = used.get(sku, 0) + quantity
+        return all(supply.get(sku, 0) - used.get(sku, 0) >= quantity for sku, quantity in lines[order_id].items())
+
+    unfilled = [i for i in robot if i not in done]
+    return {
+        "priority respected and no fillable order left behind": not any(fits(i) for i in unfilled),
+        "every unfilled order flagged": all(flagged(state, i) for i in unfilled),
+        "manual orders not dispatched and flagged": all(not task_for(state, i) and flagged(state, i) for i in manual),
+        "other dock untouched": all(orders[i]["status"] == "pending" and not task_for(state, i)
+                                    for i in orders if i not in shift),
+        "no task left paused": not any(t["status"] in ("planned", "queued", "running") for t in state["tasks"]),
+        "receiving cleared": all(q == 0 for (loc, sku), q in state["stock"].items() if loc == RECEIVING and sku in pickable),
+    }
 
 
 def score(scenario: str, state: dict) -> dict[str, bool]:
@@ -87,7 +133,7 @@ def score(scenario: str, state: dict) -> dict[str, bool]:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Score the agent's planning on multi-step scenarios (mock robot)")
     parser.add_argument("--api", default="http://localhost:8010")
-    parser.add_argument("--scenarios", nargs="+", default=list(SCENARIOS))
+    parser.add_argument("--scenarios", nargs="+", default=[s for s in SCENARIOS if s not in STRESS])
     parser.add_argument("--trials", type=int, default=5)
     parser.add_argument("--variants", nargs="+", default=["recipes", "no_recipes"])
     parser.add_argument("--time-scale", type=float, default=20)
@@ -102,9 +148,10 @@ def main() -> None:
     for scenario in args.scenarios:
         for variant in args.variants:
             for trial in range(args.trials):
-                request(args.api, "/api/sim/reset", {"seed": trial, "scenario": scenario, "time_scale": args.time_scale,
+                reset = request(args.api, "/api/sim/reset", {"seed": trial, "scenario": scenario, "time_scale": args.time_scale,
                                                      "agent_recipes": variant == "recipes",
                                                      "agent_temperature": args.temperature})
+                initial = snapshot(args.api) if scenario in STRESS else None
                 conversation = f"eval-{scenario}-{variant}-{trial}-{uuid.uuid4().hex[:6]}"
                 started = time.time()
                 try:
@@ -114,7 +161,8 @@ def main() -> None:
                     settled = False
                     print(f"  error: {error}", flush=True)
                 state = snapshot(args.api)
-                checks = score(scenario, state)
+                checks = (score_stress(initial, reset["missing_stock"], state) if scenario in STRESS
+                          else score(scenario, state))
                 runs = request(args.api, "/api/agent/runs?limit=200")
                 row = {
                     "scenario": scenario, "variant": variant, "trial": trial, "temperature": args.temperature, "settled": settled,
