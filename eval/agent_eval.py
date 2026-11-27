@@ -29,7 +29,7 @@ def settle(api: str, conversation: str, limit_s: float) -> bool:
     start, quiet = time.time(), 0
     while time.time() - start < limit_s:
         tasks = request(api, "/api/tasks?limit=200")
-        busy = any(t["status"] in ("queued", "running") for t in tasks)
+        busy = any(t["status"] == "running" for t in tasks)
         messages = request(api, f"/api/agent/conversations/{conversation}/messages")
         last = messages[-1] if messages else {}
         idle = last.get("role") == "assistant" and not last.get("tool_calls")
@@ -99,6 +99,26 @@ def score_stress(initial: dict, missing: list[dict], state: dict) -> dict[str, b
     }
 
 
+def write_trace(path: Path, row: dict, messages: list[dict]) -> None:
+    lines = [f"# {row['scenario']} · {row['variant']} · trial {row['trial']}", "",
+             f"Success: {row['success']} · tool calls: {row['tool_calls']} · turns: {row['turns']} · wall: {row['wall_s']}s", ""]
+    lines += [f"- {'PASS' if ok else 'FAIL'} {name}" for name, ok in row["checks"].items()]
+    if row.get("missing"):
+        lines += ["", "Hidden empty bins: " + ", ".join(f"{m['location_id']} {m['sku']}" for m in row["missing"])]
+    lines += ["", "## Conversation", ""]
+    for message in messages:
+        if message.get("role") == "tool":
+            lines.append(f"    <- {message.get('name')}: {str(message.get('content'))[:600]}")
+            continue
+        if message.get("content"):
+            lines.append(f"**{message.get('role')}:** {message['content']}")
+        for call in message.get("tool_calls") or []:
+            lines.append(f"    -> {call['function']['name']}({call['function']['arguments']})")
+        lines.append("")
+    path.with_suffix(".md").write_text("\n".join(lines))
+    path.with_suffix(".json").write_text(json.dumps({"row": row, "messages": messages}, indent=1, default=str))
+
+
 def score(scenario: str, state: dict) -> dict[str, bool]:
     status = {i: o["status"] for i, o in state["orders"].items()}
     stock = state["stock"]
@@ -140,18 +160,27 @@ def main() -> None:
     parser.add_argument("--time-scale", type=float, default=20)
     parser.add_argument("--temperature", type=float, default=0.7)
     parser.add_argument("--limit-s", type=float, default=900)
+    parser.add_argument("--resume", action="store_true")
     parser.add_argument("--out", default=str(Path(__file__).parent / "results" / "agent"))
     args = parser.parse_args()
 
     out = Path(args.out)
-    out.mkdir(parents=True, exist_ok=True)
+    (out / "traces").mkdir(parents=True, exist_ok=True)
+    results = out / "agent_results.json"
     rows = []
+    if args.resume and results.exists():
+        saved = json.loads(results.read_text())
+        rows = [r for r in (saved["rows"] if isinstance(saved, dict) else saved) if r["settled"]]
+    finished = {(r["scenario"], r["variant"], r["trial"]) for r in rows}
     for scenario in args.scenarios:
         for variant in args.variants:
             for trial in range(args.trials):
+                if (scenario, variant, trial) in finished:
+                    continue
                 reset = request(args.api, "/api/sim/reset", {"seed": trial, "scenario": scenario, "time_scale": args.time_scale,
                                                      "agent_recipes": variant == "recipes",
-                                                     "agent_temperature": args.temperature})
+                                                     "agent_temperature": args.temperature,
+                                                             "cancel_queued": True})
                 initial = snapshot(args.api) if scenario in STRESS else None
                 conversation = f"eval-{scenario}-{variant}-{trial}-{uuid.uuid4().hex[:6]}"
                 started = time.time()
@@ -165,14 +194,13 @@ def main() -> None:
                 checks = (score_stress(initial, reset["missing_stock"], state) if scenario in STRESS
                           else score(scenario, state))
                 runs = request(args.api, "/api/agent/runs?limit=200")
+                messages = request(args.api, f"/api/agent/conversations/{conversation}/messages")
                 row = {
                     "scenario": scenario, "variant": variant, "trial": trial, "temperature": args.temperature, "settled": settled,
                     "success": settled and all(checks.values()), "checks": checks,
                     "tool_calls": sum(r.get("tool_calls") or 0 for r in runs),
                     "turns": len(runs), "wall_s": round(time.time() - started, 1),
-                    "tools": [c["function"]["name"] for m in request(
-                        args.api, f"/api/agent/conversations/{conversation}/messages")
-                              for c in (m.get("tool_calls") or [])],
+                    "tools": [c["function"]["name"] for m in messages for c in (m.get("tool_calls") or [])],
                 }
                 if initial:
                     row["state"] = {name: {"orders": {i: {k: o[k] for k in ("status", "priority", "dispatch_location")}
@@ -182,6 +210,7 @@ def main() -> None:
                                            "stock": [[l, k, q] for (l, k), q in snap["stock"].items()]}
                                     for name, snap in (("initial", initial), ("final", state))}
                     row["missing"] = reset["missing_stock"]
+                write_trace(out / "traces" / f"{scenario}-{variant}-{trial}", row, messages)
                 rows.append(row)
                 print(f"{scenario:13s} {variant:10s} #{trial} success={row['success']} tools={row['tool_calls']} "
                       f"turns={row['turns']} {checks}", flush=True)
