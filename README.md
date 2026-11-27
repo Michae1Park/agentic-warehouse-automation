@@ -59,25 +59,30 @@ https://github.com/user-attachments/assets/aee68caf-b8f0-472a-8ba1-8b1d17562d38
 </details>
 
 <details>
-<summary><b>Results</b> (fulfillment, perception, grounding, tote audit, agent reasoning)</summary>
+<summary><b>Results</b> (fulfillment, perception, grounding, tote audit, long-horizon planning)</summary>
 
 Simulation only, compared against a scripted baseline.
 
-| Test | Result |
-|---|---|
-| **Fulfillment under faults** | • **100%** of orders filled (scripted: 50%, scripted + recovery: 88%)<br>• Inventory accuracy **87%** (scripted: 81%)<br>• Cost: the agent pauses to decide on missing stock, so average execution rises to 84s from 28s (sim time)<br>• All modes **100%** without faults |
-| **Shelf-bin perception** | • **100%** presence<br>• **92–96%** exact count<br>• **36 / 36** wrong records detected<br>• 1.5s per bin |
-| **Language grounding** | • **94%** overall<br>• **96%** on the two pickable products<br>• 1.2s per query |
-| **Tote audit** | • **6 / 6** exact<br>• **2 / 2** mis-packed totes caught<br>• 1.4s per audit |
-| **Agent reasoning** | • With workflow recipes: **16 / 20** (batch 5/5, competing orders 5/5, end-of-shift 4/5, triage 2/5)<br>• Without recipes: **9 / 20** (batch 5/5, competing orders 4/5, triage 0/5, end-of-shift 0/5)<br>• End-of-shift averages 25 tool calls (up to 28), including a mid-run re-plan<br>• Failures are judgment, not crashes: skipping unrequested follow-up (surplus put-away, moving misplaced stock home), refilling a bin the count had just corrected, one 42-call lookup loop |
+| Test | Result | Baseline | Speed | Setup |
+|---|---|---|---|---|
+| **Fulfillment under faults** | • **100%** orders filled<br>• **87%** inventory accuracy | • Scripted: 50%, 81%<br>• Scripted + recovery: 88% | • 84s / order<br>• Scripted: 28s | • 24 orders, mock robot<br>• Injected faults |
+| **Shelf-bin perception** | • **100%** presence<br>• **92–96%** exact count<br>• **36 / 36** bad records caught | — | 1.5s / bin | 72 bins |
+| **Language grounding** | **94%** correct item | — | 1.2s / query | 306 queries |
+| **Tote audit** | • **6 / 6** exact<br>• **2 / 2** mis-packs caught | — | 1.4s / tote | 8 totes |
+| **Long-horizon planning & execution** | • **16 / 20** multi-step scenarios solved end to end<br>• End-of-shift: **4 / 5** at ~25 tool calls (up to 28), with a mid-run re-plan | • Without recipes: 9 / 20<br>• End-of-shift: 0 / 5 | 25 tool calls / scenario | • 4 scenarios × 5 trials<br>• Temperature 0.7 |
 
-| Test | Setup |
+<details>
+<summary>Details</summary>
+
+| Test | Notes |
 |---|---|
-| Fulfillment | • `eval/run_eval.py`<br>• 3 seeds × 8 orders<br>• Mock robot<br>• Faults: 15% grasp failure, 10% blocked path, 20% missing stock |
-| Perception | • `eval/vlm_eval.py`<br>• 72 bins over 3 seeds<br>• 36 with a wrong record |
-| Grounding | • `eval/grounding_eval.py`<br>• 306 queries<br>• By name, description or attribute (*"the red can"*) |
-| Tote audit | 6 packed orders + 2 mis-packed totes at the conveyor |
-| Agent reasoning | • `eval/agent_eval.py`<br>• 4 scenarios × with / without workflow recipes × 5 trials at temperature 0.7<br>• Mock robot, so only the agent's decisions are scored<br>• Scenarios: batch of 6 orders, open-ended triage, competing orders, end-of-shift with a mid-run missing-stock surprise |
+| **Fulfillment** | • `eval/run_eval.py`: 3 seeds × 8 orders<br>• Faults: 15% grasp failure, 10% blocked path, 20% missing stock<br>• The agent is slower because it pauses to decide on missing stock<br>• All modes reach 100% without faults |
+| **Perception** | • `eval/vlm_eval.py`: 3 seeds, 36 of 72 bins with a wrong record |
+| **Grounding** | • `eval/grounding_eval.py`: by name, description or attribute (*"the red can"*)<br>• 96% on the two pickable products |
+| **Tote audit** | 6 packed orders + 2 mis-packed totes at the conveyor |
+| **Long-horizon** | • `eval/agent_eval.py`, mock robot: only the agent's plan and its execution are scored, from the final database state<br>• Scenarios: 6-order batch, open-ended aisle triage, competing orders, end-of-shift (5 orders, cross-dock, mid-run missing stock, surplus put-away)<br>• Per scenario, with / without recipes: batch 5/5 · 5/5, competing 5/5 · 4/5, end-of-shift 4/5 · 0/5, triage 2/5 · 0/5<br>• Failures are judgment, not crashes: skipped follow-up, refilling a just-corrected bin, one 42-call lookup loop |
+
+</details>
 
 </details>
 
