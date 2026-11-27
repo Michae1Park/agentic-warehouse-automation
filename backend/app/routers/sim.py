@@ -27,6 +27,8 @@ class ResetRequest(BaseModel):
     time_scale: float = 1.0
     scenario: str = "default"
     agent_recipes: bool = True
+    agent_temperature: float = 0.2
+    cancel_queued: bool = False
 
 
 def _generate_orders(rng: random.Random, count: int, skus: list[str]) -> list[tuple[int, str, int, str, list]]:
@@ -39,6 +41,8 @@ def _generate_orders(rng: random.Random, count: int, skus: list[str]) -> list[tu
 
 @router.post("/reset")
 async def reset(request: ResetRequest, http_request: Request):
+    if request.cancel_queued:
+        await fetch_one("UPDATE tasks SET status = 'cancelled' WHERE status = 'queued' RETURNING id")
     busy = await fetch_one("SELECT id FROM tasks WHERE status IN ('queued', 'running') LIMIT 1")
     if busy:
         raise HTTPException(409, f"task {busy['id']} is still active")
@@ -61,11 +65,12 @@ async def reset(request: ResetRequest, http_request: Request):
                         "INSERT INTO order_lines (order_id, sku, quantity) VALUES (%s, %s, %s)", (order_id, sku, qty)
                     )
 
-        await scenarios.setup(conn, request.scenario)
+        await scenarios.setup(conn, request.scenario, request.seed)
 
     settings.recovery_enabled = request.recovery_enabled
     settings.route_optimization = request.route_optimization
     settings.agent_recipes = request.agent_recipes
+    settings.agent_temperature = request.agent_temperature
     settings.sim_time_scale = request.time_scale
     missing = await world.load(request.seed, request.faults)
     missing += scenarios.physical_faults(world, request.scenario)

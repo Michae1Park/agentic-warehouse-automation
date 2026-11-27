@@ -342,7 +342,7 @@ async def _cycle_count_to_zero(conn: AsyncConnection, inventory_id: int, task_id
     )
 
 
-async def reroute_missing_stock(task_id: int, failed_step_id: int) -> list[str] | None:
+async def record_missing_stock(task_id: int, failed_step_id: int) -> dict:
     async with pool.connection() as conn, conn.transaction():
         cur = await conn.execute("SELECT * FROM task_steps WHERE id = %s", (failed_step_id,))
         failed = await cur.fetchone()
@@ -357,11 +357,23 @@ async def reroute_missing_stock(task_id: int, failed_step_id: int) -> list[str] 
         )
         pick = await cur.fetchone()
         await _cycle_count_to_zero(conn, pick["args"]["inventory_id"], task_id)
-        await conn.execute("UPDATE task_steps SET status = 'skipped' WHERE id = %s", (pick["id"],))
+        await conn.execute("UPDATE task_steps SET status = 'skipped' WHERE id = ANY(%s)", ([pick["id"], failed["id"]],))
+        await conn.execute("UPDATE task_steps SET args = args || '{\"missing\": true}' WHERE id = %s", (pick["id"],))
+    return pick
 
-    remaining = pick["args"]["quantity"] - pick["args"].get("picked", 0)
+
+async def reallocate_missing_stock(task_id: int, include_receiving: bool = False) -> list[str] | None:
     async with pool.connection() as conn, conn.transaction():
-        allocations, short = await _allocate(conn, pick["args"]["sku"], remaining)
+        cur = await conn.execute(
+            "SELECT * FROM task_steps WHERE task_id = %s AND action = 'pick' AND status = 'skipped' "
+            "AND args->>'missing' = 'true' AND NOT args ? 'reallocated' ORDER BY seq LIMIT 1 FOR UPDATE",
+            (task_id,),
+        )
+        pick = await cur.fetchone()
+        if not pick:
+            raise WarehouseError(f"task {task_id} has no pick waiting for reallocation")
+        remaining = pick["args"]["quantity"] - pick["args"].get("picked", 0)
+        allocations, short = await _allocate(conn, pick["args"]["sku"], remaining, include_receiving)
         if short:
             return None
         for alloc in allocations:
@@ -387,7 +399,40 @@ async def reroute_missing_stock(task_id: int, failed_step_id: int) -> list[str] 
                 "INSERT INTO task_steps (task_id, seq, action, args) VALUES (%s, %s, %s, %s)",
                 (task_id, pick["seq"] + offset, action, Jsonb(args)),
             )
+        await conn.execute("UPDATE task_steps SET args = args || '{\"reallocated\": true}' WHERE id = %s", (pick["id"],))
+        await conn.execute("UPDATE tasks SET error = NULL WHERE id = %s", (task_id,))
     return [a["location_id"] for a in allocations]
+
+
+async def reallocate_pick(task_id: int, include_receiving: bool = False) -> dict:
+    task = await fetch_one("SELECT status, error FROM tasks WHERE id = %s", task_id)
+    if not task or task["status"] != "planned" or not (task["error"] or "").startswith("item_not_found"):
+        raise WarehouseError(f"task {task_id} is not paused on missing stock")
+    sources = await reallocate_missing_stock(task_id, include_receiving)
+    if sources is None:
+        holders = await fetch_all(
+            """
+            SELECT t.id AS task_id, t.kind, s.args->>'location_id' AS location_id, (s.args->>'quantity')::int AS quantity
+            FROM task_steps s JOIN tasks t ON t.id = s.task_id
+            WHERE s.action = 'pick' AND s.status = 'pending' AND t.status IN ('planned', 'queued') AND t.id <> %s
+              AND s.args->>'sku' = (SELECT args->>'sku' FROM task_steps WHERE task_id = %s AND args->>'missing' = 'true'
+                                    ORDER BY seq LIMIT 1)
+            """,
+            task_id, task_id,
+        )
+        held = "; ".join(f"{h['quantity']} at {h['location_id']} reserved by {h['kind']} task {h['task_id']}"
+                         for h in holders)
+        raise WarehouseError(f"no unreserved stock covers the missing units for task {task_id}"
+                             + ("" if include_receiving else "; receiving was not included")
+                             + (f"; held by queued work: {held}" if held else ""))
+    left = await fetch_one(
+        "SELECT COALESCE(SUM(i.quantity - i.reserved), 0) AS n FROM inventory i JOIN locations l ON l.id = i.location_id "
+        "WHERE l.kind = 'staging' AND i.sku = (SELECT args->>'sku' FROM task_steps WHERE task_id = %s "
+        "AND args->>'missing' = 'true' ORDER BY seq LIMIT 1)",
+        task_id,
+    )
+    return {"task_id": task_id, "rerouted_to": sources, "unreserved_in_receiving": int(left["n"]),
+            "next": "dispatch_task to resume"}
 
 
 async def _create_task(

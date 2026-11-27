@@ -1341,10 +1341,13 @@ class Warehouse:
             layer = order // TOTE_LAYER
             box = items[item]
             box.location_id = location_id
-            box.toppled = bool(self.rng.random() < 0.5) and box.size[0] <= MAX_GRASP_WIDTH
+            upright = args.no_topple and box.sku is not None and self.pickable(box.sku)
+            box.toppled = not upright and bool(self.rng.random() < 0.5) and box.size[0] <= MAX_GRASP_WIDTH
             offset = self.rng.uniform(-inner, inner)
+            if upright:
+                offset[0] = -abs(offset[0])
             box.move(base + np.array([offset[0], offset[1], 0.08 + 0.06 * layer]), self.rng.uniform(-math.pi, math.pi))
-            tilt = euler_angles_to_quat(np.array([*self.rng.uniform(-0.6, 0.6, 2), 0.0]))
+            tilt = euler_angles_to_quat(np.array([*(np.zeros(2) if upright else self.rng.uniform(-0.6, 0.6, 2)), 0.0]))
             position, orientation = box.prim.get_world_pose()
             rotation = quat_to_rot_matrix(tilt) @ quat_to_rot_matrix(orientation)
             box.prim.set_world_pose(position, rot_matrix_to_quat(rotation))

@@ -3,6 +3,7 @@ import json
 import logging
 import time
 from collections import defaultdict
+from pathlib import Path
 
 from openai import AsyncOpenAI
 from psycopg.types.json import Jsonb
@@ -14,45 +15,14 @@ from .tools import TOOLS, TOOLS_BY_NAME, ToolContext
 
 log = logging.getLogger(__name__)
 
-GENERAL_RULES = """You are the operations agent for an automated warehouse. You help the warehouse manager \
-by querying the warehouse management system and directing a mobile picking robot.
-
-How to work:
-- Always ground answers in tool results. Never invent orders, SKUs, quantities or locations.
-- Order priority 1 is the most urgent. Only robot-pickable products can be handled by the robot.
-- Every planning tool creates a task that must then be sent with dispatch_task. Tasks queue and run in order. \
-Inventory is reserved at planning and decremented automatically as the robot picks.
-- Never poll get_task_status in a loop. If a later step depends on a task's outcome, call wait_for_task.
-- Act on the manager's goal end to end without asking when the records are clear; use report_exception for \
-anything that needs a human.
-- Dispatching is asynchronous. After dispatch, tell the manager the task id, the pick route, and that you will \
-report back when it finishes.
-- Messages starting with [SYSTEM EVENT] are notifications from the robot executor. Summarize the outcome for \
-the manager; on failure, inspect the task and exceptions and recommend a next step.
-- Reply in at most 3 short bullet lines, under 12 words each. No paragraphs, no headings, no repeating \
-tool output. Use order numbers, SKUs and location ids. For discrepancies, one bullet per bin."""
-
-RECIPES = """Workflows:
-- To fulfill an order: get_order, then plan_fulfillment, then dispatch_task.
-- Other workflows: inspect_inventory (cycle count), relocate_stock, replenish_stock (from receiving).
-- For a stock shortage, check whether the SKU is waiting in receiving (get_location STAGING-1). If receiving \
-covers the gap, recover without asking by cross-docking: plan_fulfillment again with include_receiving=true and \
-dispatch_task it, so the robot picks the shelf stock and the received units in one trip. In the same turn, right \
-after that dispatch, put away the surplus: receiving quantity minus the units the order takes from receiving, via \
-replenish_stock into a bin that already holds the SKU, then dispatch_task it so it queues behind the order. Never \
-restock units that the order needs and then pick them back out.
-- If planning fails for a reason receiving cannot cover, do not dispatch. Explain the problem, report_exception, \
-and suggest options such as partial fulfillment or restocking.
-- If a task is paused because the target is blocked by another item at the shelf, call clear_blocker on that \
-task and then dispatch_task to resume it; tell the manager what is in the way and that the robot will push it aside.
-- After a cycle count, report every discrepancy from the findings. Misplaced stock must go back to its home bin: \
-whenever a SKU was found in a bin where it was not recorded and the same count found that SKU short at another bin, \
-immediately call relocate_stock (from the bin where it was found to the short bin, the found quantity) and then \
-dispatch_task, without asking. Recording it at the wrong bin is not a fix."""
+PROMPTS = Path(__file__).parent / "prompts"
+GENERAL_RULES = (PROMPTS / "general_rules.md").read_text().strip()
+RECIPES = (PROMPTS / "recipes.md").read_text().strip()
 
 
 def system_prompt() -> str:
     return f"{GENERAL_RULES}\n\n{RECIPES}" if settings.agent_recipes else GENERAL_RULES
+
 
 client = AsyncOpenAI(base_url=settings.llm_base_url, api_key="unused")
 _locks: dict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
@@ -111,7 +81,7 @@ async def _run(conversation_id: str, user_message: str, robot_id: str) -> dict:
             model=settings.llm_model,
             messages=messages,
             tools=[tool.schema() for tool in TOOLS],
-            temperature=0.2,
+            temperature=settings.agent_temperature,
             extra_body={"chat_template_kwargs": {"enable_thinking": settings.llm_thinking}},
         )
         stats["llm_ms"] += int((time.perf_counter() - started) * 1000)

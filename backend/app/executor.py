@@ -16,6 +16,10 @@ POLL_S = 0.5
 TaskCallback = Callable[[dict], Awaitable[None]]
 
 
+class TaskPaused(Exception):
+    pass
+
+
 class StepFailed(Exception):
     def __init__(self, code: str, message: str):
         super().__init__(message)
@@ -57,6 +61,11 @@ class TaskExecutor:
             WHERE id = (
                 SELECT id FROM tasks
                 WHERE robot_id = %s AND status IN ('running', 'queued')
+                  AND NOT EXISTS (
+                      SELECT 1 FROM tasks paused
+                      WHERE paused.robot_id = tasks.robot_id AND paused.status = 'planned'
+                        AND paused.error LIKE 'item_not_found%%' AND paused.id < tasks.id
+                  )
                 ORDER BY (status = 'running') DESC, id
                 LIMIT 1 FOR UPDATE SKIP LOCKED
             )
@@ -90,6 +99,9 @@ class TaskExecutor:
                 except StepFailed as failure:
                     if not await self._recover(task, step, failure):
                         raise
+        except TaskPaused as pause:
+            await fetch_one("UPDATE tasks SET status = 'planned', error = %s WHERE id = %s RETURNING id",
+                            str(pause), task["id"])
         except StepFailed as failure:
             if failure.code == "blocked" and settings.recovery_enabled:
                 await self._park_task(task, failure)
@@ -140,18 +152,24 @@ class TaskExecutor:
         if not settings.recovery_enabled or failure.code != "item_not_found" or not task["order_id"]:
             await record_fault(task["id"], step["seq"], failure.code, str(failure), None)
             return False
-        rerouted = await warehouse.reroute_missing_stock(task["id"], step["id"])
+        missing = await warehouse.record_missing_stock(task["id"], step["id"])
+        sku, location_id = missing["args"]["sku"], missing["args"]["location_id"]
+        if task.get("conversation_id"):
+            await record_fault(task["id"], step["seq"], failure.code, str(failure),
+                               f"counted {sku} at {location_id} to 0, paused for the agent")
+            await warehouse.raise_exception(
+                "inventory_discrepancy", f"{sku} recorded at {location_id} but not found; inventory corrected, "
+                f"task {task['id']} paused for a decision", severity="warning", task_id=task["id"], order_id=task["order_id"])
+            raise TaskPaused(f"item_not_found: {sku} not found at {location_id}; counted to 0")
+        rerouted = await warehouse.reallocate_missing_stock(task["id"])
         if not rerouted:
             await record_fault(task["id"], step["seq"], failure.code, str(failure), None)
             return False
-        await record_fault(
-            task["id"], step["seq"], failure.code, str(failure),
-            f"cycle-counted {step['args']['location_id']} and rerouted to {', '.join(rerouted)}",
-        )
+        await record_fault(task["id"], step["seq"], failure.code, str(failure),
+                           f"cycle-counted {location_id} and rerouted to {', '.join(rerouted)}")
         await warehouse.raise_exception(
             "inventory_discrepancy",
-            f"{step['args']['sku']} recorded at {step['args']['location_id']} but not found; "
-            f"inventory corrected and pick rerouted to {', '.join(rerouted)}",
+            f"{sku} recorded at {location_id} but not found; inventory corrected and pick rerouted to {', '.join(rerouted)}",
             severity="info", task_id=task["id"], order_id=task["order_id"], status="resolved",
         )
         return True
@@ -201,6 +219,8 @@ class TaskExecutor:
         return {"observed": list(counts), **({"found": found} if found else {}), **detail}
 
     async def _record_unexpected(self, task: dict, location_id: str, counts: dict[str, int]) -> list[dict]:
+        if (await self._location(location_id))["kind"] != "storage":
+            return []
         recorded = {r["sku"] for r in await fetch_all(
             "SELECT sku FROM inventory WHERE location_id = %s AND quantity > 0", location_id)}
         pickable = {r["sku"] for r in await fetch_all("SELECT sku FROM products WHERE robot_pickable")}
