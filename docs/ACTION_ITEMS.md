@@ -252,25 +252,27 @@ Goal: lift the stress baseline by moving plan and state out of the raw chat cont
 - [x] The deterministic allocator is not part of this track; it gets a later row of its own
 
 **H1 · Plan registry (subgoal DAG)**
-- [ ] Tables `agent_plans` (objective, conversation, status) and `agent_subgoals` (plan, parent, depends_on, kind, target, post-condition, status, note); levels: objective → subgoal (one order or chore) → actions (tool calls)
-- [ ] Tools `create_plan(objective, subgoals[])`, `update_subgoal(id, status, note)`, `get_plan()`; schema check rejects unknown post-condition types and dependency cycles
-- [ ] Post-condition types: `order_dispatched`, `order_flagged`, `order_untouched`, `task_not_paused`, `stock_put_away`
-- [ ] Render the plan as a compact table in context every turn
+- [x] Tables `agent_plans` (objective, conversation, status) and `agent_subgoals` (plan, parent, depends_on, kind, target, post-condition, status, note); levels: objective → subgoal (one order or chore) → actions (tool calls)
+- [x] Tools `create_plan(objective, subgoals[])`, `update_subgoal(id, status, note)`, `get_plan()`; schema check rejects unknown post-condition types and dependency cycles
+- [x] Post-condition types: `order_dispatched`, `order_flagged`, `order_untouched`, `task_not_paused`, `stock_put_away`
+- [x] Render the plan as a compact table in context every turn
 
 **H2 · Re-anchoring and checkpoint-resume**
-- [ ] Compact only when the context reaches 85% of 64k (not on a fixed interval): collapse old tool results into a summary, re-inject the original request and the current plan table
-- [ ] Plan state is durable in the DB: a run that stops or crashes resumes from the open subgoals instead of from scratch
-- [ ] Sanitize the handoff: drop stale stock lookups whose data has since changed
+- [x] Compact only when the context reaches 85% of 64k (not on a fixed interval): collapse old tool results into a summary, re-inject the original request and the current plan table
+- [x] Plan state is durable in the DB: a run that stops or crashes resumes from the open subgoals instead of from scratch
+- [x] Sanitize the handoff: drop stale stock lookups whose data has since changed
 
 **H3 · Post-condition checks and stop gate**
-- [ ] Deterministic verifier per post-condition type; runs when a subgoal is marked done, and the result is returned in the tool reply
-- [ ] Final review: once, when the agent tries to finish, the harness lists open or failed subgoals and gives it one more turn to close or explicitly justify them (targets the no-recipe early stop: paused tasks, unflagged orders); subgoals still open after that turn are reported as exceptions by the harness and count as a failure
+- [x] Deterministic verifier per post-condition type; runs when a subgoal is marked done, and the result is returned in the tool reply
+- [x] Final review: once, when the agent tries to finish, the harness lists open or failed subgoals and gives it one more turn to close or explicitly justify them (targets the no-recipe early stop: paused tasks, unflagged orders); subgoals still open after that turn are reported as exceptions by the harness and count as a failure
 
 **H4 · Failure-driven replanning**
-- [ ] Triggers: a failed check, a stock change (empty bin found, `reallocate_pick` fails), or 3 tool calls without subgoal progress
-- [ ] Inject a structured diff: what changed, which subgoals it affects, and any lower-priority order holding stock a higher-priority one needs
-- [ ] The agent must revise the plan (`update_subgoal` / re-plan) before its next robot action; log each revision
+- [x] Triggers: a failed check, a stock change (empty bin found, `reallocate_pick` fails), or 3 tool calls without subgoal progress
+- [x] Inject a structured diff: what changed, which subgoals it affects, and any lower-priority order holding stock a higher-priority one needs
+- [x] The agent must revise the plan (`update_subgoal` / re-plan) before its next robot action; log each revision
 
 **Eval**
-- [ ] `agent_eval.py --harness h1,h2,...` flag; record pass rate, the 6 dimension checks, mean tool calls, peak context tokens, plan revisions and whether the final review fired
-- [ ] Run the cumulative and leave-one-out configs; fill in the table in `docs/EVALUATION.md`
+- [x] `agent_eval.py --configs b0 h1 h12 h123 full full-h1 ...` flag; record pass rate, the 6 dimension checks, mean tool calls, peak context tokens, plan revisions and whether the final review fired
+- [x] Implementation notes: components are flags `plan`/`anchor`/`check`/`replan` in `backend/app/agent/harness.py`; the plan table is appended as a non-persisted last message (keeps the prompt prefix cacheable); with `plan` on, robot actions are refused until a plan exists; without a plan, the final review falls back to paused or undispatched tasks; the scorer ignores harness-filed `unresolved_subgoal` exceptions when checking that orders were flagged
+- [x] Smoke (`stress`, full, seed 0): fails on priority and flagging; 78 tool calls, 23k peak context, 18 replan triggers; non-pickable errors and manual-only orders were triggering noise replans and are now excluded
+- [ ] Run the cumulative and leave-one-out configs (B0 rerun too, to get peak context), 180 trials, results in `eval/results/agent_harness/`; fill in the table in `docs/EVALUATION.md`
