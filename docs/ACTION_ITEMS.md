@@ -258,13 +258,13 @@ Goal: lift the stress baseline by moving plan and state out of the raw chat cont
 - [ ] Render the plan as a compact table in context every turn
 
 **H2 · Re-anchoring and checkpoint-resume**
-- [ ] Compact only when the context is nearly full (not on a fixed interval): collapse old tool results into a summary, re-inject the original request and the current plan table
+- [ ] Compact only when the context reaches 85% of 64k (not on a fixed interval): collapse old tool results into a summary, re-inject the original request and the current plan table
 - [ ] Plan state is durable in the DB: a run that stops or crashes resumes from the open subgoals instead of from scratch
 - [ ] Sanitize the handoff: drop stale stock lookups whose data has since changed
 
 **H3 · Post-condition checks and stop gate**
 - [ ] Deterministic verifier per post-condition type; runs when a subgoal is marked done, and the result is returned in the tool reply
-- [ ] Final review: once, when the agent tries to finish, the harness lists open or failed subgoals and gives it one more turn to close or explicitly justify them (targets the no-recipe early stop: paused tasks, unflagged orders)
+- [ ] Final review: once, when the agent tries to finish, the harness lists open or failed subgoals and gives it one more turn to close or explicitly justify them (targets the no-recipe early stop: paused tasks, unflagged orders); subgoals still open after that turn are reported as exceptions by the harness and count as a failure
 
 **H4 · Failure-driven replanning**
 - [ ] Triggers: a failed check, a stock change (empty bin found, `reallocate_pick` fails), or 3 tool calls without subgoal progress

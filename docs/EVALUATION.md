@@ -72,8 +72,8 @@ Same stress test as above, **all runs without recipes**, with the harness compon
 | Recipes | None, for every config including the baseline |
 | Seeds × temperature | 10 seeds, T=0.7 |
 | Context | 64k |
-| Compaction trigger | Context nearly full (threshold TBD, e.g. 85% of 64k) |
-| Final review | Once, when the agent tries to finish |
+| Compaction trigger | 85% of the 64k context |
+| Final review | Once, when the agent tries to finish; anything still open is reported as an exception (counts as a failure) |
 | Stall trigger | 3 tool calls without subgoal progress |
 
 ## All tests
