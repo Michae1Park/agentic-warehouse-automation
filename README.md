@@ -28,7 +28,7 @@ https://github.com/user-attachments/assets/d01bfdef-6a93-4b17-9280-ef22a0ac03ff
 
 <p align="center"><br><b>Cycle Count</b><br><sub>VLM finds misplaced stock, robot moves it back to its home bin</sub><br></p>
 
-https://github.com/user-attachments/assets/aee68caf-b8f0-472a-8ba1-8b1d17562d38
+https://github.com/user-attachments/assets/db60bb85-688e-43e2-a352-2f2f45b420d8
 
 <br>
 
@@ -69,7 +69,7 @@ Simulation only, compared against a scripted baseline.
 | **Shelf-bin perception** | • **100%** presence<br>• **92–96%** exact count<br>• **36 / 36** bad records caught | — | 1.5s / bin | 72 bins |
 | **Language grounding** | **94%** correct item | — | 1.2s / query | 306 queries |
 | **Tote audit** | • **6 / 6** exact<br>• **2 / 2** mis-packs caught | — | 1.4s / tote | 8 totes |
-| **Long-horizon planning & execution** | • **16 / 20** multi-step scenarios solved end to end<br>• End-of-shift: **4 / 5** at ~25 tool calls (up to 28), with a mid-run re-plan | • Without recipes: 9 / 20<br>• End-of-shift: 0 / 5 | 25 tool calls / scenario | • 4 scenarios × 5 trials<br>• Temperature 0.7 |
+| **Long-horizon planning & execution** | • **16 / 20** multi-step scenarios solved end to end<br>• End-of-shift: **4 / 5** at ~25 tool calls (up to 28), with a mid-run re-plan | • Without recipes: 9 / 20<br>• End-of-shift: 0 / 5 | — | • 4 scenarios × 5 trials<br>• Temperature 0.7 |
 
 <details>
 <summary>Details</summary>
