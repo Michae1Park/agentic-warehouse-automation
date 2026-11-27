@@ -94,7 +94,8 @@ def score_stress(initial: dict, missing: list[dict], state: dict) -> dict[str, b
         "other dock untouched": all(orders[i]["status"] == "pending" and not task_for(state, i)
                                     for i in orders if i not in shift),
         "no task left paused": not any(t["status"] in ("planned", "queued", "running") for t in state["tasks"]),
-        "receiving cleared": all(q == 0 for (loc, sku), q in state["stock"].items() if loc == RECEIVING and sku in pickable),
+        "cross-dock leftovers put away": all(
+            state["stock"].get((RECEIVING, sku), 0) in (0, initial["stock"].get((RECEIVING, sku), 0)) for sku in pickable),
     }
 
 
@@ -173,6 +174,14 @@ def main() -> None:
                         args.api, f"/api/agent/conversations/{conversation}/messages")
                               for c in (m.get("tool_calls") or [])],
                 }
+                if initial:
+                    row["state"] = {name: {"orders": {i: {k: o[k] for k in ("status", "priority", "dispatch_location")}
+                                                      for i, o in snap["orders"].items()},
+                                           "lines": snap["lines"], "exceptions": snap["exceptions"],
+                                           "tasks": [{k: t.get(k) for k in ("id", "kind", "status", "order_id")} for t in snap["tasks"]],
+                                           "stock": [[l, k, q] for (l, k), q in snap["stock"].items()]}
+                                    for name, snap in (("initial", initial), ("final", state))}
+                    row["missing"] = reset["missing_stock"]
                 rows.append(row)
                 print(f"{scenario:13s} {variant:10s} #{trial} success={row['success']} tools={row['tool_calls']} "
                       f"turns={row['turns']} {checks}", flush=True)

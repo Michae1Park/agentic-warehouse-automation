@@ -40,7 +40,7 @@ https://github.com/user-attachments/assets/db60bb85-688e-43e2-a352-2f2f45b420d8
 | **Order fulfillment** | *"Prepare order #1045"* | • Reserves stock across bins, plans the route, picks into the robot's tote<br>• Unloads into the outbound tote on the conveyor<br>• VLM audits the tote, then the order closes |
 | **Cycle count** | *"Cycle count aisle B"* | • VLM checks each bin against the WMS record<br>• Writes `cycle_count` adjustments, raises discrepancies, moves misplaced stock back to its home bin |
 | **Shortage recovery** | *"Prepare order #1044"* (short on the shelf) | • Finds the gap covered by the receiving tote<br>• Cross-docks: picks the shelf stock and the received units in one trip<br>• Puts away only the surplus |
-| **Exception handling** | Grasp slip, blocked path, missing stock | • Executor regrasps and replans the path<br>• Missing stock pauses the task; the agent reallocates or escalates |
+| **Exception handling** | Failed pick, blocked path, missing stock | • Executor retries the pick and replans the path<br>• Missing stock pauses the task; the agent reallocates or escalates |
 
 <details>
 <summary><b>Execution trace (end-of-shift dispatch)</b></summary>
@@ -65,7 +65,7 @@ Simulation only, compared against a scripted baseline.
 
 | Test | Result | Baseline | Speed | Setup |
 |---|---|---|---|---|
-| **Fulfillment under faults** | • **100%** orders filled<br>• **87%** inventory accuracy | • Scripted: 50%, 81%<br>• Scripted + recovery: 88% | • 84s / order<br>• Scripted: 28s | • 24 orders, mock robot<br>• Injected faults |
+| **Robustness under faults** | • **100%** orders filled<br>• **87%** inventory accuracy | Without recovery: 50% filled, 81% accuracy | 84s / order | • 24 single-order requests, mock robot<br>• 15–20% fault rates |
 | **Shelf-bin perception** | • **100%** presence<br>• **92–96%** exact count<br>• **36 / 36** bad records caught | — | 1.5s / bin | 72 bins |
 | **Language grounding** | **94%** correct item | — | 1.2s / query | 306 queries |
 | **Tote audit** | • **6 / 6** exact<br>• **2 / 2** mis-packs caught | — | 1.4s / tote | 8 totes |
@@ -76,8 +76,8 @@ Simulation only, compared against a scripted baseline.
 
 | Test | Notes |
 |---|---|
-| **Fulfillment** | • `eval/run_eval.py`: 3 seeds × 8 orders<br>• Faults: 15% grasp failure, 10% blocked path, 20% missing stock<br>• The agent is slower because it pauses to decide on missing stock<br>• All modes reach 100% without faults |
-| **Perception** | • `eval/vlm_eval.py`: 3 seeds, 36 of 72 bins with a wrong record |
+| **Robustness** | • `eval/run_eval.py`: 24 orders across 3 randomized setups, each sent as its own request<br>• Faults: 15% of picks fail, 10% of drives are blocked, 20% of stock records point at an empty bin<br>• Measures the full system: the executor retries picks and replans paths, the agent decides on missing stock<br>• Accuracy stays below 100% because empty bins the robot never visits go undiscovered<br>• 84s / order (sim time) vs ~27s without faults: tasks wait while the agent decides |
+| **Perception** | • `eval/vlm_eval.py`: 72 bins across 3 randomized setups; 36 seeded with a wrong record |
 | **Grounding** | • `eval/grounding_eval.py`: by name, description or attribute (*"the red can"*)<br>• 96% on the two pickable products |
 | **Tote audit** | 6 packed orders + 2 mis-packed totes at the conveyor |
 | **Long-horizon** | • `eval/agent_eval.py`, mock robot: only the agent's plan and its execution are scored, from the final database state<br>• Scenarios: 6-order batch, open-ended aisle triage, competing orders, end-of-shift (5 orders, cross-dock, mid-run missing stock, surplus put-away)<br>• Per scenario, with / without recipes: batch 5/5 · 5/5, competing 5/5 · 4/5, end-of-shift 4/5 · 0/5, triage 2/5 · 0/5<br>• Failures are judgment, not crashes: skipped follow-up, refilling a just-corrected bin, one 42-call lookup loop |
@@ -97,7 +97,7 @@ Simulation only, compared against a scripted baseline.
 | **Navigation** | • Simulator waypoint planner: straight when clear, aisle center lines otherwise<br>• No ROS 2 / Nav2 / MoveIt 2; `RobotGateway` is where they would plug in |
 | **Perception** | • One fixed inspection camera per location<br>• Cycle counts trust presence, not quantities: unseen SKU → 0, unrecorded SKU → flagged |
 | **◆ Sim-assisted perception** | • The VLM outputs a 2D point on the item<br>• 3D pose estimation is sim-assisted: the point is matched to an item and its outline using simulator ground truth, then fitted to depth. A real robot would get the outline from a segmentation model such as SAM, prompted with the VLM's point<br>• Items in the robot's own tote use the simulator pose directly |
-| **Faults** | Injected with seeded probabilities into a world model separate from the database |
+| **Faults** | Injected at random (reproducibly) into the simulator, not the database |
 | **Conveyor** | Moves totes kinematically out through the wall; no packing or shipping behind it |
 
 </details>
@@ -116,7 +116,7 @@ Simulation only, compared against a scripted baseline.
 |---|---|
 | **One system of record** | • Postgres holds orders, inventory, tasks and exceptions<br>• `LISTEN/NOTIFY` streams every change to the UI, so chat, dashboard and sim never disagree |
 | **Typed tools, no free-form SQL** | • The agent acts only through tools that wrap transactions (`plan_fulfillment`, `dispatch_task`, …)<br>• Reservations use `SELECT … FOR UPDATE`, so two plans cannot promise the same unit<br>• Each pick updates stock, the order line and an audit row in one transaction |
-| **Separate physical world** | • Faults are injected into a world model separate from the database<br>• The WMS can actually be wrong, so inventory accuracy means something |
+| **Simulator separate from the database** | • Faults change the simulator, not the database<br>• The WMS can actually be wrong, so inventory accuracy means something |
 | **Models do what they are good at** | • The VLM says *what and where* (a 2D point, a scene description), never a pose<br>• A 3D pose estimation module turns the point into a pose from depth; motion is scripted IK<br>• ◆ The point-to-object step is sim-assisted (see Limitations) |
 
 <details>
@@ -129,7 +129,7 @@ Layers are organized by how fast they must react (System 2 / 1 / 0).
 | **System 2** (reasoning) | seconds, ~0.1 Hz | **Agent** | • Tool-calling loop on Qwen3.8-27B (FP8, vLLM)<br>• Picks the workflow, plans, dispatches, replans on results |
 | | | **VLM perception** | • Same model with image input<br>• Bin checks, grounding the described item, tote audit |
 | | | **3D pose estimation** | • Plugged in after the VLM, which only outputs a 2D point<br>• ◆ Sim-assisted: the item and its outline come from simulator ground truth, then a depth fit gives position, yaw and height |
-| **S2 → S1 interface** | per step | **Task executor** | • Deterministic state machine stored in Postgres<br>• Sequences skills, retries (regrasp, replan), pauses on missing stock, resumes after restart<br>• Reports results and findings back up |
+| **S2 → S1 interface** | per step | **Task executor** | • Deterministic state machine stored in Postgres<br>• Sequences skills, retries (failed pick, blocked path), pauses on missing stock, resumes after restart<br>• Reports results and findings back up |
 | **System 1** (action) | 60 Hz | **Grasp & arm motion** | • Grasp planned from the estimated pose<br>• Lula IK targets, Cartesian arm trajectories |
 | | | **Base motion** | • Waypoint planner, straight when no rack blocks<br>• Smooth start and stop |
 | | | **Learned policy slot** | • SmolVLA and diffusion policy servers<br>• Paused until retrained for the current stance |
@@ -157,7 +157,7 @@ Layers are organized by how fast they must react (System 2 / 1 / 0).
 
 | Fault | Handled by | Recovery | Escalation |
 |---|---|---|---|
-| **Grasp slip** | Executor | Regrasp, up to 3 attempts | • Task fails, reservations released<br>• Exception raised, agent reports |
+| **Failed pick** | Executor | Retry the pick, up to 3 attempts | • Task fails, reservations released<br>• Exception raised, agent reports |
 | **Blocked path** | Executor | Replan the path, up to 3 attempts | Same |
 | **Ordered SKU not seen at a bin** | Executor → agent | • Executor counts that SKU at the bin to 0, pauses the task, reports up<br>• Agent decides: `reallocate_pick` from other bins or receiving, then resumes | • Nothing covers it: agent cancels and escalates<br>• No agent (scripted mode): executor reallocates itself |
 | **Item blocking the target** | Executor → agent | • Task pauses<br>• Agent calls `clear_blocker`, then resumes the task | Push demo paused (see the tools table) |
