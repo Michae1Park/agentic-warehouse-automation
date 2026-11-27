@@ -5,6 +5,7 @@ Full results. Everything runs in simulation; scripts are in `eval/`, raw results
 ## Contents
 
 - [Longer-horizon stress test](#longer-horizon-stress-test)
+- [Long-horizon harness ablation](#long-horizon-harness-ablation)
 - [All tests](#all-tests)
 
 ## Longer-horizon stress test
@@ -41,6 +42,39 @@ A held-out test of the agent alone: randomized shifts it was never tuned on, moc
 - Without recipes it often stops after a few turns, leaving tasks paused and orders unflagged
 - The multi-step scenarios in the table below are the dev set the recipes were written against; this stress test is the held-out number
 - Traces for every trial: [`eval/results/agent_stress/traces/`](../eval/results/agent_stress/traces/)
+
+## Long-horizon harness ablation
+
+Same stress test as above, with the harness components (`docs/ACTION_ITEMS.md`) switched on one by one. *Pending.*
+
+| Component | What it adds |
+|---|---|
+| H1 Plan registry | Agent-authored subgoal plan in the DB with typed post-conditions, shown every turn |
+| H2 Re-anchoring | Every N calls, compact the history and re-inject the goal and plan; resume from the plan |
+| H3 Checks + stop gate | DB-only post-condition checks; the run can't finish with open subgoals (max K nudges) |
+| H4 Replanning | A failed check or stock change injects a diff of what changed; the agent must revise the plan |
+
+| Config | `stress` pass (no recipes · recipes) | `stress_xl` pass (no recipes · recipes) | Priority check (S · XL) | Tool calls (mean) | Peak context (tokens) | Plan revisions |
+|---|---|---|---|---|---|---|
+| B0 baseline | 0/10 · 2/10 | 0/10 · 0/10 | 5/10 · 0/10 (no recipes) | 43 · 61 | — | — |
+| + H1 | | | | | | |
+| + H1 H2 | | | | | | |
+| + H1 H2 H3 | | | | | | |
+| + H1–H4 (full) | | | | | | |
+| Full − H1 | | | | | | |
+| Full − H2 | | | | | | |
+| Full − H3 | | | | | | |
+| Full − H4 | | | | | | |
+
+| Parameter | Value |
+|---|---|
+| Scenarios | `stress`, `stress_xl` (parameters above) |
+| Seeds × temperature | 10 seeds, T=0.7 |
+| Context | 64k |
+| Re-anchor interval N | TBD |
+| Stop-gate nudges K | TBD |
+| Stall trigger M | TBD |
+| Headline | No recipes (recipes were tuned on the dev set) |
 
 ## All tests
 

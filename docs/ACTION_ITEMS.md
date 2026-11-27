@@ -238,5 +238,38 @@ Goal: three realistic warehouse tasks, each showing one applied AI technology.
 - [x] Scorer fix: "receiving cleared" penalized untouched stock → "cross-dock leftovers put away"
 - [x] Pinned setuptools <82 (backend build broke); system prompt moved to `backend/app/agent/prompts/`
 - [x] Recipes lines 4, 6, 8 are scenario-specific: earlier 4 scenarios are the dev set, stress is held-out
-- [ ] Plan: deterministic `plan_shift` allocator (priority, can free lower-priority stock), `shift_status` check before reporting done, automatic surplus put-away, `fulfill_order` macro tool, trim recipes to policies; re-run stress, headline without recipes
+- [ ] Deferred until after the harness ablation (its own "offload to tools" row, so its gain stays separate from the harness gain): deterministic `plan_shift` allocator (priority, can free lower-priority stock), automatic surplus put-away, `fulfill_order` macro tool, trim recipes to policies
 - [ ] Restore normal serving (`LLM_MAX_LEN` default, `LLM_GPU_UTIL` 0.75), rebuild backend, restart Isaac
+
+## Long-horizon harness (2026-11-27)
+Goal: lift the stress baseline by moving plan and state out of the raw chat context, adding cheap checks, and replanning when a check fails. Each component is a flag in `loop.py` so the ablation can switch it on or off.
+
+**Decisions**
+- [x] The agent writes the plan; the harness only checks its schema (we don't pre-fill one subgoal per order)
+- [x] Checks read only the DB, i.e. what the agent itself could look up, never the scorer's physical truth
+- [x] Ablation: cumulative (B0 → +H1 → +H2 → +H3 → +H4), plus leave-one-out on the full config; `stress` and `stress_xl`, 10 seeds, T=0.7, with and without recipes; headline is without recipes
+- [x] The deterministic allocator is not part of this track; it gets a later row of its own
+
+**H1 · Plan registry (subgoal DAG)**
+- [ ] Tables `agent_plans` (objective, conversation, status) and `agent_subgoals` (plan, parent, depends_on, kind, target, post-condition, status, note); levels: objective → subgoal (one order or chore) → actions (tool calls)
+- [ ] Tools `create_plan(objective, subgoals[])`, `update_subgoal(id, status, note)`, `get_plan()`; schema check rejects unknown post-condition types and dependency cycles
+- [ ] Post-condition types: `order_dispatched`, `order_flagged`, `order_untouched`, `task_not_paused`, `stock_put_away`
+- [ ] Render the plan as a compact table in context every turn
+
+**H2 · Re-anchoring and checkpoint-resume**
+- [ ] Every N tool calls (and above a token threshold) collapse old tool results into a summary; re-inject the original request and the current plan table
+- [ ] Plan state is durable in the DB: a run that stops or crashes resumes from the open subgoals instead of from scratch
+- [ ] Sanitize the handoff: drop stale stock lookups whose data has since changed
+
+**H3 · Post-condition checks and stop gate**
+- [ ] Deterministic verifier per post-condition type; runs when a subgoal is marked done, and the result is returned in the tool reply
+- [ ] Stop gate: when the agent tries to finish with open or failed subgoals, the harness lists them and continues the loop (max K nudges; then the run ends and the trace records the open subgoals)
+
+**H4 · Failure-driven replanning**
+- [ ] Triggers: a failed check, a stock change (empty bin found, `reallocate_pick` fails), or no subgoal progress for M tool calls
+- [ ] Inject a structured diff: what changed, which subgoals it affects, and any lower-priority order holding stock a higher-priority one needs
+- [ ] The agent must revise the plan (`update_subgoal` / re-plan) before its next robot action; log each revision
+
+**Eval**
+- [ ] `agent_eval.py --harness h1,h2,...` flag; record pass rate, the 6 dimension checks, mean tool calls, peak context tokens, plan revisions and stop-gate nudges
+- [ ] Run the cumulative and leave-one-out configs; fill in the table in `docs/EVALUATION.md`
