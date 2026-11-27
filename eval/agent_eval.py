@@ -15,6 +15,14 @@ SCENARIOS = {
 }
 STRESS = ("stress", "stress_xl")
 RECEIVING = "STAGING-1"
+UNRESOLVED = "unresolved_subgoal"
+HARNESS = {"plan": "H1", "anchor": "H2", "check": "H3", "replan": "H4"}
+CONFIGS = {
+    "b0": [], "h1": ["plan"], "h12": ["plan", "anchor"], "h123": ["plan", "anchor", "check"],
+    "full": ["plan", "anchor", "check", "replan"], "full-h1": ["anchor", "check", "replan"],
+    "full-h2": ["plan", "check", "replan"], "full-h3": ["plan", "anchor", "replan"],
+    "full-h4": ["plan", "anchor", "check"],
+}
 
 
 def request(api: str, path: str, body: dict | None = None, timeout: float = 900):
@@ -56,7 +64,7 @@ def task_for(state: dict, order_id: int) -> list[dict]:
 
 
 def flagged(state: dict, order_id: int) -> bool:
-    return any(e.get("order_id") == order_id for e in state["exceptions"])
+    return any(e.get("order_id") == order_id and e.get("type") != UNRESOLVED for e in state["exceptions"])
 
 
 def physical_supply(initial: dict, missing: list[dict], pickable: set[str]) -> dict[str, int]:
@@ -157,6 +165,8 @@ def main() -> None:
     parser.add_argument("--scenarios", nargs="+", default=[s for s in SCENARIOS if s not in STRESS])
     parser.add_argument("--trials", type=int, default=5)
     parser.add_argument("--variants", nargs="+", default=["recipes", "no_recipes"])
+    parser.add_argument("--configs", nargs="+", choices=list(CONFIGS),
+                        help="harness configs to run without recipes; replaces --variants")
     parser.add_argument("--time-scale", type=float, default=20)
     parser.add_argument("--temperature", type=float, default=0.7)
     parser.add_argument("--limit-s", type=float, default=900)
@@ -172,13 +182,15 @@ def main() -> None:
         saved = json.loads(results.read_text())
         rows = [r for r in (saved["rows"] if isinstance(saved, dict) else saved) if r["settled"]]
     finished = {(r["scenario"], r["variant"], r["trial"]) for r in rows}
+    variants = args.configs or args.variants
     for scenario in args.scenarios:
-        for variant in args.variants:
+        for variant in variants:
             for trial in range(args.trials):
                 if (scenario, variant, trial) in finished:
                     continue
                 reset = request(args.api, "/api/sim/reset", {"seed": trial, "scenario": scenario, "time_scale": args.time_scale,
                                                      "agent_recipes": variant == "recipes",
+                                                     "agent_harness": CONFIGS.get(variant, []),
                                                      "agent_temperature": args.temperature,
                                                              "cancel_queued": True})
                 initial = snapshot(args.api) if scenario in STRESS else None
@@ -201,6 +213,10 @@ def main() -> None:
                     "tool_calls": sum(r.get("tool_calls") or 0 for r in runs),
                     "turns": len(runs), "wall_s": round(time.time() - started, 1),
                     "tools": [c["function"]["name"] for m in messages for c in (m.get("tool_calls") or [])],
+                    "harness": CONFIGS.get(variant, []),
+                    "peak_prompt_tokens": max((r.get("peak_prompt_tokens") or 0 for r in runs), default=0),
+                    "harness_stats": request(args.api, f"/api/agent/conversations/{conversation}/harness"),
+                    "unresolved_exceptions": sum(e.get("type") == UNRESOLVED for e in state["exceptions"]),
                 }
                 if initial:
                     row["state"] = {name: {"orders": {i: {k: o[k] for k in ("status", "priority", "dispatch_location")}
@@ -219,14 +235,27 @@ def main() -> None:
     summary = {}
     for row in rows:
         key = f"{row['scenario']}/{row['variant']}"
-        entry = summary.setdefault(key, {"trials": 0, "success": 0, "tool_calls": []})
+        entry = summary.setdefault(key, {"trials": 0, "success": 0, "tool_calls": [], "peak": [], "checks": {},
+                                         "revisions": 0, "replans": 0, "reviews": 0, "compactions": 0, "unresolved": 0})
         entry["trials"] += 1
         entry["success"] += row["success"]
         entry["tool_calls"].append(row["tool_calls"])
+        entry["peak"].append(row.get("peak_prompt_tokens") or 0)
+        stats = row.get("harness_stats") or {}
+        entry["revisions"] += stats.get("revision", 0)
+        entry["replans"] += stats.get("replan", 0)
+        entry["reviews"] += stats.get("review", 0)
+        entry["compactions"] += stats.get("compaction", 0)
+        entry["unresolved"] += row.get("unresolved_exceptions", 0)
+        for name, ok in row["checks"].items():
+            entry["checks"][name] = entry["checks"].get(name, 0) + ok
     for entry in summary.values():
         calls = entry.pop("tool_calls")
         entry["tool_calls_mean"] = round(sum(calls) / len(calls), 1)
         entry["tool_calls_max"] = max(calls)
+        peak = entry.pop("peak")
+        entry["peak_prompt_tokens_max"] = max(peak)
+        entry["peak_prompt_tokens_mean"] = round(sum(peak) / len(peak))
     (out / "agent_results.json").write_text(json.dumps({"summary": summary, "rows": rows}, indent=2))
     print(json.dumps(summary, indent=2))
 

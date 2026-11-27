@@ -10,6 +10,10 @@ class Settings(BaseSettings):
     agent_max_iterations: int = 40
     agent_recipes: bool = True
     agent_temperature: float = 0.2
+    agent_harness: set[str] = set()
+    llm_context_tokens: int = 65536
+    compaction_threshold: float = 0.85
+    stall_tool_calls: int = 3
     robot_ids: list[str] = ["amr-01"]
     sim_time_scale: float = 1.0
     mock_robot_speed: float = 1.2

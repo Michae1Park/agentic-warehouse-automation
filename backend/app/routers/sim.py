@@ -13,7 +13,7 @@ router = APIRouter(prefix="/sim", tags=["simulation"])
 
 SEED_SQL = Path(settings.seed_sql_path)
 TABLES = (
-    "agent_messages, agent_runs, task_faults, inventory_transactions, exceptions, task_steps, "
+    "agent_compactions, agent_harness_events, agent_subgoals, agent_plans, agent_messages, agent_runs, task_faults, inventory_transactions, exceptions, task_steps, "
     "tasks, robots, order_lines, orders, inventory, locations, products, events"
 )
 
@@ -28,6 +28,7 @@ class ResetRequest(BaseModel):
     scenario: str = "default"
     agent_recipes: bool = True
     agent_temperature: float = 0.2
+    agent_harness: list[str] = []
     cancel_queued: bool = False
 
 
@@ -71,6 +72,7 @@ async def reset(request: ResetRequest, http_request: Request):
     settings.route_optimization = request.route_optimization
     settings.agent_recipes = request.agent_recipes
     settings.agent_temperature = request.agent_temperature
+    settings.agent_harness = set(request.agent_harness)
     settings.sim_time_scale = request.time_scale
     missing = await world.load(request.seed, request.faults)
     missing += scenarios.physical_faults(world, request.scenario)

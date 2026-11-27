@@ -27,3 +27,13 @@ async def get_messages(conversation_id: str):
 @router.get("/runs")
 async def list_runs(limit: int = 20):
     return await fetch_all("SELECT * FROM agent_runs ORDER BY id DESC LIMIT %s", limit)
+
+
+@router.get("/conversations/{conversation_id}/harness")
+async def harness_stats(conversation_id: str):
+    events = await fetch_all(
+        "SELECT kind, count(*)::INT AS n FROM agent_harness_events WHERE conversation_id = %s GROUP BY kind",
+        conversation_id,
+    )
+    plans = await fetch_all("SELECT id FROM agent_plans WHERE conversation_id = %s", conversation_id)
+    return {"plans": len(plans), **{e["kind"]: e["n"] for e in events}}

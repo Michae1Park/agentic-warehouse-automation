@@ -156,8 +156,53 @@ CREATE TABLE agent_runs (
     tool_ms             INT NOT NULL DEFAULT 0,
     prompt_tokens       INT NOT NULL DEFAULT 0,
     completion_tokens   INT NOT NULL DEFAULT 0,
+    peak_prompt_tokens  INT NOT NULL DEFAULT 0,
     started_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
     finished_at         TIMESTAMPTZ
+);
+
+CREATE TABLE agent_plans (
+    id              SERIAL PRIMARY KEY,
+    conversation_id TEXT NOT NULL,
+    objective       TEXT NOT NULL,
+    active          BOOLEAN NOT NULL DEFAULT true,
+    needs_revision  TEXT,
+    stall_calls     INT NOT NULL DEFAULT 0,
+    reviewed        BOOLEAN NOT NULL DEFAULT false,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX agent_plans_conversation ON agent_plans (conversation_id, id);
+
+CREATE TABLE agent_subgoals (
+    id          SERIAL PRIMARY KEY,
+    plan_id     INT NOT NULL REFERENCES agent_plans(id) ON DELETE CASCADE,
+    key         TEXT NOT NULL,
+    title       TEXT NOT NULL,
+    check_type  TEXT NOT NULL,
+    order_id    INT,
+    task_id     INT,
+    sku         TEXT,
+    depends_on  TEXT[] NOT NULL DEFAULT '{}',
+    status      TEXT NOT NULL DEFAULT 'open',
+    note        TEXT,
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (plan_id, key)
+);
+
+CREATE TABLE agent_harness_events (
+    id              SERIAL PRIMARY KEY,
+    conversation_id TEXT NOT NULL,
+    kind            TEXT NOT NULL,
+    detail          TEXT,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE agent_compactions (
+    id              SERIAL PRIMARY KEY,
+    conversation_id TEXT NOT NULL,
+    upto_message_id BIGINT NOT NULL,
+    content         TEXT NOT NULL,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE TABLE events (

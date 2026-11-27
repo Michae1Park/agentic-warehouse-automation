@@ -7,6 +7,7 @@ import time
 
 from .. import warehouse
 from ..db import fetch_all, fetch_one
+from . import harness
 
 
 @dataclass
@@ -240,4 +241,9 @@ TOOLS = [
          report_exception),
 ]
 
-TOOLS_BY_NAME = {tool.name: tool for tool in TOOLS}
+PLAN_TOOLS = harness.plan_tools(Tool, _params)
+TOOLS_BY_NAME = {tool.name: tool for tool in TOOLS + PLAN_TOOLS}
+
+
+def active_tools() -> list[Tool]:
+    return TOOLS + PLAN_TOOLS if harness.on(harness.PLAN) else TOOLS

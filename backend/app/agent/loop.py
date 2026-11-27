@@ -11,17 +11,24 @@ from psycopg.types.json import Jsonb
 from ..config import settings
 from ..db import fetch_all, fetch_one
 from ..warehouse import WarehouseError
-from .tools import TOOLS, TOOLS_BY_NAME, ToolContext
+from . import harness
+from .tools import TOOLS_BY_NAME, ToolContext, active_tools
 
 log = logging.getLogger(__name__)
 
 PROMPTS = Path(__file__).parent / "prompts"
 GENERAL_RULES = (PROMPTS / "general_rules.md").read_text().strip()
 RECIPES = (PROMPTS / "recipes.md").read_text().strip()
+HARNESS_PLAN = (PROMPTS / "harness_plan.md").read_text().strip()
 
 
 def system_prompt() -> str:
-    return f"{GENERAL_RULES}\n\n{RECIPES}" if settings.agent_recipes else GENERAL_RULES
+    parts = [GENERAL_RULES]
+    if harness.on(harness.PLAN):
+        parts.append(HARNESS_PLAN)
+    if settings.agent_recipes:
+        parts.append(RECIPES)
+    return "\n\n".join(parts)
 
 
 client = AsyncOpenAI(base_url=settings.llm_base_url, api_key="unused")
@@ -32,23 +39,17 @@ def _dump(value) -> str:
     return json.dumps(value, default=str)
 
 
-async def _history(conversation_id: str) -> list[dict]:
-    rows = await fetch_all(
-        "SELECT message FROM agent_messages WHERE conversation_id = %s ORDER BY id", conversation_id
-    )
-    return [r["message"] for r in rows]
-
-
-async def _append(conversation_id: str, message: dict) -> None:
-    await fetch_one(
+async def _append(conversation_id: str, message: dict) -> int:
+    row = await fetch_one(
         "INSERT INTO agent_messages (conversation_id, message) VALUES (%s, %s) RETURNING id",
         conversation_id, Jsonb(message),
     )
+    return row["id"]
 
 
 async def _call_tool(ctx: ToolContext, name: str, raw_args: str) -> dict:
     tool = TOOLS_BY_NAME.get(name)
-    if not tool:
+    if not tool or tool not in active_tools():
         return {"error": f"unknown tool {name}"}
     try:
         args = json.loads(raw_args or "{}")
@@ -71,16 +72,35 @@ async def _run(conversation_id: str, user_message: str, robot_id: str) -> dict:
         conversation_id, user_message,
     )
     await _append(conversation_id, {"role": "user", "content": user_message})
-    messages = [{"role": "system", "content": system_prompt()}, *await _history(conversation_id)]
-    stats = {"llm_calls": 0, "tool_calls": 0, "llm_ms": 0, "tool_ms": 0, "prompt_tokens": 0, "completion_tokens": 0}
+    history, history_ids = await harness.history(conversation_id)
+    messages, ids = [{"role": "system", "content": system_prompt()}, *history], [None, *history_ids]
+    stats = {"llm_calls": 0, "tool_calls": 0, "llm_ms": 0, "tool_ms": 0, "prompt_tokens": 0, "completion_tokens": 0,
+             "peak_prompt_tokens": 0}
     reply = "I could not complete this request within the step limit."
+    last_prompt, added_chars = 0, 0
+
+    async def add(message: dict) -> None:
+        nonlocal added_chars
+        messages.append(message)
+        ids.append(await _append(conversation_id, message))
+        added_chars += len(str(message.get("content") or "")) + len(json.dumps(message.get("tool_calls") or []))
+
+    event = await harness.on_event(conversation_id, user_message)
+    if event:
+        await add({"role": "user", "content": event})
 
     for _ in range(settings.agent_max_iterations):
+        if harness.needs_compaction(last_prompt, added_chars):
+            messages, ids = await harness.compact(client, conversation_id, messages, ids)
+            last_prompt, added_chars = 0, sum(len(str(m.get("content") or "")) for m in messages)
+        request = messages
+        if harness.on(harness.PLAN):
+            request = [*messages, {"role": "user", "content": await harness.plan_message(conversation_id)}]
         started = time.perf_counter()
         response = await client.chat.completions.create(
             model=settings.llm_model,
-            messages=messages,
-            tools=[tool.schema() for tool in TOOLS],
+            messages=request,
+            tools=[tool.schema() for tool in active_tools()],
             temperature=settings.agent_temperature,
             extra_body={"chat_template_kwargs": {"enable_thinking": settings.llm_thinking}},
         )
@@ -89,6 +109,8 @@ async def _run(conversation_id: str, user_message: str, robot_id: str) -> dict:
         if response.usage:
             stats["prompt_tokens"] += response.usage.prompt_tokens
             stats["completion_tokens"] += response.usage.completion_tokens
+            stats["peak_prompt_tokens"] = max(stats["peak_prompt_tokens"], response.usage.prompt_tokens)
+            last_prompt, added_chars = response.usage.prompt_tokens, 0
 
         choice = response.choices[0].message
         assistant = {"role": "assistant", "content": choice.content or ""}
@@ -97,30 +119,41 @@ async def _run(conversation_id: str, user_message: str, robot_id: str) -> dict:
                 {"id": c.id, "type": "function", "function": {"name": c.function.name, "arguments": c.function.arguments}}
                 for c in choice.tool_calls
             ]
-        messages.append(assistant)
-        await _append(conversation_id, assistant)
+        await add(assistant)
 
         if not choice.tool_calls:
             reply = assistant["content"]
-            break
+            review = await harness.final_review(conversation_id)
+            if not review:
+                break
+            await add({"role": "user", "content": review})
+            continue
 
+        injections = []
         for call in choice.tool_calls:
             started = time.perf_counter()
-            outcome = await _call_tool(ctx, call.function.name, call.function.arguments)
+            refusal = await harness.gate(conversation_id, call.function.name)
+            if refusal:
+                outcome = {"error": refusal}
+            else:
+                outcome = await _call_tool(ctx, call.function.name, call.function.arguments)
+                injection = await harness.after_tool(conversation_id, call.function.name, call.function.arguments, outcome)
+                if injection:
+                    injections.append(injection)
             stats["tool_ms"] += int((time.perf_counter() - started) * 1000)
             stats["tool_calls"] += 1
-            tool_message = {"role": "tool", "tool_call_id": call.id, "name": call.function.name, "content": _dump(outcome)}
-            messages.append(tool_message)
-            await _append(conversation_id, tool_message)
+            await add({"role": "tool", "tool_call_id": call.id, "name": call.function.name, "content": _dump(outcome)})
+        for injection in injections[-1:]:
+            await add({"role": "user", "content": injection})
 
     await fetch_one(
         """
         UPDATE agent_runs SET reply = %s, llm_calls = %s, tool_calls = %s, llm_ms = %s, tool_ms = %s,
-               prompt_tokens = %s, completion_tokens = %s, finished_at = now()
+               prompt_tokens = %s, completion_tokens = %s, peak_prompt_tokens = %s, finished_at = now()
         WHERE id = %s RETURNING id
         """,
         reply, stats["llm_calls"], stats["tool_calls"], stats["llm_ms"], stats["tool_ms"],
-        stats["prompt_tokens"], stats["completion_tokens"], run["id"],
+        stats["prompt_tokens"], stats["completion_tokens"], stats["peak_prompt_tokens"], run["id"],
     )
     return {"reply": reply, "run_id": run["id"], **stats}
 
