@@ -126,14 +126,14 @@ Layers are organized by how fast they must react (System 2 / 1 / 0).
 
 | Layer | Rate | Part | What it does |
 |---|---|---|---|
-| **System 2** (reasoning) | seconds, ~0.1 Hz | **Agent** | • Tool-calling loop on Qwen3.8-27B (FP8, vLLM)<br>• Picks the workflow, plans, dispatches, replans on results |
+| **System 2** (reasoning) | seconds | **Agent** | • Tool-calling loop on Qwen3.8-27B (FP8, vLLM)<br>• Picks the workflow, plans, dispatches, replans on results |
 | | | **VLM perception** | • Same model with image input<br>• Bin checks, grounding the described item, tote audit |
 | | | **3D pose estimation** | • Plugged in after the VLM, which only outputs a 2D point<br>• ◆ Sim-assisted: the item and its outline come from simulator ground truth, then a depth fit gives position, yaw and height |
 | **S2 → S1 interface** | per step | **Task executor** | • Deterministic state machine stored in Postgres<br>• Sequences skills, retries (failed pick, blocked path), pauses on missing stock, resumes after restart<br>• Reports results and findings back up |
 | **System 1** (action) | 60 Hz | **Grasp & arm motion** | • Grasp planned from the estimated pose<br>• Lula IK targets, Cartesian arm trajectories |
 | | | **Base motion** | • Waypoint planner, straight when no rack blocks<br>• Smooth start and stop |
 | | | **Learned policy slot** | • SmolVLA and diffusion policy servers<br>• Paused until retrained for the current stance |
-| **System 0** (execution) | 60 Hz sim step | **Simulated drives** | • PD position control of the Franka joints<br>• Pose-driven holonomic base<br>• No force, torque or tactile control |
+| **System 0** (execution) | 60 Hz in sim<br>~1 kHz on a real robot | **Simulated drives** | • PD position control of the Franka joints<br>• Pose-driven holonomic base<br>• No force, torque or tactile control |
 | **Outside the layers** | — | **Postgres WMS** | • System of record: orders, stock, tasks, exceptions<br>• Every step writes back; changes stream to the dashboard |
 | | | **Robot gateway** | • One interface: mock robot for evals, Isaac Sim over HTTP |
 | | | **Isaac Sim 5.1** | • The environment: Ridgeback + Franka, physics, cameras<br>• Scene built from the WMS, seeded faults |
