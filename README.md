@@ -26,11 +26,7 @@ A warehouse manager types *"Prepare order #1045 and move it to dispatch."* The a
 
 https://github.com/user-attachments/assets/a3f75015-5123-4154-bdc9-0be13b5c32a7
 
-<p align="center"><br><b>Demo 2 · Order Fulfillment</b><br><sub>agent plans, robot picks from two aisles, VLM audits the outbound tote</sub><br></p>
-
-https://github.com/user-attachments/assets/579ce229-5820-4dac-ae7e-f9722ef72d01
-
-<p align="center"><br><b>Demo 3 · Cycle Count</b><br><sub>VLM finds misplaced stock, robot moves it back to its home bin</sub><br></p>
+<p align="center"><br><b>Demo 2 · Cycle Count</b><br><sub>VLM finds misplaced stock, robot moves it back to its home bin</sub><br></p>
 
 https://github.com/user-attachments/assets/a814f8e2-9a30-4e69-a709-75e48ea83947
 
