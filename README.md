@@ -22,13 +22,13 @@
 
 A warehouse manager types *"Prepare order #1045 and move it to dispatch."* The agent reads the order from the warehouse database, reserves stock, plans the route and sends a mobile manipulator to pick it. The same model, used as a vision-language model, checks each shelf bin and audits the outbound tote before the order closes. Every physical step writes back to the database, so the chat, dashboard and live simulation always agree.
 
-<p align="center"><br><b>Demo 1 · End-of-Shift Dispatch</b><br><sub>24 tool calls: prioritizes 5 orders, cross-docks, re-plans mid-run, puts away surplus</sub><br></p>
+<p align="center"><br><b>End-of-Shift Dispatch</b><br><sub>24 tool calls: prioritizes 5 orders, cross-docks, re-plans mid-run, puts away surplus</sub><br></p>
 
-https://github.com/user-attachments/assets/a3f75015-5123-4154-bdc9-0be13b5c32a7
+https://github.com/user-attachments/assets/d01bfdef-6a93-4b17-9280-ef22a0ac03ff
 
-<p align="center"><br><b>Demo 2 · Cycle Count</b><br><sub>VLM finds misplaced stock, robot moves it back to its home bin</sub><br></p>
+<p align="center"><br><b>Cycle Count</b><br><sub>VLM finds misplaced stock, robot moves it back to its home bin</sub><br></p>
 
-https://github.com/user-attachments/assets/a814f8e2-9a30-4e69-a709-75e48ea83947
+https://github.com/user-attachments/assets/aee68caf-b8f0-472a-8ba1-8b1d17562d38
 
 <br>
 
@@ -43,7 +43,7 @@ https://github.com/user-attachments/assets/a814f8e2-9a30-4e69-a709-75e48ea83947
 | **Exception handling** | Grasp slip, blocked path, missing stock | • Executor regrasps and replans the path<br>• Missing stock pauses the task; the agent reallocates or escalates |
 
 <details>
-<summary><b>Execution trace (Demo 1 example)</b></summary>
+<summary><b>Execution trace (end-of-shift dispatch)</b></summary>
 
 **Request:** *"Get all pending DISPATCH-1 orders out before the truck leaves."* (24 tool calls over 6 turns)
 
