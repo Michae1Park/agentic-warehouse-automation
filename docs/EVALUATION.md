@@ -45,18 +45,18 @@ A held-out test of the agent alone: randomized shifts it was never tuned on, moc
 
 ## Long-horizon harness ablation
 
-Same stress test as above, with the harness components (`docs/ACTION_ITEMS.md`) switched on one by one. *Pending.*
+Same stress test as above, **all runs without recipes**, with the harness components (`docs/ACTION_ITEMS.md`) switched on one by one. *Pending.*
 
 | Component | What it adds |
 |---|---|
 | H1 Plan registry | Agent-authored subgoal plan in the DB with typed post-conditions, shown every turn |
-| H2 Re-anchoring | Every N calls, compact the history and re-inject the goal and plan; resume from the plan |
-| H3 Checks + stop gate | DB-only post-condition checks; the run can't finish with open subgoals (max K nudges) |
-| H4 Replanning | A failed check or stock change injects a diff of what changed; the agent must revise the plan |
+| H2 Re-anchoring | When the context is nearly full, compact the history and re-inject the goal and plan; resume from the plan |
+| H3 Checks + final review | DB-only post-condition checks; one review of open subgoals when the agent tries to finish |
+| H4 Replanning | A failed check, a stock change, or 3 tool calls without progress injects a diff; the agent must revise the plan |
 
-| Config | `stress` pass (no recipes · recipes) | `stress_xl` pass (no recipes · recipes) | Priority check (S · XL) | Tool calls (mean) | Peak context (tokens) | Plan revisions |
+| Config (all without recipes) | `stress` pass | `stress_xl` pass | Priority check (`stress` · `stress_xl`) | Tool calls, mean (`stress` · `stress_xl`) | Peak context (tokens) | Plan revisions |
 |---|---|---|---|---|---|---|
-| B0 baseline | 0/10 · 2/10 | 0/10 · 0/10 | 5/10 · 0/10 (no recipes) | 43 · 61 | — | — |
+| B0 baseline | 0/10 | 0/10 | 5/10 · 0/10 | 41 · 55 | — | — |
 | + H1 | | | | | | |
 | + H1 H2 | | | | | | |
 | + H1 H2 H3 | | | | | | |
@@ -69,12 +69,12 @@ Same stress test as above, with the harness components (`docs/ACTION_ITEMS.md`) 
 | Parameter | Value |
 |---|---|
 | Scenarios | `stress`, `stress_xl` (parameters above) |
+| Recipes | None, for every config including the baseline |
 | Seeds × temperature | 10 seeds, T=0.7 |
 | Context | 64k |
-| Re-anchor interval N | TBD |
-| Stop-gate nudges K | TBD |
-| Stall trigger M | TBD |
-| Headline | No recipes (recipes were tuned on the dev set) |
+| Compaction trigger | Context nearly full (threshold TBD, e.g. 85% of 64k) |
+| Final review | Once, when the agent tries to finish |
+| Stall trigger | 3 tool calls without subgoal progress |
 
 ## All tests
 

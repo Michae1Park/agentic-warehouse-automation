@@ -247,7 +247,8 @@ Goal: lift the stress baseline by moving plan and state out of the raw chat cont
 **Decisions**
 - [x] The agent writes the plan; the harness only checks its schema (we don't pre-fill one subgoal per order)
 - [x] Checks read only the DB, i.e. what the agent itself could look up, never the scorer's physical truth
-- [x] Ablation: cumulative (B0 → +H1 → +H2 → +H3 → +H4), plus leave-one-out on the full config; `stress` and `stress_xl`, 10 seeds, T=0.7, with and without recipes; headline is without recipes
+- [x] Ablation: cumulative (B0 → +H1 → +H2 → +H3 → +H4), plus leave-one-out on the full config; `stress` and `stress_xl`, 10 seeds, T=0.7
+- [x] **No recipes** anywhere in this track, baseline included (B0 = stress without recipes: 0/10, 0/10). Recipes were a shortcut to get things working, not the method
 - [x] The deterministic allocator is not part of this track; it gets a later row of its own
 
 **H1 · Plan registry (subgoal DAG)**
@@ -257,19 +258,19 @@ Goal: lift the stress baseline by moving plan and state out of the raw chat cont
 - [ ] Render the plan as a compact table in context every turn
 
 **H2 · Re-anchoring and checkpoint-resume**
-- [ ] Every N tool calls (and above a token threshold) collapse old tool results into a summary; re-inject the original request and the current plan table
+- [ ] Compact only when the context is nearly full (not on a fixed interval): collapse old tool results into a summary, re-inject the original request and the current plan table
 - [ ] Plan state is durable in the DB: a run that stops or crashes resumes from the open subgoals instead of from scratch
 - [ ] Sanitize the handoff: drop stale stock lookups whose data has since changed
 
 **H3 · Post-condition checks and stop gate**
 - [ ] Deterministic verifier per post-condition type; runs when a subgoal is marked done, and the result is returned in the tool reply
-- [ ] Stop gate: when the agent tries to finish with open or failed subgoals, the harness lists them and continues the loop (max K nudges; then the run ends and the trace records the open subgoals)
+- [ ] Final review: once, when the agent tries to finish, the harness lists open or failed subgoals and gives it one more turn to close or explicitly justify them (targets the no-recipe early stop: paused tasks, unflagged orders)
 
 **H4 · Failure-driven replanning**
-- [ ] Triggers: a failed check, a stock change (empty bin found, `reallocate_pick` fails), or no subgoal progress for M tool calls
+- [ ] Triggers: a failed check, a stock change (empty bin found, `reallocate_pick` fails), or 3 tool calls without subgoal progress
 - [ ] Inject a structured diff: what changed, which subgoals it affects, and any lower-priority order holding stock a higher-priority one needs
 - [ ] The agent must revise the plan (`update_subgoal` / re-plan) before its next robot action; log each revision
 
 **Eval**
-- [ ] `agent_eval.py --harness h1,h2,...` flag; record pass rate, the 6 dimension checks, mean tool calls, peak context tokens, plan revisions and stop-gate nudges
+- [ ] `agent_eval.py --harness h1,h2,...` flag; record pass rate, the 6 dimension checks, mean tool calls, peak context tokens, plan revisions and whether the final review fired
 - [ ] Run the cumulative and leave-one-out configs; fill in the table in `docs/EVALUATION.md`
