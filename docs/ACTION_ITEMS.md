@@ -234,7 +234,7 @@ Goal: three realistic warehouse tasks, each showing one applied AI technology.
 
 ## Longer-horizon stress test (2026-11-27)
 - [x] Seeded `stress` (12 orders) / `stress_xl` (20 orders) scenarios: hidden empty bins, manual-only orders, other-dock orders, random receiving stock; scored from physical supply and final state; traces saved per trial
-- [x] Held-out result (10 trials each, T=0.7, 64k context): `stress` 2/10 with recipes, 0/10 without; `stress_xl` 0/10 both. 34–89 tool calls. Main failure: priority allocation after a mid-run surprise (0/20 on XL); without recipes the agent often stops early
+- [x] **Baseline** for future long-horizon work (results in `eval/results/agent_stress/`, keep for comparison). Held-out result (10 trials each, T=0.7, 64k context): `stress` 2/10 with recipes, 0/10 without; `stress_xl` 0/10 both. 34–89 tool calls. Main failure: priority allocation after a mid-run surprise (0/20 on XL); without recipes the agent often stops early
 - [x] Scorer fix: "receiving cleared" penalized untouched stock → "cross-dock leftovers put away"
 - [x] Pinned setuptools <82 (backend build broke); system prompt moved to `backend/app/agent/prompts/`
 - [x] Recipes lines 4, 6, 8 are scenario-specific: earlier 4 scenarios are the dev set, stress is held-out

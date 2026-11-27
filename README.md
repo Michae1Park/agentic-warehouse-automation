@@ -65,7 +65,9 @@ https://github.com/user-attachments/assets/db60bb85-688e-43e2-a352-2f2f45b420d8
 
 A held-out test of the agent alone: randomized shifts it was never tuned on, mock robot, scored from the physical truth and the final database state (`eval/agent_eval.py --scenarios stress stress_xl`).
 
-| Tier | Orders | Pass, with recipes | Pass, without | Tool calls (mean, range) |
+**Baseline (2026-11-27):** the agent as-is, before any long-horizon improvements. Later versions are compared against these numbers.
+
+| Tier | Orders | Baseline pass, with recipes | Baseline pass, without | Tool calls (mean, range) |
 |---|---|---|---|---|
 | `stress` | 12 + 2 other-dock | **2 / 10** | 0 / 10 | 43 (34–59) |
 | `stress_xl` | 20 + 3 other-dock | 0 / 10 | 0 / 10 | 61 (21–89) |
