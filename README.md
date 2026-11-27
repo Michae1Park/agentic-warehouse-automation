@@ -59,7 +59,47 @@ https://github.com/user-attachments/assets/db60bb85-688e-43e2-a352-2f2f45b420d8
 </details>
 
 <details>
-<summary><b>Results</b> (fulfillment, perception, grounding, tote audit, long-horizon planning)</summary>
+<summary><b>Results</b> (longer-horizon stress test, fulfillment, perception, grounding, tote audit)</summary>
+
+### Longer-horizon stress test
+
+A held-out test of the agent alone: randomized shifts it was never tuned on, mock robot, scored from the physical truth and the final database state (`eval/agent_eval.py --scenarios stress stress_xl`).
+
+| Tier | Orders | Pass, with recipes | Pass, without | Tool calls (mean, range) |
+|---|---|---|---|---|
+| `stress` | 12 + 2 other-dock | **2 / 10** | 0 / 10 | 43 (34–59) |
+| `stress_xl` | 20 + 3 other-dock | 0 / 10 | 0 / 10 | 61 (21–89) |
+
+<details>
+<summary>Test parameters and per-check results</summary>
+
+| Parameter | `stress` | `stress_xl` |
+|---|---|---|
+| Orders to dispatch | 12, priority 1–3, 1–2 lines of 1–3 units | 20 |
+| Orders for another dock (must be left alone) | 2 | 3 |
+| Orders needing a non-pickable SKU (manual only) | 2 | 3 |
+| Stock records pointing at an empty bin (found mid-run) | 3 | 5 |
+| Shelf stock per SKU | 2–3 bins × 1–3 units | 3–4 bins × 2–4 units |
+| Receiving stock per SKU | 0–4 units | 0–4 units |
+| Seeds × trials | 10 random seeds, temperature 0.7, one request: *"dispatch everything you can before end of shift"* | same |
+
+| Dimension | Check | `stress` with · without | `stress_xl` with · without |
+|---|---|---|---|
+| Dependent decisions | Priority respected, no fillable order left behind | 3/10 · 5/10 | **0/10 · 0/10** |
+| Dependent decisions | Manual orders not dispatched, and flagged | 7/10 · 8/10 | 10/10 · 9/10 |
+| Dependent decisions | Other dock untouched | 10/10 · 10/10 | 10/10 · 10/10 |
+| Surprises / replanning | No task left paused | 10/10 · 10/10 | 9/10 · 4/10 |
+| Step count / follow-through | Every unfilled order flagged | 10/10 · 8/10 | 7/10 · 3/10 |
+| Step count / follow-through | Cross-dock leftovers put away | 6/10 · 1/10 | 5/10 · 7/10 |
+
+- The agent follows simple rules and sustains 50–90 tool calls, but cannot keep a 12–20-order allocation consistent after a surprise: it fills lower-priority orders with stock a higher-priority one needed
+- Without recipes it often stops after a few turns, leaving tasks paused and orders unflagged
+- The multi-step scenarios in the table below are the dev set the recipes were written against; this stress test is the held-out number
+- Traces for every trial: `eval/results/agent_stress/traces/`
+
+</details>
+
+### All tests
 
 Simulation only, compared against a scripted baseline.
 
@@ -69,7 +109,7 @@ Simulation only, compared against a scripted baseline.
 | **Shelf-bin perception** | • **100%** presence<br>• **92–96%** exact count<br>• **36 / 36** bad records caught | — | 1.5s / bin | 72 bins |
 | **Language grounding** | **94%** correct item | — | 1.2s / query | 306 queries |
 | **Tote audit** | • **6 / 6** exact<br>• **2 / 2** mis-packs caught | — | 1.4s / tote | 8 totes |
-| **Long-horizon planning & execution** | • **16 / 20** multi-step scenarios solved end to end<br>• End-of-shift: **4 / 5** at ~25 tool calls (up to 28), with a mid-run re-plan | • Without recipes: 9 / 20<br>• End-of-shift: 0 / 5 | — | • 4 scenarios × 5 trials<br>• Temperature 0.7 |
+| **Multi-step planning (dev set)** | • **16 / 20** multi-step scenarios solved end to end<br>• End-of-shift: **4 / 5** at ~25 tool calls (up to 28), with a mid-run re-plan | • Without recipes: 9 / 20<br>• End-of-shift: 0 / 5 | — | • 4 scenarios × 5 trials<br>• Temperature 0.7 |
 
 <details>
 <summary>Details</summary>
