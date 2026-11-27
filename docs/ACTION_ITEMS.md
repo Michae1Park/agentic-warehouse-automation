@@ -231,3 +231,12 @@ Goal: three realistic warehouse tasks, each showing one applied AI technology.
 - [x] Demo 3 take 3 (Isaac): end-of-shift fully correct, 24 tool calls over 6 turns: plans 5 orders by priority, flags 1046 (non-pickable) and 1040 (short), cross-docks 1044, pauses at the empty B-01-1, reallocates from receiving, puts away the leftover unit (`docs/videos/demo-3-highlight.mp4`, 8.4 MB, 137 s)
 - [x] Final agent eval at T=0.7 on the shipped prompt and tools: with recipes 16/20 (triage 2/5: two runs refilled the corrected C-04-1 by relocating mustard into it, one 42-call lookup loop; an earlier T=0.7 run had triage 5/5), without recipes 9/20. End-of-shift 4/5, 25 tool calls on average, max 28
 - [ ] Triage variance: consider telling the agent not to refill a bin a count just corrected, and a per-turn guard against repeated identical lookups
+
+## Longer-horizon stress test (2026-11-27)
+- [x] Seeded `stress` (12 orders) / `stress_xl` (20 orders) scenarios: hidden empty bins, manual-only orders, other-dock orders, random receiving stock; scored from physical supply and final state; traces saved per trial
+- [x] Held-out result (10 trials each, T=0.7, 64k context): `stress` 2/10 with recipes, 0/10 without; `stress_xl` 0/10 both. 34–89 tool calls. Main failure: priority allocation after a mid-run surprise (0/20 on XL); without recipes the agent often stops early
+- [x] Scorer fix: "receiving cleared" penalized untouched stock → "cross-dock leftovers put away"
+- [x] Pinned setuptools <82 (backend build broke); system prompt moved to `backend/app/agent/prompts/`
+- [x] Recipes lines 4, 6, 8 are scenario-specific: earlier 4 scenarios are the dev set, stress is held-out
+- [ ] Plan: deterministic `plan_shift` allocator (priority, can free lower-priority stock), `shift_status` check before reporting done, automatic surplus put-away, `fulfill_order` macro tool, trim recipes to policies; re-run stress, headline without recipes
+- [ ] Restore normal serving (`LLM_MAX_LEN` default, `LLM_GPU_UTIL` 0.75), rebuild backend, restart Isaac
