@@ -348,8 +348,14 @@ async def on_event(conversation_id: str, message: str) -> str | None:
 
 
 async def _in_flight(conversation_id: str) -> bool:
-    return bool(await fetch_one(
-        "SELECT id FROM tasks WHERE conversation_id = %s AND status IN ('queued', 'running') LIMIT 1", conversation_id))
+    running = await fetch_one(
+        "SELECT id FROM tasks WHERE conversation_id = %s AND status = 'running' LIMIT 1", conversation_id)
+    queued = await fetch_one(
+        "SELECT id FROM tasks WHERE conversation_id = %s AND status = 'queued' LIMIT 1", conversation_id)
+    paused = await fetch_one(
+        "SELECT id FROM tasks WHERE conversation_id = %s AND status = 'planned' AND error IS NOT NULL LIMIT 1",
+        conversation_id)
+    return bool(running or (queued and not paused))
 
 
 async def _stalled(conversation_id: str) -> tuple[dict | None, list[tuple[dict, str]]]:
