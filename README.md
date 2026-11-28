@@ -58,10 +58,9 @@ https://github.com/user-attachments/assets/db60bb85-688e-43e2-a352-2f2f45b420d8
 
 </details>
 
-<details>
-<summary><b>Results</b> (fulfillment, perception, grounding, tote audit, long-horizon planning)</summary>
+## Evaluation
 
-Simulation only, compared against a scripted baseline.
+Simulation only. Full results, test parameters and traces: **[docs/EVALUATION.md](docs/EVALUATION.md)**
 
 | Test | Result | Baseline | Speed | Setup |
 |---|---|---|---|---|
@@ -69,22 +68,7 @@ Simulation only, compared against a scripted baseline.
 | **Shelf-bin perception** | • **100%** presence<br>• **92–96%** exact count<br>• **36 / 36** bad records caught | — | 1.5s / bin | 72 bins |
 | **Language grounding** | **94%** correct item | — | 1.2s / query | 306 queries |
 | **Tote audit** | • **6 / 6** exact<br>• **2 / 2** mis-packs caught | — | 1.4s / tote | 8 totes |
-| **Long-horizon planning & execution** | • **16 / 20** multi-step scenarios solved end to end<br>• End-of-shift: **4 / 5** at ~25 tool calls (up to 28), with a mid-run re-plan | • Without recipes: 9 / 20<br>• End-of-shift: 0 / 5 | — | • 4 scenarios × 5 trials<br>• Temperature 0.7 |
-
-<details>
-<summary>Details</summary>
-
-| Test | Notes |
-|---|---|
-| **Robustness** | • `eval/run_eval.py`: 24 orders across 3 randomized setups, each sent as its own request<br>• Faults: 15% of picks fail, 10% of drives are blocked, 20% of stock records point at an empty bin<br>• Measures the full system: the executor retries picks and replans paths, the agent decides on missing stock<br>• Accuracy stays below 100% because empty bins the robot never visits go undiscovered<br>• 84s / order (sim time) vs ~27s without faults: tasks wait while the agent decides |
-| **Perception** | • `eval/vlm_eval.py`: 72 bins across 3 randomized setups; 36 seeded with a wrong record |
-| **Grounding** | • `eval/grounding_eval.py`: by name, description or attribute (*"the red can"*)<br>• 96% on the two pickable products |
-| **Tote audit** | 6 packed orders + 2 mis-packed totes at the conveyor |
-| **Long-horizon** | • `eval/agent_eval.py`, mock robot: only the agent's plan and its execution are scored, from the final database state<br>• Scenarios: 6-order batch, open-ended aisle triage, competing orders, end-of-shift (5 orders, cross-dock, mid-run missing stock, surplus put-away)<br>• Per scenario, with / without recipes: batch 5/5 · 5/5, competing 5/5 · 4/5, end-of-shift 4/5 · 0/5, triage 2/5 · 0/5<br>• Failures are judgment, not crashes: skipped follow-up, refilling a just-corrected bin, one 42-call lookup loop |
-
-</details>
-
-</details>
+| **Multi-step planning (dev set)** | • **16 / 20** multi-step scenarios solved end to end<br>• End-of-shift: **4 / 5** at ~25 tool calls (up to 28), with a mid-run re-plan | • Without recipes: 9 / 20<br>• End-of-shift: 0 / 5 | — | • 4 scenarios × 5 trials<br>• Temperature 0.7 |
 
 <details>
 <summary><b>Limitations</b></summary>
