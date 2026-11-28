@@ -1,0 +1,2163 @@
+{
+ "row": {
+  "scenario": "stress",
+  "variant": "b0",
+  "trial": 0,
+  "temperature": 0.7,
+  "settled": true,
+  "success": false,
+  "checks": {
+   "priority respected and no fillable order left behind": false,
+   "every unfilled order flagged": true,
+   "manual orders not dispatched and flagged": true,
+   "other dock untouched": true,
+   "no task left paused": true,
+   "cross-dock leftovers put away": false
+  },
+  "tool_calls": 42,
+  "turns": 11,
+  "wall_s": 130.5,
+  "tools": [
+   "list_orders",
+   "plan_fulfillment",
+   "plan_fulfillment",
+   "plan_fulfillment",
+   "plan_fulfillment",
+   "plan_fulfillment",
+   "plan_fulfillment",
+   "plan_fulfillment",
+   "plan_fulfillment",
+   "plan_fulfillment",
+   "plan_fulfillment",
+   "plan_fulfillment",
+   "plan_fulfillment",
+   "plan_fulfillment",
+   "plan_fulfillment",
+   "plan_fulfillment",
+   "plan_fulfillment",
+   "dispatch_task",
+   "dispatch_task",
+   "dispatch_task",
+   "dispatch_task",
+   "dispatch_task",
+   "dispatch_task",
+   "dispatch_task",
+   "dispatch_task",
+   "report_exception",
+   "report_exception",
+   "report_exception",
+   "report_exception",
+   "reallocate_pick",
+   "cancel_task",
+   "report_exception",
+   "reallocate_pick",
+   "dispatch_task",
+   "reallocate_pick",
+   "cancel_task",
+   "report_exception",
+   "reallocate_pick",
+   "dispatch_task",
+   "reallocate_pick",
+   "cancel_task",
+   "report_exception"
+  ],
+  "harness": [],
+  "peak_prompt_tokens": 9858,
+  "harness_stats": {
+   "plans": 0
+  },
+  "unresolved_exceptions": 0,
+  "state": {
+   "initial": {
+    "orders": {
+     "3005": {
+      "status": "pending",
+      "priority": 1,
+      "dispatch_location": "DISPATCH-1"
+     },
+     "3006": {
+      "status": "pending",
+      "priority": 1,
+      "dispatch_location": "DISPATCH-1"
+     },
+     "3014": {
+      "status": "pending",
+      "priority": 1,
+      "dispatch_location": "DISPATCH-2"
+     },
+     "3001": {
+      "status": "pending",
+      "priority": 2,
+      "dispatch_location": "DISPATCH-1"
+     },
+     "3003": {
+      "status": "pending",
+      "priority": 2,
+      "dispatch_location": "DISPATCH-1"
+     },
+     "3004": {
+      "status": "pending",
+      "priority": 2,
+      "dispatch_location": "DISPATCH-1"
+     },
+     "3008": {
+      "status": "pending",
+      "priority": 2,
+      "dispatch_location": "DISPATCH-1"
+     },
+     "3009": {
+      "status": "pending",
+      "priority": 2,
+      "dispatch_location": "DISPATCH-1"
+     },
+     "3010": {
+      "status": "pending",
+      "priority": 2,
+      "dispatch_location": "DISPATCH-1"
+     },
+     "3002": {
+      "status": "pending",
+      "priority": 3,
+      "dispatch_location": "DISPATCH-1"
+     },
+     "3007": {
+      "status": "pending",
+      "priority": 3,
+      "dispatch_location": "DISPATCH-1"
+     },
+     "3011": {
+      "status": "pending",
+      "priority": 3,
+      "dispatch_location": "DISPATCH-1"
+     },
+     "3012": {
+      "status": "pending",
+      "priority": 3,
+      "dispatch_location": "DISPATCH-1"
+     },
+     "3013": {
+      "status": "pending",
+      "priority": 3,
+      "dispatch_location": "DISPATCH-2"
+     }
+    },
+    "lines": {
+     "3005": [
+      {
+       "sku": "SKU-2006",
+       "name": "Coffee Can",
+       "quantity": 1,
+       "picked_qty": 0
+      }
+     ],
+     "3006": [
+      {
+       "sku": "SKU-2006",
+       "name": "Coffee Can",
+       "quantity": 2,
+       "picked_qty": 0
+      },
+      {
+       "sku": "SKU-1001",
+       "name": "Mustard Bottle",
+       "quantity": 3,
+       "picked_qty": 0
+      },
+      {
+       "sku": "SKU-2002",
+       "name": "Sugar Box",
+       "quantity": 1,
+       "picked_qty": 0
+      }
+     ],
+     "3014": [
+      {
+       "sku": "SKU-2005",
+       "name": "Potted Meat Can",
+       "quantity": 3,
+       "picked_qty": 0
+      }
+     ],
+     "3001": [
+      {
+       "sku": "SKU-1002",
+       "name": "Tomato Soup Can",
+       "quantity": 2,
+       "picked_qty": 0
+      },
+      {
+       "sku": "SKU-2005",
+       "name": "Potted Meat Can",
+       "quantity": 2,
+       "picked_qty": 0
+      }
+     ],
+     "3003": [
+      {
+       "sku": "SKU-2006",
+       "name": "Coffee Can",
+       "quantity": 2,
+       "picked_qty": 0
+      }
+     ],
+     "3004": [
+      {
+       "sku": "SKU-1001",
+       "name": "Mustard Bottle",
+       "quantity": 3,
+       "picked_qty": 0
+      },
+      {
+       "sku": "SKU-2006",
+       "name": "Coffee Can",
+       "quantity": 1,
+       "picked_qty": 0
+      }
+     ],
+     "3008": [
+      {
+       "sku": "SKU-2006",
+       "name": "Coffee Can",
+       "quantity": 2,
+       "picked_qty": 0
+      }
+     ],
+     "3009": [
+      {
+       "sku": "SKU-1002",
+       "name": "Tomato Soup Can",
+       "quantity": 1,
+       "picked_qty": 0
+      },
+      {
+       "sku": "SKU-1001",
+       "name": "Mustard Bottle",
+       "quantity": 1,
+       "picked_qty": 0
+      }
+     ],
+     "3010": [
+      {
+       "sku": "SKU-1001",
+       "name": "Mustard Bottle",
+       "quantity": 3,
+       "picked_qty": 0
+      },
+      {
+       "sku": "SKU-2006",
+       "name": "Coffee Can",
+       "quantity": 1,
+       "picked_qty": 0
+      }
+     ],
+     "3002": [
+      {
+       "sku": "SKU-1001",
+       "name": "Mustard Bottle",
+       "quantity": 1,
+       "picked_qty": 0
+      }
+     ],
+     "3007": [
+      {
+       "sku": "SKU-1002",
+       "name": "Tomato Soup Can",
+       "quantity": 3,
+       "picked_qty": 0
+      },
+      {
+       "sku": "SKU-2005",
+       "name": "Potted Meat Can",
+       "quantity": 3,
+       "picked_qty": 0
+      },
+      {
+       "sku": "SKU-2002",
+       "name": "Sugar Box",
+       "quantity": 1,
+       "picked_qty": 0
+      }
+     ],
+     "3011": [
+      {
+       "sku": "SKU-1001",
+       "name": "Mustard Bottle",
+       "quantity": 3,
+       "picked_qty": 0
+      }
+     ],
+     "3012": [
+      {
+       "sku": "SKU-1002",
+       "name": "Tomato Soup Can",
+       "quantity": 3,
+       "picked_qty": 0
+      },
+      {
+       "sku": "SKU-1001",
+       "name": "Mustard Bottle",
+       "quantity": 3,
+       "picked_qty": 0
+      }
+     ],
+     "3013": [
+      {
+       "sku": "SKU-2006",
+       "name": "Coffee Can",
+       "quantity": 3,
+       "picked_qty": 0
+      },
+      {
+       "sku": "SKU-1002",
+       "name": "Tomato Soup Can",
+       "quantity": 3,
+       "picked_qty": 0
+      }
+     ]
+    },
+    "exceptions": [],
+    "tasks": [],
+    "stock": [
+     [
+      "A-01-1",
+      "SKU-2005",
+      0
+     ],
+     [
+      "A-01-1",
+      "SKU-1001",
+      2
+     ],
+     [
+      "A-01-2",
+      "SKU-2001",
+      4
+     ],
+     [
+      "A-02-1",
+      "SKU-2006",
+      1
+     ],
+     [
+      "A-02-1",
+      "SKU-1002",
+      0
+     ],
+     [
+      "A-02-2",
+      "SKU-3001",
+      48
+     ],
+     [
+      "A-03-1",
+      "SKU-1002",
+      0
+     ],
+     [
+      "A-03-1",
+      "SKU-1001",
+      0
+     ],
+     [
+      "A-03-2",
+      "SKU-2002",
+      4
+     ],
+     [
+      "A-04-1",
+      "SKU-2006",
+      0
+     ],
+     [
+      "A-04-1",
+      "SKU-5002",
+      5
+     ],
+     [
+      "A-04-1",
+      "SKU-1002",
+      2
+     ],
+     [
+      "A-04-2",
+      "SKU-4001",
+      27
+     ],
+     [
+      "B-01-1",
+      "SKU-1001",
+      2
+     ],
+     [
+      "B-01-1",
+      "SKU-2006",
+      3
+     ],
+     [
+      "B-01-1",
+      "SKU-2002",
+      2
+     ],
+     [
+      "B-01-1",
+      "SKU-1002",
+      0
+     ],
+     [
+      "B-01-1",
+      "SKU-2005",
+      3
+     ],
+     [
+      "B-01-2",
+      "SKU-5001",
+      36
+     ],
+     [
+      "B-02-1",
+      "SKU-2003",
+      4
+     ],
+     [
+      "B-02-1",
+      "SKU-1001",
+      0
+     ],
+     [
+      "B-02-1",
+      "SKU-1002",
+      3
+     ],
+     [
+      "B-02-2",
+      "SKU-2001",
+      3
+     ],
+     [
+      "B-02-2",
+      "SKU-2004",
+      3
+     ],
+     [
+      "B-03-1",
+      "SKU-1002",
+      0
+     ],
+     [
+      "B-03-1",
+      "SKU-1001",
+      3
+     ],
+     [
+      "B-04-1",
+      "SKU-2005",
+      0
+     ],
+     [
+      "B-04-1",
+      "SKU-2006",
+      0
+     ],
+     [
+      "B-04-2",
+      "SKU-3001",
+      2
+     ],
+     [
+      "C-01-1",
+      "SKU-2004",
+      4
+     ],
+     [
+      "C-01-1",
+      "SKU-1002",
+      0
+     ],
+     [
+      "C-01-2",
+      "SKU-5002",
+      4
+     ],
+     [
+      "C-01-2",
+      "SKU-2002",
+      3
+     ],
+     [
+      "C-02-1",
+      "SKU-1002",
+      1
+     ],
+     [
+      "C-02-1",
+      "SKU-2005",
+      3
+     ],
+     [
+      "C-02-2",
+      "SKU-2003",
+      54
+     ],
+     [
+      "C-03-1",
+      "SKU-4001",
+      4
+     ],
+     [
+      "C-03-2",
+      "SKU-1001",
+      0
+     ],
+     [
+      "C-04-1",
+      "SKU-1001",
+      0
+     ],
+     [
+      "C-04-1",
+      "SKU-2006",
+      0
+     ],
+     [
+      "C-04-1",
+      "SKU-1002",
+      0
+     ],
+     [
+      "C-04-2",
+      "SKU-5001",
+      2
+     ],
+     [
+      "STAGING-1",
+      "SKU-2006",
+      2
+     ],
+     [
+      "STAGING-1",
+      "SKU-1002",
+      0
+     ],
+     [
+      "STAGING-1",
+      "SKU-1001",
+      2
+     ],
+     [
+      "STAGING-1",
+      "SKU-2005",
+      4
+     ]
+    ]
+   },
+   "final": {
+    "orders": {
+     "3005": {
+      "status": "in_progress",
+      "priority": 1,
+      "dispatch_location": "DISPATCH-1"
+     },
+     "3006": {
+      "status": "pending",
+      "priority": 1,
+      "dispatch_location": "DISPATCH-1"
+     },
+     "3014": {
+      "status": "pending",
+      "priority": 1,
+      "dispatch_location": "DISPATCH-2"
+     },
+     "3001": {
+      "status": "completed",
+      "priority": 2,
+      "dispatch_location": "DISPATCH-1"
+     },
+     "3003": {
+      "status": "in_progress",
+      "priority": 2,
+      "dispatch_location": "DISPATCH-1"
+     },
+     "3004": {
+      "status": "completed",
+      "priority": 2,
+      "dispatch_location": "DISPATCH-1"
+     },
+     "3008": {
+      "status": "completed",
+      "priority": 2,
+      "dispatch_location": "DISPATCH-1"
+     },
+     "3009": {
+      "status": "completed",
+      "priority": 2,
+      "dispatch_location": "DISPATCH-1"
+     },
+     "3010": {
+      "status": "pending",
+      "priority": 2,
+      "dispatch_location": "DISPATCH-1"
+     },
+     "3002": {
+      "status": "completed",
+      "priority": 3,
+      "dispatch_location": "DISPATCH-1"
+     },
+     "3007": {
+      "status": "pending",
+      "priority": 3,
+      "dispatch_location": "DISPATCH-1"
+     },
+     "3011": {
+      "status": "in_progress",
+      "priority": 3,
+      "dispatch_location": "DISPATCH-1"
+     },
+     "3012": {
+      "status": "pending",
+      "priority": 3,
+      "dispatch_location": "DISPATCH-1"
+     },
+     "3013": {
+      "status": "pending",
+      "priority": 3,
+      "dispatch_location": "DISPATCH-2"
+     }
+    },
+    "lines": {
+     "3005": [
+      {
+       "sku": "SKU-2006",
+       "name": "Coffee Can",
+       "quantity": 1,
+       "picked_qty": 0
+      }
+     ],
+     "3006": [
+      {
+       "sku": "SKU-2006",
+       "name": "Coffee Can",
+       "quantity": 2,
+       "picked_qty": 0
+      },
+      {
+       "sku": "SKU-1001",
+       "name": "Mustard Bottle",
+       "quantity": 3,
+       "picked_qty": 0
+      },
+      {
+       "sku": "SKU-2002",
+       "name": "Sugar Box",
+       "quantity": 1,
+       "picked_qty": 0
+      }
+     ],
+     "3014": [
+      {
+       "sku": "SKU-2005",
+       "name": "Potted Meat Can",
+       "quantity": 3,
+       "picked_qty": 0
+      }
+     ],
+     "3001": [
+      {
+       "sku": "SKU-1002",
+       "name": "Tomato Soup Can",
+       "quantity": 2,
+       "picked_qty": 2
+      },
+      {
+       "sku": "SKU-2005",
+       "name": "Potted Meat Can",
+       "quantity": 2,
+       "picked_qty": 2
+      }
+     ],
+     "3003": [
+      {
+       "sku": "SKU-2006",
+       "name": "Coffee Can",
+       "quantity": 2,
+       "picked_qty": 0
+      }
+     ],
+     "3004": [
+      {
+       "sku": "SKU-1001",
+       "name": "Mustard Bottle",
+       "quantity": 3,
+       "picked_qty": 3
+      },
+      {
+       "sku": "SKU-2006",
+       "name": "Coffee Can",
+       "quantity": 1,
+       "picked_qty": 1
+      }
+     ],
+     "3008": [
+      {
+       "sku": "SKU-2006",
+       "name": "Coffee Can",
+       "quantity": 2,
+       "picked_qty": 2
+      }
+     ],
+     "3009": [
+      {
+       "sku": "SKU-1002",
+       "name": "Tomato Soup Can",
+       "quantity": 1,
+       "picked_qty": 1
+      },
+      {
+       "sku": "SKU-1001",
+       "name": "Mustard Bottle",
+       "quantity": 1,
+       "picked_qty": 1
+      }
+     ],
+     "3010": [
+      {
+       "sku": "SKU-1001",
+       "name": "Mustard Bottle",
+       "quantity": 3,
+       "picked_qty": 0
+      },
+      {
+       "sku": "SKU-2006",
+       "name": "Coffee Can",
+       "quantity": 1,
+       "picked_qty": 0
+      }
+     ],
+     "3002": [
+      {
+       "sku": "SKU-1001",
+       "name": "Mustard Bottle",
+       "quantity": 1,
+       "picked_qty": 1
+      }
+     ],
+     "3007": [
+      {
+       "sku": "SKU-1002",
+       "name": "Tomato Soup Can",
+       "quantity": 3,
+       "picked_qty": 0
+      },
+      {
+       "sku": "SKU-2005",
+       "name": "Potted Meat Can",
+       "quantity": 3,
+       "picked_qty": 0
+      },
+      {
+       "sku": "SKU-2002",
+       "name": "Sugar Box",
+       "quantity": 1,
+       "picked_qty": 0
+      }
+     ],
+     "3011": [
+      {
+       "sku": "SKU-1001",
+       "name": "Mustard Bottle",
+       "quantity": 3,
+       "picked_qty": 0
+      }
+     ],
+     "3012": [
+      {
+       "sku": "SKU-1002",
+       "name": "Tomato Soup Can",
+       "quantity": 3,
+       "picked_qty": 0
+      },
+      {
+       "sku": "SKU-1001",
+       "name": "Mustard Bottle",
+       "quantity": 3,
+       "picked_qty": 0
+      }
+     ],
+     "3013": [
+      {
+       "sku": "SKU-2006",
+       "name": "Coffee Can",
+       "quantity": 3,
+       "picked_qty": 0
+      },
+      {
+       "sku": "SKU-1002",
+       "name": "Tomato Soup Can",
+       "quantity": 3,
+       "picked_qty": 0
+      }
+     ]
+    },
+    "exceptions": [
+     {
+      "id": 12,
+      "task_id": null,
+      "order_id": 3011,
+      "type": "stock_shortage",
+      "severity": "warning",
+      "message": "Order 3011 (P3): SKU-1001 missing at A-01-1; no other stock available. Needs replenishment.",
+      "status": "open",
+      "resolution": null,
+      "created_at": "2026-11-27T08:45:39.049182+00:00",
+      "resolved_at": null
+     },
+     {
+      "id": 11,
+      "task_id": 8,
+      "order_id": 3011,
+      "type": "inventory_discrepancy",
+      "severity": "warning",
+      "message": "SKU-1001 recorded at A-01-1 but not found; inventory corrected, task 8 paused for a decision",
+      "status": "open",
+      "resolution": null,
+      "created_at": "2026-11-27T08:45:27.115095+00:00",
+      "resolved_at": null
+     },
+     {
+      "id": 10,
+      "task_id": 5,
+      "order_id": 3009,
+      "type": "inventory_discrepancy",
+      "severity": "warning",
+      "message": "SKU-1001 recorded at A-01-1 but not found; inventory corrected, task 5 paused for a decision",
+      "status": "open",
+      "resolution": null,
+      "created_at": "2026-11-27T08:45:16.719900+00:00",
+      "resolved_at": null
+     },
+     {
+      "id": 9,
+      "task_id": null,
+      "order_id": 3003,
+      "type": "stock_shortage",
+      "severity": "warning",
+      "message": "Order 3003 (P1): SKU-2006 missing at B-01-1; remaining stock reserved by tasks 4/7. Re-plan after queue.",
+      "status": "open",
+      "resolution": null,
+      "created_at": "2026-11-27T08:45:13.883978+00:00",
+      "resolved_at": null
+     },
+     {
+      "id": 8,
+      "task_id": 3,
+      "order_id": 3003,
+      "type": "inventory_discrepancy",
+      "severity": "warning",
+      "message": "SKU-2006 recorded at B-01-1 but not found; inventory corrected, task 3 paused for a decision",
+      "status": "open",
+      "resolution": null,
+      "created_at": "2026-11-27T08:45:03.318881+00:00",
+      "resolved_at": null
+     },
+     {
+      "id": 7,
+      "task_id": 2,
+      "order_id": 3001,
+      "type": "inventory_discrepancy",
+      "severity": "warning",
+      "message": "SKU-2005 recorded at B-01-1 but not found; inventory corrected, task 2 paused for a decision",
+      "status": "open",
+      "resolution": null,
+      "created_at": "2026-11-27T08:44:57.732922+00:00",
+      "resolved_at": null
+     },
+     {
+      "id": 6,
+      "task_id": null,
+      "order_id": 3005,
+      "type": "stock_shortage",
+      "severity": "warning",
+      "message": "Order 3005 (P1): SKU-2006 not at B-01-1; all other stock reserved by queued tasks. Needs re-plan after queue clears.",
+      "status": "open",
+      "resolution": null,
+      "created_at": "2026-11-27T08:44:57.365661+00:00",
+      "resolved_at": null
+     },
+     {
+      "id": 5,
+      "task_id": 1,
+      "order_id": 3005,
+      "type": "inventory_discrepancy",
+      "severity": "warning",
+      "message": "SKU-2006 recorded at B-01-1 but not found; inventory corrected, task 1 paused for a decision",
+      "status": "open",
+      "resolution": null,
+      "created_at": "2026-11-27T08:44:45.125874+00:00",
+      "resolved_at": null
+     },
+     {
+      "id": 4,
+      "task_id": null,
+      "order_id": 3012,
+      "type": "stock_shortage",
+      "severity": "warning",
+      "message": "Order 3012 short 2 of SKU-1001; no receiving stock left after 3011.",
+      "status": "open",
+      "resolution": null,
+      "created_at": "2026-11-27T08:44:44.555520+00:00",
+      "resolved_at": null
+     },
+     {
+      "id": 3,
+      "task_id": null,
+      "order_id": 3010,
+      "type": "stock_shortage",
+      "severity": "warning",
+      "message": "Order 3010 short 1 of SKU-2006; no receiving stock left after 3008.",
+      "status": "open",
+      "resolution": null,
+      "created_at": "2026-11-27T08:44:44.553775+00:00",
+      "resolved_at": null
+     },
+     {
+      "id": 2,
+      "task_id": null,
+      "order_id": 3007,
+      "type": "not_robot_pickable",
+      "severity": "warning",
+      "message": "Order 3007 contains SKU-2002 (Sugar Box), not robot-pickable; manual handling required.",
+      "status": "open",
+      "resolution": null,
+      "created_at": "2026-11-27T08:44:44.552034+00:00",
+      "resolved_at": null
+     },
+     {
+      "id": 1,
+      "task_id": null,
+      "order_id": 3006,
+      "type": "not_robot_pickable",
+      "severity": "warning",
+      "message": "Order 3006 contains SKU-2002 (Sugar Box), not robot-pickable; manual handling required.",
+      "status": "open",
+      "resolution": null,
+      "created_at": "2026-11-27T08:44:44.550140+00:00",
+      "resolved_at": null
+     }
+    ],
+    "tasks": [
+     {
+      "id": 8,
+      "kind": "fulfillment",
+      "status": "cancelled",
+      "order_id": 3011
+     },
+     {
+      "id": 7,
+      "kind": "fulfillment",
+      "status": "succeeded",
+      "order_id": 3008
+     },
+     {
+      "id": 6,
+      "kind": "fulfillment",
+      "status": "succeeded",
+      "order_id": 3002
+     },
+     {
+      "id": 5,
+      "kind": "fulfillment",
+      "status": "succeeded",
+      "order_id": 3009
+     },
+     {
+      "id": 4,
+      "kind": "fulfillment",
+      "status": "succeeded",
+      "order_id": 3004
+     },
+     {
+      "id": 3,
+      "kind": "fulfillment",
+      "status": "cancelled",
+      "order_id": 3003
+     },
+     {
+      "id": 2,
+      "kind": "fulfillment",
+      "status": "succeeded",
+      "order_id": 3001
+     },
+     {
+      "id": 1,
+      "kind": "fulfillment",
+      "status": "cancelled",
+      "order_id": 3005
+     }
+    ],
+    "stock": [
+     [
+      "A-01-1",
+      "SKU-1001",
+      0
+     ],
+     [
+      "A-01-1",
+      "SKU-2005",
+      0
+     ],
+     [
+      "A-01-2",
+      "SKU-2001",
+      4
+     ],
+     [
+      "A-02-1",
+      "SKU-1002",
+      0
+     ],
+     [
+      "A-02-1",
+      "SKU-2006",
+      0
+     ],
+     [
+      "A-02-2",
+      "SKU-3001",
+      48
+     ],
+     [
+      "A-03-1",
+      "SKU-1001",
+      0
+     ],
+     [
+      "A-03-1",
+      "SKU-1002",
+      0
+     ],
+     [
+      "A-03-2",
+      "SKU-2002",
+      4
+     ],
+     [
+      "A-04-1",
+      "SKU-5002",
+      5
+     ],
+     [
+      "A-04-1",
+      "SKU-1002",
+      1
+     ],
+     [
+      "A-04-1",
+      "SKU-2006",
+      0
+     ],
+     [
+      "A-04-2",
+      "SKU-4001",
+      27
+     ],
+     [
+      "B-01-1",
+      "SKU-2005",
+      0
+     ],
+     [
+      "B-01-1",
+      "SKU-1002",
+      0
+     ],
+     [
+      "B-01-1",
+      "SKU-2006",
+      0
+     ],
+     [
+      "B-01-1",
+      "SKU-2002",
+      2
+     ],
+     [
+      "B-01-1",
+      "SKU-1001",
+      1
+     ],
+     [
+      "B-01-2",
+      "SKU-5001",
+      36
+     ],
+     [
+      "B-02-1",
+      "SKU-2003",
+      4
+     ],
+     [
+      "B-02-1",
+      "SKU-1001",
+      0
+     ],
+     [
+      "B-02-1",
+      "SKU-1002",
+      1
+     ],
+     [
+      "B-02-2",
+      "SKU-2004",
+      3
+     ],
+     [
+      "B-02-2",
+      "SKU-2001",
+      3
+     ],
+     [
+      "B-03-1",
+      "SKU-1001",
+      0
+     ],
+     [
+      "B-03-1",
+      "SKU-1002",
+      0
+     ],
+     [
+      "B-04-1",
+      "SKU-2005",
+      0
+     ],
+     [
+      "B-04-1",
+      "SKU-2006",
+      0
+     ],
+     [
+      "B-04-2",
+      "SKU-3001",
+      2
+     ],
+     [
+      "C-01-1",
+      "SKU-2004",
+      4
+     ],
+     [
+      "C-01-1",
+      "SKU-1002",
+      0
+     ],
+     [
+      "C-01-2",
+      "SKU-2002",
+      3
+     ],
+     [
+      "C-01-2",
+      "SKU-5002",
+      4
+     ],
+     [
+      "C-02-1",
+      "SKU-1002",
+      1
+     ],
+     [
+      "C-02-1",
+      "SKU-2005",
+      1
+     ],
+     [
+      "C-02-2",
+      "SKU-2003",
+      54
+     ],
+     [
+      "C-03-1",
+      "SKU-4001",
+      4
+     ],
+     [
+      "C-03-2",
+      "SKU-1001",
+      0
+     ],
+     [
+      "C-04-1",
+      "SKU-1001",
+      0
+     ],
+     [
+      "C-04-1",
+      "SKU-1002",
+      0
+     ],
+     [
+      "C-04-1",
+      "SKU-2006",
+      0
+     ],
+     [
+      "C-04-2",
+      "SKU-5001",
+      2
+     ],
+     [
+      "STAGING-1",
+      "SKU-1001",
+      1
+     ],
+     [
+      "STAGING-1",
+      "SKU-2006",
+      0
+     ],
+     [
+      "STAGING-1",
+      "SKU-2005",
+      4
+     ],
+     [
+      "STAGING-1",
+      "SKU-1002",
+      0
+     ]
+    ]
+   }
+  },
+  "missing": [
+   {
+    "location_id": "B-01-1",
+    "sku": "SKU-2005"
+   },
+   {
+    "location_id": "B-01-1",
+    "sku": "SKU-2006"
+   },
+   {
+    "location_id": "A-01-1",
+    "sku": "SKU-1001"
+   }
+  ]
+ },
+ "messages": [
+  {
+   "id": 1,
+   "created_at": "2026-11-27T08:43:45.113421+00:00",
+   "role": "user",
+   "content": "Get all pending DISPATCH-1 orders out before the truck leaves."
+  },
+  {
+   "id": 2,
+   "created_at": "2026-11-27T08:43:47.143019+00:00",
+   "role": "assistant",
+   "content": "",
+   "tool_calls": [
+    {
+     "id": "chatcmpl-tool-bb4e91a711dd0f84",
+     "type": "function",
+     "function": {
+      "name": "list_orders",
+      "arguments": "{\"status\": \"pending\"}"
+     }
+    }
+   ]
+  },
+  {
+   "id": 3,
+   "created_at": "2026-11-27T08:43:47.154012+00:00",
+   "name": "list_orders",
+   "role": "tool",
+   "content": "{\"result\": [{\"id\": 3005, \"customer\": \"Customer 3005\", \"status\": \"pending\", \"priority\": 1, \"dispatch_location\": \"DISPATCH-1\"}, {\"id\": 3006, \"customer\": \"Customer 3006\", \"status\": \"pending\", \"priority\": 1, \"dispatch_location\": \"DISPATCH-1\"}, {\"id\": 3014, \"customer\": \"Customer 3014\", \"status\": \"pending\", \"priority\": 1, \"dispatch_location\": \"DISPATCH-2\"}, {\"id\": 3001, \"customer\": \"Customer 3001\", \"status\": \"pending\", \"priority\": 2, \"dispatch_location\": \"DISPATCH-1\"}, {\"id\": 3003, \"customer\": \"Customer 3003\", \"status\": \"pending\", \"priority\": 2, \"dispatch_location\": \"DISPATCH-1\"}, {\"id\": 3004, \"customer\": \"Customer 3004\", \"status\": \"pending\", \"priority\": 2, \"dispatch_location\": \"DISPATCH-1\"}, {\"id\": 3008, \"customer\": \"Customer 3008\", \"status\": \"pending\", \"priority\": 2, \"dispatch_location\": \"DISPATCH-1\"}, {\"id\": 3009, \"customer\": \"Customer 3009\", \"status\": \"pending\", \"priority\": 2, \"dispatch_location\": \"DISPATCH-1\"}, {\"id\": 3010, \"customer\": \"Customer 3010\", \"status\": \"pending\", \"priority\": 2, \"dispatch_location\": \"DISPATCH-1\"}, {\"id\": 3002, \"customer\": \"Customer 3002\", \"status\": \"pending\", \"priority\": 3, \"dispatch_location\": \"DISPATCH-1\"}, {\"id\": 3007, \"customer\": \"Customer 3007\", \"status\": \"pending\", \"priority\": 3, \"dispatch_location\": \"DISPATCH-1\"}, {\"id\": 3011, \"customer\": \"Customer 3011\", \"status\": \"pending\", \"priority\": 3, \"dispatch_location\": \"DISPATCH-1\"}, {\"id\": 3012, \"customer\": \"Customer 3012\", \"status\": \"pending\", \"priority\": 3, \"dispatch_location\": \"DISPATCH-1\"}, {\"id\": 3013, \"customer\": \"Customer 3013\", \"status\": \"pending\", \"priority\": 3, \"dispatch_location\": \"DISPATCH-2\"}]}",
+   "tool_call_id": "chatcmpl-tool-bb4e91a711dd0f84"
+  },
+  {
+   "id": 4,
+   "created_at": "2026-11-27T08:44:10.712801+00:00",
+   "role": "assistant",
+   "content": "",
+   "tool_calls": [
+    {
+     "id": "chatcmpl-tool-95f5885ce411e5e3",
+     "type": "function",
+     "function": {
+      "name": "plan_fulfillment",
+      "arguments": "{\"order_id\": 3005, \"dispatch_location\": \"DISPATCH-1\"}"
+     }
+    },
+    {
+     "id": "chatcmpl-tool-a25c8d4177dd360c",
+     "type": "function",
+     "function": {
+      "name": "plan_fulfillment",
+      "arguments": "{\"order_id\": 3006, \"dispatch_location\": \"DISPATCH-1\"}"
+     }
+    },
+    {
+     "id": "chatcmpl-tool-946fb5a886334672",
+     "type": "function",
+     "function": {
+      "name": "plan_fulfillment",
+      "arguments": "{\"order_id\": 3001, \"dispatch_location\": \"DISPATCH-1\"}"
+     }
+    },
+    {
+     "id": "chatcmpl-tool-b557147daf5893c8",
+     "type": "function",
+     "function": {
+      "name": "plan_fulfillment",
+      "arguments": "{\"order_id\": 3003, \"dispatch_location\": \"DISPATCH-1\"}"
+     }
+    },
+    {
+     "id": "chatcmpl-tool-bf6d23ed50257699",
+     "type": "function",
+     "function": {
+      "name": "plan_fulfillment",
+      "arguments": "{\"order_id\": 3004, \"dispatch_location\": \"DISPATCH-1\"}"
+     }
+    },
+    {
+     "id": "chatcmpl-tool-904c9c30db97e391",
+     "type": "function",
+     "function": {
+      "name": "plan_fulfillment",
+      "arguments": "{\"order_id\": 3008, \"dispatch_location\": \"DISPATCH-1\"}"
+     }
+    },
+    {
+     "id": "chatcmpl-tool-8198512af855e9e7",
+     "type": "function",
+     "function": {
+      "name": "plan_fulfillment",
+      "arguments": "{\"order_id\": 3009, \"dispatch_location\": \"DISPATCH-1\"}"
+     }
+    },
+    {
+     "id": "chatcmpl-tool-89048e30b086148f",
+     "type": "function",
+     "function": {
+      "name": "plan_fulfillment",
+      "arguments": "{\"order_id\": 3010, \"dispatch_location\": \"DISPATCH-1\"}"
+     }
+    },
+    {
+     "id": "chatcmpl-tool-82a564f2ac7c6bef",
+     "type": "function",
+     "function": {
+      "name": "plan_fulfillment",
+      "arguments": "{\"order_id\": 3002, \"dispatch_location\": \"DISPATCH-1\"}"
+     }
+    },
+    {
+     "id": "chatcmpl-tool-af0b5a7879eda6ae",
+     "type": "function",
+     "function": {
+      "name": "plan_fulfillment",
+      "arguments": "{\"order_id\": 3007, \"dispatch_location\": \"DISPATCH-1\"}"
+     }
+    },
+    {
+     "id": "chatcmpl-tool-984745de37bc2cb5",
+     "type": "function",
+     "function": {
+      "name": "plan_fulfillment",
+      "arguments": "{\"order_id\": 3011, \"dispatch_location\": \"DISPATCH-1\"}"
+     }
+    },
+    {
+     "id": "chatcmpl-tool-b1a2ae18b8e8eea3",
+     "type": "function",
+     "function": {
+      "name": "plan_fulfillment",
+      "arguments": "{\"order_id\": 3012, \"dispatch_location\": \"DISPATCH-1\"}"
+     }
+    }
+   ]
+  },
+  {
+   "id": 5,
+   "created_at": "2026-11-27T08:44:10.730275+00:00",
+   "name": "plan_fulfillment",
+   "role": "tool",
+   "content": "{\"result\": {\"task_id\": 1, \"order_id\": 3005, \"robot_id\": \"amr-01\", \"dispatch_location\": \"DISPATCH-1\", \"picks\": [{\"sku\": \"SKU-2006\", \"location_id\": \"B-01-1\", \"quantity\": 1}], \"steps\": [\"navigate B-01-1\", \"inspect B-01-1 SKU-2006\", \"pick B-01-1 SKU-2006 1\", \"navigate DISPATCH-1\", \"place DISPATCH-1\", \"verify 3005\"]}}",
+   "tool_call_id": "chatcmpl-tool-95f5885ce411e5e3"
+  },
+  {
+   "id": 6,
+   "created_at": "2026-11-27T08:44:10.733825+00:00",
+   "name": "plan_fulfillment",
+   "role": "tool",
+   "content": "{\"error\": \"SKU-2002 (Sugar Box) is not robot-pickable; it must be handled manually\"}",
+   "tool_call_id": "chatcmpl-tool-a25c8d4177dd360c"
+  },
+  {
+   "id": 7,
+   "created_at": "2026-11-27T08:44:10.740520+00:00",
+   "name": "plan_fulfillment",
+   "role": "tool",
+   "content": "{\"result\": {\"task_id\": 2, \"order_id\": 3001, \"robot_id\": \"amr-01\", \"dispatch_location\": \"DISPATCH-1\", \"picks\": [{\"sku\": \"SKU-2005\", \"location_id\": \"B-01-1\", \"quantity\": 2}, {\"sku\": \"SKU-1002\", \"location_id\": \"B-02-1\", \"quantity\": 2}], \"steps\": [\"navigate B-01-1\", \"inspect B-01-1 SKU-2005\", \"pick B-01-1 SKU-2005 2\", \"navigate B-02-1\", \"inspect B-02-1 SKU-1002\", \"pick B-02-1 SKU-1002 2\", \"navigate DISPATCH-1\", \"place DISPATCH-1\", \"verify 3001\"]}}",
+   "tool_call_id": "chatcmpl-tool-946fb5a886334672"
+  },
+  {
+   "id": 8,
+   "created_at": "2026-11-27T08:44:10.745550+00:00",
+   "name": "plan_fulfillment",
+   "role": "tool",
+   "content": "{\"result\": {\"task_id\": 3, \"order_id\": 3003, \"robot_id\": \"amr-01\", \"dispatch_location\": \"DISPATCH-1\", \"picks\": [{\"sku\": \"SKU-2006\", \"location_id\": \"B-01-1\", \"quantity\": 2}], \"steps\": [\"navigate B-01-1\", \"inspect B-01-1 SKU-2006\", \"pick B-01-1 SKU-2006 2\", \"navigate DISPATCH-1\", \"place DISPATCH-1\", \"verify 3003\"]}}",
+   "tool_call_id": "chatcmpl-tool-b557147daf5893c8"
+  },
+  {
+   "id": 9,
+   "created_at": "2026-11-27T08:44:10.750014+00:00",
+   "name": "plan_fulfillment",
+   "role": "tool",
+   "content": "{\"result\": {\"task_id\": 4, \"order_id\": 3004, \"robot_id\": \"amr-01\", \"dispatch_location\": \"DISPATCH-1\", \"picks\": [{\"sku\": \"SKU-2006\", \"location_id\": \"A-02-1\", \"quantity\": 1}, {\"sku\": \"SKU-1001\", \"location_id\": \"B-03-1\", \"quantity\": 3}], \"steps\": [\"navigate A-02-1\", \"inspect A-02-1 SKU-2006\", \"pick A-02-1 SKU-2006 1\", \"navigate B-03-1\", \"inspect B-03-1 SKU-1001\", \"pick B-03-1 SKU-1001 3\", \"navigate DISPATCH-1\", \"place DISPATCH-1\", \"verify 3004\"]}}",
+   "tool_call_id": "chatcmpl-tool-bf6d23ed50257699"
+  },
+  {
+   "id": 10,
+   "created_at": "2026-11-27T08:44:10.752119+00:00",
+   "name": "plan_fulfillment",
+   "role": "tool",
+   "content": "{\"error\": \"insufficient stock for order 3008: [{'sku': 'SKU-2006', 'requested': 2, 'short_by': 2, 'in_receiving': 2}]\"}",
+   "tool_call_id": "chatcmpl-tool-904c9c30db97e391"
+  },
+  {
+   "id": 11,
+   "created_at": "2026-11-27T08:44:10.756412+00:00",
+   "name": "plan_fulfillment",
+   "role": "tool",
+   "content": "{\"result\": {\"task_id\": 5, \"order_id\": 3009, \"robot_id\": \"amr-01\", \"dispatch_location\": \"DISPATCH-1\", \"picks\": [{\"sku\": \"SKU-1001\", \"location_id\": \"A-01-1\", \"quantity\": 1}, {\"sku\": \"SKU-1002\", \"location_id\": \"A-04-1\", \"quantity\": 1}], \"steps\": [\"navigate A-01-1\", \"inspect A-01-1 SKU-1001\", \"pick A-01-1 SKU-1001 1\", \"navigate A-04-1\", \"inspect A-04-1 SKU-1002\", \"pick A-04-1 SKU-1002 1\", \"navigate DISPATCH-1\", \"place DISPATCH-1\", \"verify 3009\"]}}",
+   "tool_call_id": "chatcmpl-tool-8198512af855e9e7"
+  },
+  {
+   "id": 12,
+   "created_at": "2026-11-27T08:44:10.758980+00:00",
+   "name": "plan_fulfillment",
+   "role": "tool",
+   "content": "{\"error\": \"insufficient stock for order 3010: [{'sku': 'SKU-2006', 'requested': 1, 'short_by': 1, 'in_receiving': 2}]\"}",
+   "tool_call_id": "chatcmpl-tool-89048e30b086148f"
+  },
+  {
+   "id": 13,
+   "created_at": "2026-11-27T08:44:10.762320+00:00",
+   "name": "plan_fulfillment",
+   "role": "tool",
+   "content": "{\"result\": {\"task_id\": 6, \"order_id\": 3002, \"robot_id\": \"amr-01\", \"dispatch_location\": \"DISPATCH-1\", \"picks\": [{\"sku\": \"SKU-1001\", \"location_id\": \"B-01-1\", \"quantity\": 1}], \"steps\": [\"navigate B-01-1\", \"inspect B-01-1 SKU-1001\", \"pick B-01-1 SKU-1001 1\", \"navigate DISPATCH-1\", \"place DISPATCH-1\", \"verify 3002\"]}}",
+   "tool_call_id": "chatcmpl-tool-82a564f2ac7c6bef"
+  },
+  {
+   "id": 14,
+   "created_at": "2026-11-27T08:44:10.764735+00:00",
+   "name": "plan_fulfillment",
+   "role": "tool",
+   "content": "{\"error\": \"SKU-2002 (Sugar Box) is not robot-pickable; it must be handled manually\"}",
+   "tool_call_id": "chatcmpl-tool-af0b5a7879eda6ae"
+  },
+  {
+   "id": 15,
+   "created_at": "2026-11-27T08:44:10.766768+00:00",
+   "name": "plan_fulfillment",
+   "role": "tool",
+   "content": "{\"error\": \"insufficient stock for order 3011: [{'sku': 'SKU-1001', 'requested': 3, 'short_by': 1, 'in_receiving': 2}]\"}",
+   "tool_call_id": "chatcmpl-tool-984745de37bc2cb5"
+  },
+  {
+   "id": 16,
+   "created_at": "2026-11-27T08:44:10.769174+00:00",
+   "name": "plan_fulfillment",
+   "role": "tool",
+   "content": "{\"error\": \"insufficient stock for order 3012: [{'sku': 'SKU-1001', 'requested': 3, 'short_by': 1, 'in_receiving': 2}]\"}",
+   "tool_call_id": "chatcmpl-tool-b1a2ae18b8e8eea3"
+  },
+  {
+   "id": 17,
+   "created_at": "2026-11-27T08:44:21.898439+00:00",
+   "role": "assistant",
+   "content": "",
+   "tool_calls": [
+    {
+     "id": "chatcmpl-tool-b4ed48524e12ddb1",
+     "type": "function",
+     "function": {
+      "name": "plan_fulfillment",
+      "arguments": "{\"order_id\": 3008, \"dispatch_location\": \"DISPATCH-1\", \"include_receiving\": true}"
+     }
+    },
+    {
+     "id": "chatcmpl-tool-b981c36a7436907b",
+     "type": "function",
+     "function": {
+      "name": "plan_fulfillment",
+      "arguments": "{\"order_id\": 3010, \"dispatch_location\": \"DISPATCH-1\", \"include_receiving\": true}"
+     }
+    },
+    {
+     "id": "chatcmpl-tool-9efaed3cc49d3804",
+     "type": "function",
+     "function": {
+      "name": "plan_fulfillment",
+      "arguments": "{\"order_id\": 3011, \"dispatch_location\": \"DISPATCH-1\", \"include_receiving\": true}"
+     }
+    },
+    {
+     "id": "chatcmpl-tool-b6c8cf80ade97f91",
+     "type": "function",
+     "function": {
+      "name": "plan_fulfillment",
+      "arguments": "{\"order_id\": 3012, \"dispatch_location\": \"DISPATCH-1\", \"include_receiving\": true}"
+     }
+    }
+   ]
+  },
+  {
+   "id": 18,
+   "created_at": "2026-11-27T08:44:21.913778+00:00",
+   "name": "plan_fulfillment",
+   "role": "tool",
+   "content": "{\"result\": {\"task_id\": 7, \"order_id\": 3008, \"robot_id\": \"amr-01\", \"dispatch_location\": \"DISPATCH-1\", \"picks\": [{\"sku\": \"SKU-2006\", \"location_id\": \"STAGING-1\", \"quantity\": 2}], \"steps\": [\"navigate STAGING-1\", \"inspect STAGING-1 SKU-2006\", \"pick STAGING-1 SKU-2006 2\", \"navigate DISPATCH-1\", \"place DISPATCH-1\", \"verify 3008\"]}}",
+   "tool_call_id": "chatcmpl-tool-b4ed48524e12ddb1"
+  },
+  {
+   "id": 19,
+   "created_at": "2026-11-27T08:44:21.916447+00:00",
+   "name": "plan_fulfillment",
+   "role": "tool",
+   "content": "{\"error\": \"insufficient stock for order 3010: [{'sku': 'SKU-2006', 'requested': 1, 'short_by': 1, 'in_receiving': 0}]\"}",
+   "tool_call_id": "chatcmpl-tool-b981c36a7436907b"
+  },
+  {
+   "id": 20,
+   "created_at": "2026-11-27T08:44:21.921357+00:00",
+   "name": "plan_fulfillment",
+   "role": "tool",
+   "content": "{\"result\": {\"task_id\": 8, \"order_id\": 3011, \"robot_id\": \"amr-01\", \"dispatch_location\": \"DISPATCH-1\", \"picks\": [{\"sku\": \"SKU-1001\", \"location_id\": \"A-01-1\", \"quantity\": 1}, {\"sku\": \"SKU-1001\", \"location_id\": \"B-01-1\", \"quantity\": 1}, {\"sku\": \"SKU-1001\", \"location_id\": \"STAGING-1\", \"quantity\": 1}], \"steps\": [\"navigate A-01-1\", \"inspect A-01-1 SKU-1001\", \"pick A-01-1 SKU-1001 1\", \"navigate B-01-1\", \"inspect B-01-1 SKU-1001\", \"pick B-01-1 SKU-1001 1\", \"navigate STAGING-1\", \"inspect STAGING-1 SKU-1001\", \"pick STAGING-1 SKU-1001 1\", \"navigate DISPATCH-1\", \"place DISPATCH-1\", \"verify 3011\"]}}",
+   "tool_call_id": "chatcmpl-tool-9efaed3cc49d3804"
+  },
+  {
+   "id": 21,
+   "created_at": "2026-11-27T08:44:21.924461+00:00",
+   "name": "plan_fulfillment",
+   "role": "tool",
+   "content": "{\"error\": \"insufficient stock for order 3012: [{'sku': 'SKU-1001', 'requested': 3, 'short_by': 2, 'in_receiving': 0}]\"}",
+   "tool_call_id": "chatcmpl-tool-b6c8cf80ade97f91"
+  },
+  {
+   "id": 22,
+   "created_at": "2026-11-27T08:44:44.523523+00:00",
+   "role": "assistant",
+   "content": "",
+   "tool_calls": [
+    {
+     "id": "chatcmpl-tool-b575a12e403035b2",
+     "type": "function",
+     "function": {
+      "name": "dispatch_task",
+      "arguments": "{\"task_id\": 1}"
+     }
+    },
+    {
+     "id": "chatcmpl-tool-b63a04eebdd94fe7",
+     "type": "function",
+     "function": {
+      "name": "dispatch_task",
+      "arguments": "{\"task_id\": 2}"
+     }
+    },
+    {
+     "id": "chatcmpl-tool-ae613c1fec2ad66a",
+     "type": "function",
+     "function": {
+      "name": "dispatch_task",
+      "arguments": "{\"task_id\": 3}"
+     }
+    },
+    {
+     "id": "chatcmpl-tool-a062a701a312a198",
+     "type": "function",
+     "function": {
+      "name": "dispatch_task",
+      "arguments": "{\"task_id\": 4}"
+     }
+    },
+    {
+     "id": "chatcmpl-tool-83d8661a1c3c06ba",
+     "type": "function",
+     "function": {
+      "name": "dispatch_task",
+      "arguments": "{\"task_id\": 5}"
+     }
+    },
+    {
+     "id": "chatcmpl-tool-b529651f57df4594",
+     "type": "function",
+     "function": {
+      "name": "dispatch_task",
+      "arguments": "{\"task_id\": 6}"
+     }
+    },
+    {
+     "id": "chatcmpl-tool-927aa81162dad767",
+     "type": "function",
+     "function": {
+      "name": "dispatch_task",
+      "arguments": "{\"task_id\": 7}"
+     }
+    },
+    {
+     "id": "chatcmpl-tool-b1f6008060acfef2",
+     "type": "function",
+     "function": {
+      "name": "dispatch_task",
+      "arguments": "{\"task_id\": 8}"
+     }
+    },
+    {
+     "id": "chatcmpl-tool-91f553123387dd16",
+     "type": "function",
+     "function": {
+      "name": "report_exception",
+      "arguments": "{\"type\": \"not_robot_pickable\", \"order_id\": 3006, \"message\": \"Order 3006 contains SKU-2002 (Sugar Box), not robot-pickable; manual handling required.\"}"
+     }
+    },
+    {
+     "id": "chatcmpl-tool-8bb223b5899b62e3",
+     "type": "function",
+     "function": {
+      "name": "report_exception",
+      "arguments": "{\"type\": \"not_robot_pickable\", \"order_id\": 3007, \"message\": \"Order 3007 contains SKU-2002 (Sugar Box), not robot-pickable; manual handling required.\"}"
+     }
+    },
+    {
+     "id": "chatcmpl-tool-94e1f8f477e85d48",
+     "type": "function",
+     "function": {
+      "name": "report_exception",
+      "arguments": "{\"type\": \"stock_shortage\", \"order_id\": 3010, \"message\": \"Order 3010 short 1 of SKU-2006; no receiving stock left after 3008.\"}"
+     }
+    },
+    {
+     "id": "chatcmpl-tool-886ad7d2e156db42",
+     "type": "function",
+     "function": {
+      "name": "report_exception",
+      "arguments": "{\"type\": \"stock_shortage\", \"order_id\": 3012, \"message\": \"Order 3012 short 2 of SKU-1001; no receiving stock left after 3011.\"}"
+     }
+    }
+   ]
+  },
+  {
+   "id": 23,
+   "created_at": "2026-11-27T08:44:44.536348+00:00",
+   "name": "dispatch_task",
+   "role": "tool",
+   "content": "{\"result\": {\"id\": 1, \"robot_id\": \"amr-01\", \"status\": \"queued\"}}",
+   "tool_call_id": "chatcmpl-tool-b575a12e403035b2"
+  },
+  {
+   "id": 24,
+   "created_at": "2026-11-27T08:44:44.539543+00:00",
+   "name": "dispatch_task",
+   "role": "tool",
+   "content": "{\"result\": {\"id\": 2, \"robot_id\": \"amr-01\", \"status\": \"queued\"}}",
+   "tool_call_id": "chatcmpl-tool-b63a04eebdd94fe7"
+  },
+  {
+   "id": 25,
+   "created_at": "2026-11-27T08:44:44.541732+00:00",
+   "name": "dispatch_task",
+   "role": "tool",
+   "content": "{\"result\": {\"id\": 3, \"robot_id\": \"amr-01\", \"status\": \"queued\"}}",
+   "tool_call_id": "chatcmpl-tool-ae613c1fec2ad66a"
+  },
+  {
+   "id": 26,
+   "created_at": "2026-11-27T08:44:44.543688+00:00",
+   "name": "dispatch_task",
+   "role": "tool",
+   "content": "{\"result\": {\"id\": 4, \"robot_id\": \"amr-01\", \"status\": \"queued\"}}",
+   "tool_call_id": "chatcmpl-tool-a062a701a312a198"
+  },
+  {
+   "id": 27,
+   "created_at": "2026-11-27T08:44:44.545161+00:00",
+   "name": "dispatch_task",
+   "role": "tool",
+   "content": "{\"result\": {\"id\": 5, \"robot_id\": \"amr-01\", \"status\": \"queued\"}}",
+   "tool_call_id": "chatcmpl-tool-83d8661a1c3c06ba"
+  },
+  {
+   "id": 28,
+   "created_at": "2026-11-27T08:44:44.546605+00:00",
+   "name": "dispatch_task",
+   "role": "tool",
+   "content": "{\"result\": {\"id\": 6, \"robot_id\": \"amr-01\", \"status\": \"queued\"}}",
+   "tool_call_id": "chatcmpl-tool-b529651f57df4594"
+  },
+  {
+   "id": 29,
+   "created_at": "2026-11-27T08:44:44.548051+00:00",
+   "name": "dispatch_task",
+   "role": "tool",
+   "content": "{\"result\": {\"id\": 7, \"robot_id\": \"amr-01\", \"status\": \"queued\"}}",
+   "tool_call_id": "chatcmpl-tool-927aa81162dad767"
+  },
+  {
+   "id": 30,
+   "created_at": "2026-11-27T08:44:44.549550+00:00",
+   "name": "dispatch_task",
+   "role": "tool",
+   "content": "{\"result\": {\"id\": 8, \"robot_id\": \"amr-01\", \"status\": \"queued\"}}",
+   "tool_call_id": "chatcmpl-tool-b1f6008060acfef2"
+  },
+  {
+   "id": 31,
+   "created_at": "2026-11-27T08:44:44.551486+00:00",
+   "name": "report_exception",
+   "role": "tool",
+   "content": "{\"result\": {\"id\": 1, \"task_id\": null, \"order_id\": 3006, \"type\": \"not_robot_pickable\", \"severity\": \"warning\", \"message\": \"Order 3006 contains SKU-2002 (Sugar Box), not robot-pickable; manual handling required.\", \"status\": \"open\", \"resolution\": null, \"created_at\": \"2026-11-27 08:44:44.550140+00:00\", \"resolved_at\": null}}",
+   "tool_call_id": "chatcmpl-tool-91f553123387dd16"
+  },
+  {
+   "id": 32,
+   "created_at": "2026-11-27T08:44:44.553233+00:00",
+   "name": "report_exception",
+   "role": "tool",
+   "content": "{\"result\": {\"id\": 2, \"task_id\": null, \"order_id\": 3007, \"type\": \"not_robot_pickable\", \"severity\": \"warning\", \"message\": \"Order 3007 contains SKU-2002 (Sugar Box), not robot-pickable; manual handling required.\", \"status\": \"open\", \"resolution\": null, \"created_at\": \"2026-11-27 08:44:44.552034+00:00\", \"resolved_at\": null}}",
+   "tool_call_id": "chatcmpl-tool-8bb223b5899b62e3"
+  },
+  {
+   "id": 33,
+   "created_at": "2026-11-27T08:44:44.554983+00:00",
+   "name": "report_exception",
+   "role": "tool",
+   "content": "{\"result\": {\"id\": 3, \"task_id\": null, \"order_id\": 3010, \"type\": \"stock_shortage\", \"severity\": \"warning\", \"message\": \"Order 3010 short 1 of SKU-2006; no receiving stock left after 3008.\", \"status\": \"open\", \"resolution\": null, \"created_at\": \"2026-11-27 08:44:44.553775+00:00\", \"resolved_at\": null}}",
+   "tool_call_id": "chatcmpl-tool-94e1f8f477e85d48"
+  },
+  {
+   "id": 34,
+   "created_at": "2026-11-27T08:44:44.556709+00:00",
+   "name": "report_exception",
+   "role": "tool",
+   "content": "{\"result\": {\"id\": 4, \"task_id\": null, \"order_id\": 3012, \"type\": \"stock_shortage\", \"severity\": \"warning\", \"message\": \"Order 3012 short 2 of SKU-1001; no receiving stock left after 3011.\", \"status\": \"open\", \"resolution\": null, \"created_at\": \"2026-11-27 08:44:44.555520+00:00\", \"resolved_at\": null}}",
+   "tool_call_id": "chatcmpl-tool-886ad7d2e156db42"
+  },
+  {
+   "id": 35,
+   "created_at": "2026-11-27T08:44:50.436184+00:00",
+   "role": "assistant",
+   "content": "\u2022 Dispatched 8 tasks (1\u20138) for orders 3005, 3001, 3003, 3004, 3009, 3002, 3008, 3011.\n\u2022 3006/3007 need manual pick (SKU-2002 Sugar Box, not robot-pickable).\n\u2022 3010 short 1 SKU-2006; 3012 short 2 SKU-1001 \u2014 flagged for human."
+  },
+  {
+   "id": 36,
+   "created_at": "2026-11-27T08:44:50.448539+00:00",
+   "role": "user",
+   "content": "[SYSTEM EVENT] Fulfillment task 1 for order 3005 paused: item_not_found: SKU-2006 not found at B-01-1; counted to 0. Findings:\n- SKU-2006 recorded at B-01-1 but not found; inventory corrected, task 1 paused for a decision"
+  },
+  {
+   "id": 37,
+   "created_at": "2026-11-27T08:44:52.245392+00:00",
+   "role": "assistant",
+   "content": "",
+   "tool_calls": [
+    {
+     "id": "chatcmpl-tool-98881acf6d169fc9",
+     "type": "function",
+     "function": {
+      "name": "reallocate_pick",
+      "arguments": "{\"task_id\": 1, \"include_receiving\": true}"
+     }
+    }
+   ]
+  },
+  {
+   "id": 38,
+   "created_at": "2026-11-27T08:44:52.250153+00:00",
+   "name": "reallocate_pick",
+   "role": "tool",
+   "content": "{\"error\": \"no unreserved stock covers the missing units for task 1; held by queued work: 2 at B-01-1 reserved by fulfillment task 3; 1 at A-02-1 reserved by fulfillment task 4; 2 at STAGING-1 reserved by fulfillment task 7\"}",
+   "tool_call_id": "chatcmpl-tool-98881acf6d169fc9"
+  },
+  {
+   "id": 39,
+   "created_at": "2026-11-27T08:44:57.353067+00:00",
+   "role": "assistant",
+   "content": "",
+   "tool_calls": [
+    {
+     "id": "chatcmpl-tool-adc04c6ad3fd18ad",
+     "type": "function",
+     "function": {
+      "name": "cancel_task",
+      "arguments": "{\"task_id\": 1}"
+     }
+    },
+    {
+     "id": "chatcmpl-tool-a80e521b43826539",
+     "type": "function",
+     "function": {
+      "name": "report_exception",
+      "arguments": "{\"type\": \"stock_shortage\", \"order_id\": 3005, \"message\": \"Order 3005 (P1): SKU-2006 not at B-01-1; all other stock reserved by queued tasks. Needs re-plan after queue clears.\"}"
+     }
+    }
+   ]
+  },
+  {
+   "id": 40,
+   "created_at": "2026-11-27T08:44:57.364940+00:00",
+   "name": "cancel_task",
+   "role": "tool",
+   "content": "{\"result\": {\"task_id\": 1, \"status\": \"cancelled\"}}",
+   "tool_call_id": "chatcmpl-tool-adc04c6ad3fd18ad"
+  },
+  {
+   "id": 41,
+   "created_at": "2026-11-27T08:44:57.366688+00:00",
+   "name": "report_exception",
+   "role": "tool",
+   "content": "{\"result\": {\"id\": 6, \"task_id\": null, \"order_id\": 3005, \"type\": \"stock_shortage\", \"severity\": \"warning\", \"message\": \"Order 3005 (P1): SKU-2006 not at B-01-1; all other stock reserved by queued tasks. Needs re-plan after queue clears.\", \"status\": \"open\", \"resolution\": null, \"created_at\": \"2026-11-27 08:44:57.365661+00:00\", \"resolved_at\": null}}",
+   "tool_call_id": "chatcmpl-tool-a80e521b43826539"
+  },
+  {
+   "id": 42,
+   "created_at": "2026-11-27T08:45:00.899612+00:00",
+   "role": "assistant",
+   "content": "\u2022 Task 1 (3005) paused: SKU-2006 missing at B-01-1, counted to 0.\n\u2022 All other SKU-2006 stock reserved by tasks 3/4/7 \u2014 cancelled task 1.\n\u2022 Flagged 3005 for re-plan once queue frees stock; will re-dispatch."
+  },
+  {
+   "id": 43,
+   "created_at": "2026-11-27T08:45:00.912539+00:00",
+   "role": "user",
+   "content": "[SYSTEM EVENT] Fulfillment task 2 for order 3001 paused: item_not_found: SKU-2005 not found at B-01-1; counted to 0. Findings:\n- SKU-2005 recorded at B-01-1 but not found; inventory corrected, task 2 paused for a decision"
+  },
+  {
+   "id": 44,
+   "created_at": "2026-11-27T08:45:03.144656+00:00",
+   "role": "assistant",
+   "content": "",
+   "tool_calls": [
+    {
+     "id": "chatcmpl-tool-ac6d79c06c8606f4",
+     "type": "function",
+     "function": {
+      "name": "reallocate_pick",
+      "arguments": "{\"task_id\": 2, \"include_receiving\": true}"
+     }
+    }
+   ]
+  },
+  {
+   "id": 45,
+   "created_at": "2026-11-27T08:45:03.158214+00:00",
+   "name": "reallocate_pick",
+   "role": "tool",
+   "content": "{\"result\": {\"task_id\": 2, \"rerouted_to\": [\"C-02-1\"], \"unreserved_in_receiving\": 4, \"next\": \"dispatch_task to resume\"}}",
+   "tool_call_id": "chatcmpl-tool-ac6d79c06c8606f4"
+  },
+  {
+   "id": 46,
+   "created_at": "2026-11-27T08:45:04.382609+00:00",
+   "role": "assistant",
+   "content": "",
+   "tool_calls": [
+    {
+     "id": "chatcmpl-tool-a72930913080d918",
+     "type": "function",
+     "function": {
+      "name": "dispatch_task",
+      "arguments": "{\"task_id\": 2}"
+     }
+    }
+   ]
+  },
+  {
+   "id": 47,
+   "created_at": "2026-11-27T08:45:04.394807+00:00",
+   "name": "dispatch_task",
+   "role": "tool",
+   "content": "{\"result\": {\"id\": 2, \"robot_id\": \"amr-01\", \"status\": \"queued\"}}",
+   "tool_call_id": "chatcmpl-tool-a72930913080d918"
+  },
+  {
+   "id": 48,
+   "created_at": "2026-11-27T08:45:06.477531+00:00",
+   "role": "assistant",
+   "content": "\u2022 Task 2 (3001) resumed: SKU-2005 rerouted to C-02-1.\n\u2022 4 units of SKU-2005 also available in receiving if needed."
+  },
+  {
+   "id": 49,
+   "created_at": "2026-11-27T08:45:06.488279+00:00",
+   "role": "user",
+   "content": "[SYSTEM EVENT] Fulfillment task 3 for order 3003 paused: item_not_found: SKU-2006 not found at B-01-1; counted to 0. Findings:\n- SKU-2006 recorded at B-01-1 but not found; inventory corrected, task 3 paused for a decision"
+  },
+  {
+   "id": 50,
+   "created_at": "2026-11-27T08:45:08.448518+00:00",
+   "role": "assistant",
+   "content": "",
+   "tool_calls": [
+    {
+     "id": "chatcmpl-tool-857b043c859cb950",
+     "type": "function",
+     "function": {
+      "name": "reallocate_pick",
+      "arguments": "{\"task_id\": 3, \"include_receiving\": true}"
+     }
+    }
+   ]
+  },
+  {
+   "id": 51,
+   "created_at": "2026-11-27T08:45:08.461916+00:00",
+   "name": "reallocate_pick",
+   "role": "tool",
+   "content": "{\"error\": \"no unreserved stock covers the missing units for task 3; held by queued work: 1 at A-02-1 reserved by fulfillment task 4; 2 at STAGING-1 reserved by fulfillment task 7\"}",
+   "tool_call_id": "chatcmpl-tool-857b043c859cb950"
+  },
+  {
+   "id": 52,
+   "created_at": "2026-11-27T08:45:13.872109+00:00",
+   "role": "assistant",
+   "content": "",
+   "tool_calls": [
+    {
+     "id": "chatcmpl-tool-a6c9817270e9de4e",
+     "type": "function",
+     "function": {
+      "name": "cancel_task",
+      "arguments": "{\"task_id\": 3}"
+     }
+    },
+    {
+     "id": "chatcmpl-tool-850b322d37a1ca10",
+     "type": "function",
+     "function": {
+      "name": "report_exception",
+      "arguments": "{\"type\": \"stock_shortage\", \"order_id\": 3003, \"message\": \"Order 3003 (P1): SKU-2006 missing at B-01-1; remaining stock reserved by tasks 4/7. Re-plan after queue.\"}"
+     }
+    }
+   ]
+  },
+  {
+   "id": 53,
+   "created_at": "2026-11-27T08:45:13.883251+00:00",
+   "name": "cancel_task",
+   "role": "tool",
+   "content": "{\"result\": {\"task_id\": 3, \"status\": \"cancelled\"}}",
+   "tool_call_id": "chatcmpl-tool-a6c9817270e9de4e"
+  },
+  {
+   "id": 54,
+   "created_at": "2026-11-27T08:45:13.885173+00:00",
+   "name": "report_exception",
+   "role": "tool",
+   "content": "{\"result\": {\"id\": 9, \"task_id\": null, \"order_id\": 3003, \"type\": \"stock_shortage\", \"severity\": \"warning\", \"message\": \"Order 3003 (P1): SKU-2006 missing at B-01-1; remaining stock reserved by tasks 4/7. Re-plan after queue.\", \"status\": \"open\", \"resolution\": null, \"created_at\": \"2026-11-27 08:45:13.883978+00:00\", \"resolved_at\": null}}",
+   "tool_call_id": "chatcmpl-tool-850b322d37a1ca10"
+  },
+  {
+   "id": 55,
+   "created_at": "2026-11-27T08:45:17.674163+00:00",
+   "role": "assistant",
+   "content": "\u2022 Task 3 (3003) paused: SKU-2006 missing at B-01-1.\n\u2022 Remaining SKU-2006 reserved by tasks 4/7 \u2014 cancelled task 3.\n\u2022 Flagged 3003 for re-plan once queue frees stock."
+  },
+  {
+   "id": 56,
+   "created_at": "2026-11-27T08:45:17.686588+00:00",
+   "role": "user",
+   "content": "[SYSTEM EVENT] Fulfillment task 2 for order 3001 succeeded. Findings:\n- SKU-2005 recorded at B-01-1 but not found; inventory corrected, task 2 paused for a decision"
+  },
+  {
+   "id": 57,
+   "created_at": "2026-11-27T08:45:20.672807+00:00",
+   "role": "assistant",
+   "content": "\u2022 Task 2 (3001) completed: SKU-2005 picked from C-02-1, SKU-1002 from B-02-1, placed at DISPATCH-1."
+  },
+  {
+   "id": 58,
+   "created_at": "2026-11-27T08:45:20.683810+00:00",
+   "role": "user",
+   "content": "[SYSTEM EVENT] Fulfillment task 4 for order 3004 succeeded."
+  },
+  {
+   "id": 59,
+   "created_at": "2026-11-27T08:45:22.688991+00:00",
+   "role": "assistant",
+   "content": "\u2022 Task 4 (3004) completed: SKU-2006 from A-02-1, SKU-1001 from B-03-1, placed at DISPATCH-1."
+  },
+  {
+   "id": 60,
+   "created_at": "2026-11-27T08:45:22.700259+00:00",
+   "role": "user",
+   "content": "[SYSTEM EVENT] Fulfillment task 5 for order 3009 paused: item_not_found: SKU-1001 not found at A-01-1; counted to 0. Findings:\n- SKU-1001 recorded at A-01-1 but not found; inventory corrected, task 5 paused for a decision"
+  },
+  {
+   "id": 61,
+   "created_at": "2026-11-27T08:45:24.603673+00:00",
+   "role": "assistant",
+   "content": "",
+   "tool_calls": [
+    {
+     "id": "chatcmpl-tool-9798adff3a025cff",
+     "type": "function",
+     "function": {
+      "name": "reallocate_pick",
+      "arguments": "{\"task_id\": 5, \"include_receiving\": true}"
+     }
+    }
+   ]
+  },
+  {
+   "id": 62,
+   "created_at": "2026-11-27T08:45:24.617818+00:00",
+   "name": "reallocate_pick",
+   "role": "tool",
+   "content": "{\"result\": {\"task_id\": 5, \"rerouted_to\": [\"STAGING-1\"], \"unreserved_in_receiving\": 0, \"next\": \"dispatch_task to resume\"}}",
+   "tool_call_id": "chatcmpl-tool-9798adff3a025cff"
+  },
+  {
+   "id": 63,
+   "created_at": "2026-11-27T08:45:26.662033+00:00",
+   "role": "assistant",
+   "content": "",
+   "tool_calls": [
+    {
+     "id": "chatcmpl-tool-bd0e9eb8531261c9",
+     "type": "function",
+     "function": {
+      "name": "dispatch_task",
+      "arguments": "{\"task_id\": 5}"
+     }
+    }
+   ]
+  },
+  {
+   "id": 64,
+   "created_at": "2026-11-27T08:45:26.664417+00:00",
+   "name": "dispatch_task",
+   "role": "tool",
+   "content": "{\"result\": {\"id\": 5, \"robot_id\": \"amr-01\", \"status\": \"queued\"}}",
+   "tool_call_id": "chatcmpl-tool-bd0e9eb8531261c9"
+  },
+  {
+   "id": 65,
+   "created_at": "2026-11-27T08:45:28.440128+00:00",
+   "role": "assistant",
+   "content": "\u2022 Task 5 (3009) resumed: SKU-1001 rerouted to STAGING-1."
+  },
+  {
+   "id": 66,
+   "created_at": "2026-11-27T08:45:28.443367+00:00",
+   "role": "user",
+   "content": "[SYSTEM EVENT] Fulfillment task 6 for order 3002 succeeded."
+  },
+  {
+   "id": 67,
+   "created_at": "2026-11-27T08:45:30.034329+00:00",
+   "role": "assistant",
+   "content": "\u2022 Task 6 (3002) completed: SKU-1001 from B-01-1, placed at DISPATCH-1."
+  },
+  {
+   "id": 68,
+   "created_at": "2026-11-27T08:45:30.047043+00:00",
+   "role": "user",
+   "content": "[SYSTEM EVENT] Fulfillment task 7 for order 3008 succeeded."
+  },
+  {
+   "id": 69,
+   "created_at": "2026-11-27T08:45:31.720434+00:00",
+   "role": "assistant",
+   "content": "\u2022 Task 7 (3008) completed: SKU-2006 (2) from STAGING-1, placed at DISPATCH-1."
+  },
+  {
+   "id": 70,
+   "created_at": "2026-11-27T08:45:31.732800+00:00",
+   "role": "user",
+   "content": "[SYSTEM EVENT] Fulfillment task 8 for order 3011 paused: item_not_found: SKU-1001 not found at A-01-1; counted to 0. Findings:\n- SKU-1001 recorded at A-01-1 but not found; inventory corrected, task 8 paused for a decision"
+  },
+  {
+   "id": 71,
+   "created_at": "2026-11-27T08:45:33.771684+00:00",
+   "role": "assistant",
+   "content": "",
+   "tool_calls": [
+    {
+     "id": "chatcmpl-tool-80e08d95c1cdbcf9",
+     "type": "function",
+     "function": {
+      "name": "reallocate_pick",
+      "arguments": "{\"task_id\": 8, \"include_receiving\": true}"
+     }
+    }
+   ]
+  },
+  {
+   "id": 72,
+   "created_at": "2026-11-27T08:45:33.785119+00:00",
+   "name": "reallocate_pick",
+   "role": "tool",
+   "content": "{\"error\": \"no unreserved stock covers the missing units for task 8\"}",
+   "tool_call_id": "chatcmpl-tool-80e08d95c1cdbcf9"
+  },
+  {
+   "id": 73,
+   "created_at": "2026-11-27T08:45:39.045046+00:00",
+   "role": "assistant",
+   "content": "",
+   "tool_calls": [
+    {
+     "id": "chatcmpl-tool-b9c67b0d2a9b759a",
+     "type": "function",
+     "function": {
+      "name": "cancel_task",
+      "arguments": "{\"task_id\": 8}"
+     }
+    },
+    {
+     "id": "chatcmpl-tool-b9ceeb268b2d3a2b",
+     "type": "function",
+     "function": {
+      "name": "report_exception",
+      "arguments": "{\"type\": \"stock_shortage\", \"order_id\": 3011, \"message\": \"Order 3011 (P3): SKU-1001 missing at A-01-1; no other stock available. Needs replenishment.\"}"
+     }
+    }
+   ]
+  },
+  {
+   "id": 74,
+   "created_at": "2026-11-27T08:45:39.048543+00:00",
+   "name": "cancel_task",
+   "role": "tool",
+   "content": "{\"result\": {\"task_id\": 8, \"status\": \"cancelled\"}}",
+   "tool_call_id": "chatcmpl-tool-b9c67b0d2a9b759a"
+  },
+  {
+   "id": 75,
+   "created_at": "2026-11-27T08:45:39.050689+00:00",
+   "name": "report_exception",
+   "role": "tool",
+   "content": "{\"result\": {\"id\": 12, \"task_id\": null, \"order_id\": 3011, \"type\": \"stock_shortage\", \"severity\": \"warning\", \"message\": \"Order 3011 (P3): SKU-1001 missing at A-01-1; no other stock available. Needs replenishment.\", \"status\": \"open\", \"resolution\": null, \"created_at\": \"2026-11-27 08:45:39.049182+00:00\", \"resolved_at\": null}}",
+   "tool_call_id": "chatcmpl-tool-b9ceeb268b2d3a2b"
+  },
+  {
+   "id": 76,
+   "created_at": "2026-11-27T08:45:41.501823+00:00",
+   "role": "assistant",
+   "content": "\u2022 Task 8 (3011) paused: SKU-1001 missing at A-01-1, no other stock.\n\u2022 Cancelled task 8; flagged 3011 for replenishment before re-plan."
+  },
+  {
+   "id": 77,
+   "created_at": "2026-11-27T08:45:41.515390+00:00",
+   "role": "user",
+   "content": "[SYSTEM EVENT] Fulfillment task 5 for order 3009 succeeded. Findings:\n- SKU-1001 recorded at A-01-1 but not found; inventory corrected, task 5 paused for a decision"
+  },
+  {
+   "id": 78,
+   "created_at": "2026-11-27T08:45:43.729211+00:00",
+   "role": "assistant",
+   "content": "\u2022 Task 5 (3009) completed: SKU-1001 from STAGING-1, SKU-1002 from A-04-1, placed at DISPATCH-1."
+  }
+ ]
+}

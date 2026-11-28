@@ -1,0 +1,2725 @@
+{
+ "row": {
+  "scenario": "stress_xl",
+  "variant": "h1",
+  "trial": 9,
+  "temperature": 0.7,
+  "settled": true,
+  "success": false,
+  "checks": {
+   "priority respected and no fillable order left behind": false,
+   "every unfilled order flagged": false,
+   "manual orders not dispatched and flagged": true,
+   "other dock untouched": true,
+   "no task left paused": false,
+   "cross-dock leftovers put away": true
+  },
+  "tool_calls": 67,
+  "turns": 2,
+  "wall_s": 194.0,
+  "tools": [
+   "list_orders",
+   "create_plan",
+   "plan_fulfillment",
+   "plan_fulfillment",
+   "plan_fulfillment",
+   "plan_fulfillment",
+   "plan_fulfillment",
+   "plan_fulfillment",
+   "plan_fulfillment",
+   "update_subgoal",
+   "update_subgoal",
+   "report_exception",
+   "report_exception",
+   "plan_fulfillment",
+   "plan_fulfillment",
+   "plan_fulfillment",
+   "plan_fulfillment",
+   "plan_fulfillment",
+   "plan_fulfillment",
+   "plan_fulfillment",
+   "plan_fulfillment",
+   "plan_fulfillment",
+   "update_subgoal",
+   "report_exception",
+   "update_subgoal",
+   "report_exception",
+   "update_subgoal",
+   "report_exception",
+   "plan_fulfillment",
+   "plan_fulfillment",
+   "plan_fulfillment",
+   "plan_fulfillment",
+   "update_subgoal",
+   "report_exception",
+   "plan_fulfillment",
+   "dispatch_task",
+   "dispatch_task",
+   "dispatch_task",
+   "dispatch_task",
+   "dispatch_task",
+   "dispatch_task",
+   "dispatch_task",
+   "dispatch_task",
+   "dispatch_task",
+   "dispatch_task",
+   "dispatch_task",
+   "dispatch_task",
+   "dispatch_task",
+   "dispatch_task",
+   "update_subgoal",
+   "update_subgoal",
+   "update_subgoal",
+   "update_subgoal",
+   "update_subgoal",
+   "update_subgoal",
+   "update_subgoal",
+   "update_subgoal",
+   "update_subgoal",
+   "update_subgoal",
+   "update_subgoal",
+   "update_subgoal",
+   "update_subgoal",
+   "update_subgoal",
+   "reallocate_pick",
+   "find_stock",
+   "update_subgoal",
+   "report_exception"
+  ],
+  "harness": [
+   "plan"
+  ],
+  "peak_prompt_tokens": 14167,
+  "harness_stats": {
+   "plans": 1,
+   "revision": 7
+  },
+  "unresolved_exceptions": 0,
+  "state": {
+   "initial": {
+    "orders": {
+     "3001": {
+      "status": "pending",
+      "priority": 1,
+      "dispatch_location": "DISPATCH-1"
+     },
+     "3002": {
+      "status": "pending",
+      "priority": 1,
+      "dispatch_location": "DISPATCH-1"
+     },
+     "3003": {
+      "status": "pending",
+      "priority": 1,
+      "dispatch_location": "DISPATCH-1"
+     },
+     "3005": {
+      "status": "pending",
+      "priority": 1,
+      "dispatch_location": "DISPATCH-1"
+     },
+     "3009": {
+      "status": "pending",
+      "priority": 1,
+      "dispatch_location": "DISPATCH-1"
+     },
+     "3011": {
+      "status": "pending",
+      "priority": 1,
+      "dispatch_location": "DISPATCH-1"
+     },
+     "3017": {
+      "status": "pending",
+      "priority": 1,
+      "dispatch_location": "DISPATCH-1"
+     },
+     "3023": {
+      "status": "pending",
+      "priority": 1,
+      "dispatch_location": "DISPATCH-2"
+     },
+     "3006": {
+      "status": "pending",
+      "priority": 2,
+      "dispatch_location": "DISPATCH-1"
+     },
+     "3007": {
+      "status": "pending",
+      "priority": 2,
+      "dispatch_location": "DISPATCH-1"
+     },
+     "3008": {
+      "status": "pending",
+      "priority": 2,
+      "dispatch_location": "DISPATCH-1"
+     },
+     "3010": {
+      "status": "pending",
+      "priority": 2,
+      "dispatch_location": "DISPATCH-1"
+     },
+     "3012": {
+      "status": "pending",
+      "priority": 2,
+      "dispatch_location": "DISPATCH-1"
+     },
+     "3014": {
+      "status": "pending",
+      "priority": 2,
+      "dispatch_location": "DISPATCH-1"
+     },
+     "3015": {
+      "status": "pending",
+      "priority": 2,
+      "dispatch_location": "DISPATCH-1"
+     },
+     "3019": {
+      "status": "pending",
+      "priority": 2,
+      "dispatch_location": "DISPATCH-1"
+     },
+     "3020": {
+      "status": "pending",
+      "priority": 2,
+      "dispatch_location": "DISPATCH-1"
+     },
+     "3021": {
+      "status": "pending",
+      "priority": 2,
+      "dispatch_location": "DISPATCH-2"
+     },
+     "3004": {
+      "status": "pending",
+      "priority": 3,
+      "dispatch_location": "DISPATCH-1"
+     },
+     "3013": {
+      "status": "pending",
+      "priority": 3,
+      "dispatch_location": "DISPATCH-1"
+     },
+     "3016": {
+      "status": "pending",
+      "priority": 3,
+      "dispatch_location": "DISPATCH-1"
+     },
+     "3018": {
+      "status": "pending",
+      "priority": 3,
+      "dispatch_location": "DISPATCH-1"
+     },
+     "3022": {
+      "status": "pending",
+      "priority": 3,
+      "dispatch_location": "DISPATCH-2"
+     }
+    },
+    "lines": {
+     "3001": [
+      {
+       "sku": "SKU-2005",
+       "name": "Potted Meat Can",
+       "quantity": 1,
+       "picked_qty": 0
+      },
+      {
+       "sku": "SKU-1002",
+       "name": "Tomato Soup Can",
+       "quantity": 1,
+       "picked_qty": 0
+      }
+     ],
+     "3002": [
+      {
+       "sku": "SKU-1001",
+       "name": "Mustard Bottle",
+       "quantity": 2,
+       "picked_qty": 0
+      },
+      {
+       "sku": "SKU-1002",
+       "name": "Tomato Soup Can",
+       "quantity": 1,
+       "picked_qty": 0
+      }
+     ],
+     "3003": [
+      {
+       "sku": "SKU-2006",
+       "name": "Coffee Can",
+       "quantity": 3,
+       "picked_qty": 0
+      },
+      {
+       "sku": "SKU-2001",
+       "name": "Cracker Box",
+       "quantity": 1,
+       "picked_qty": 0
+      }
+     ],
+     "3005": [
+      {
+       "sku": "SKU-1001",
+       "name": "Mustard Bottle",
+       "quantity": 1,
+       "picked_qty": 0
+      }
+     ],
+     "3009": [
+      {
+       "sku": "SKU-2005",
+       "name": "Potted Meat Can",
+       "quantity": 3,
+       "picked_qty": 0
+      },
+      {
+       "sku": "SKU-3001",
+       "name": "Bleach Cleanser",
+       "quantity": 1,
+       "picked_qty": 0
+      }
+     ],
+     "3011": [
+      {
+       "sku": "SKU-2005",
+       "name": "Potted Meat Can",
+       "quantity": 3,
+       "picked_qty": 0
+      }
+     ],
+     "3017": [
+      {
+       "sku": "SKU-2006",
+       "name": "Coffee Can",
+       "quantity": 3,
+       "picked_qty": 0
+      },
+      {
+       "sku": "SKU-1002",
+       "name": "Tomato Soup Can",
+       "quantity": 1,
+       "picked_qty": 0
+      }
+     ],
+     "3023": [
+      {
+       "sku": "SKU-2006",
+       "name": "Coffee Can",
+       "quantity": 2,
+       "picked_qty": 0
+      }
+     ],
+     "3006": [
+      {
+       "sku": "SKU-2006",
+       "name": "Coffee Can",
+       "quantity": 3,
+       "picked_qty": 0
+      }
+     ],
+     "3007": [
+      {
+       "sku": "SKU-1001",
+       "name": "Mustard Bottle",
+       "quantity": 1,
+       "picked_qty": 0
+      },
+      {
+       "sku": "SKU-1002",
+       "name": "Tomato Soup Can",
+       "quantity": 3,
+       "picked_qty": 0
+      },
+      {
+       "sku": "SKU-2001",
+       "name": "Cracker Box",
+       "quantity": 1,
+       "picked_qty": 0
+      }
+     ],
+     "3008": [
+      {
+       "sku": "SKU-1001",
+       "name": "Mustard Bottle",
+       "quantity": 1,
+       "picked_qty": 0
+      }
+     ],
+     "3010": [
+      {
+       "sku": "SKU-2006",
+       "name": "Coffee Can",
+       "quantity": 1,
+       "picked_qty": 0
+      }
+     ],
+     "3012": [
+      {
+       "sku": "SKU-1001",
+       "name": "Mustard Bottle",
+       "quantity": 2,
+       "picked_qty": 0
+      },
+      {
+       "sku": "SKU-2005",
+       "name": "Potted Meat Can",
+       "quantity": 2,
+       "picked_qty": 0
+      }
+     ],
+     "3014": [
+      {
+       "sku": "SKU-1001",
+       "name": "Mustard Bottle",
+       "quantity": 1,
+       "picked_qty": 0
+      },
+      {
+       "sku": "SKU-1002",
+       "name": "Tomato Soup Can",
+       "quantity": 1,
+       "picked_qty": 0
+      }
+     ],
+     "3015": [
+      {
+       "sku": "SKU-2005",
+       "name": "Potted Meat Can",
+       "quantity": 1,
+       "picked_qty": 0
+      },
+      {
+       "sku": "SKU-1002",
+       "name": "Tomato Soup Can",
+       "quantity": 2,
+       "picked_qty": 0
+      }
+     ],
+     "3019": [
+      {
+       "sku": "SKU-1002",
+       "name": "Tomato Soup Can",
+       "quantity": 2,
+       "picked_qty": 0
+      },
+      {
+       "sku": "SKU-2005",
+       "name": "Potted Meat Can",
+       "quantity": 1,
+       "picked_qty": 0
+      }
+     ],
+     "3020": [
+      {
+       "sku": "SKU-1001",
+       "name": "Mustard Bottle",
+       "quantity": 1,
+       "picked_qty": 0
+      }
+     ],
+     "3021": [
+      {
+       "sku": "SKU-1001",
+       "name": "Mustard Bottle",
+       "quantity": 3,
+       "picked_qty": 0
+      }
+     ],
+     "3004": [
+      {
+       "sku": "SKU-1002",
+       "name": "Tomato Soup Can",
+       "quantity": 1,
+       "picked_qty": 0
+      }
+     ],
+     "3013": [
+      {
+       "sku": "SKU-1002",
+       "name": "Tomato Soup Can",
+       "quantity": 3,
+       "picked_qty": 0
+      },
+      {
+       "sku": "SKU-2005",
+       "name": "Potted Meat Can",
+       "quantity": 1,
+       "picked_qty": 0
+      }
+     ],
+     "3016": [
+      {
+       "sku": "SKU-1001",
+       "name": "Mustard Bottle",
+       "quantity": 1,
+       "picked_qty": 0
+      }
+     ],
+     "3018": [
+      {
+       "sku": "SKU-1002",
+       "name": "Tomato Soup Can",
+       "quantity": 2,
+       "picked_qty": 0
+      },
+      {
+       "sku": "SKU-1001",
+       "name": "Mustard Bottle",
+       "quantity": 3,
+       "picked_qty": 0
+      }
+     ],
+     "3022": [
+      {
+       "sku": "SKU-1001",
+       "name": "Mustard Bottle",
+       "quantity": 1,
+       "picked_qty": 0
+      }
+     ]
+    },
+    "exceptions": [],
+    "tasks": [],
+    "stock": [
+     [
+      "A-01-1",
+      "SKU-1001",
+      0
+     ],
+     [
+      "A-01-1",
+      "SKU-2005",
+      0
+     ],
+     [
+      "A-01-2",
+      "SKU-2001",
+      4
+     ],
+     [
+      "A-02-1",
+      "SKU-1002",
+      4
+     ],
+     [
+      "A-02-2",
+      "SKU-3001",
+      48
+     ],
+     [
+      "A-03-1",
+      "SKU-1002",
+      0
+     ],
+     [
+      "A-03-1",
+      "SKU-2006",
+      2
+     ],
+     [
+      "A-03-1",
+      "SKU-1001",
+      3
+     ],
+     [
+      "A-03-2",
+      "SKU-2002",
+      4
+     ],
+     [
+      "A-04-1",
+      "SKU-2006",
+      0
+     ],
+     [
+      "A-04-1",
+      "SKU-5002",
+      5
+     ],
+     [
+      "A-04-2",
+      "SKU-4001",
+      27
+     ],
+     [
+      "B-01-1",
+      "SKU-2002",
+      2
+     ],
+     [
+      "B-01-1",
+      "SKU-1002",
+      0
+     ],
+     [
+      "B-01-1",
+      "SKU-1001",
+      2
+     ],
+     [
+      "B-01-2",
+      "SKU-5001",
+      36
+     ],
+     [
+      "B-02-1",
+      "SKU-2003",
+      4
+     ],
+     [
+      "B-02-1",
+      "SKU-1001",
+      4
+     ],
+     [
+      "B-02-1",
+      "SKU-1002",
+      2
+     ],
+     [
+      "B-02-2",
+      "SKU-2001",
+      3
+     ],
+     [
+      "B-02-2",
+      "SKU-2004",
+      3
+     ],
+     [
+      "B-03-1",
+      "SKU-1002",
+      0
+     ],
+     [
+      "B-03-1",
+      "SKU-2005",
+      2
+     ],
+     [
+      "B-04-1",
+      "SKU-2005",
+      2
+     ],
+     [
+      "B-04-1",
+      "SKU-2006",
+      0
+     ],
+     [
+      "B-04-2",
+      "SKU-3001",
+      2
+     ],
+     [
+      "C-01-1",
+      "SKU-2006",
+      4
+     ],
+     [
+      "C-01-1",
+      "SKU-2004",
+      4
+     ],
+     [
+      "C-01-1",
+      "SKU-1002",
+      4
+     ],
+     [
+      "C-01-2",
+      "SKU-2002",
+      3
+     ],
+     [
+      "C-01-2",
+      "SKU-5002",
+      4
+     ],
+     [
+      "C-02-1",
+      "SKU-1002",
+      4
+     ],
+     [
+      "C-02-1",
+      "SKU-1001",
+      2
+     ],
+     [
+      "C-02-1",
+      "SKU-2006",
+      3
+     ],
+     [
+      "C-02-2",
+      "SKU-2003",
+      54
+     ],
+     [
+      "C-03-1",
+      "SKU-4001",
+      4
+     ],
+     [
+      "C-03-2",
+      "SKU-1001",
+      0
+     ],
+     [
+      "C-04-1",
+      "SKU-2005",
+      2
+     ],
+     [
+      "C-04-1",
+      "SKU-1001",
+      0
+     ],
+     [
+      "C-04-1",
+      "SKU-2006",
+      0
+     ],
+     [
+      "C-04-1",
+      "SKU-1002",
+      0
+     ],
+     [
+      "C-04-2",
+      "SKU-5001",
+      2
+     ],
+     [
+      "STAGING-1",
+      "SKU-2006",
+      0
+     ],
+     [
+      "STAGING-1",
+      "SKU-2005",
+      0
+     ],
+     [
+      "STAGING-1",
+      "SKU-1001",
+      4
+     ],
+     [
+      "STAGING-1",
+      "SKU-1002",
+      3
+     ]
+    ]
+   },
+   "final": {
+    "orders": {
+     "3001": {
+      "status": "in_progress",
+      "priority": 1,
+      "dispatch_location": "DISPATCH-1"
+     },
+     "3002": {
+      "status": "pending",
+      "priority": 1,
+      "dispatch_location": "DISPATCH-1"
+     },
+     "3003": {
+      "status": "pending",
+      "priority": 1,
+      "dispatch_location": "DISPATCH-1"
+     },
+     "3005": {
+      "status": "pending",
+      "priority": 1,
+      "dispatch_location": "DISPATCH-1"
+     },
+     "3009": {
+      "status": "pending",
+      "priority": 1,
+      "dispatch_location": "DISPATCH-1"
+     },
+     "3011": {
+      "status": "pending",
+      "priority": 1,
+      "dispatch_location": "DISPATCH-1"
+     },
+     "3017": {
+      "status": "pending",
+      "priority": 1,
+      "dispatch_location": "DISPATCH-1"
+     },
+     "3023": {
+      "status": "pending",
+      "priority": 1,
+      "dispatch_location": "DISPATCH-2"
+     },
+     "3006": {
+      "status": "pending",
+      "priority": 2,
+      "dispatch_location": "DISPATCH-1"
+     },
+     "3007": {
+      "status": "pending",
+      "priority": 2,
+      "dispatch_location": "DISPATCH-1"
+     },
+     "3008": {
+      "status": "pending",
+      "priority": 2,
+      "dispatch_location": "DISPATCH-1"
+     },
+     "3010": {
+      "status": "pending",
+      "priority": 2,
+      "dispatch_location": "DISPATCH-1"
+     },
+     "3012": {
+      "status": "pending",
+      "priority": 2,
+      "dispatch_location": "DISPATCH-1"
+     },
+     "3014": {
+      "status": "pending",
+      "priority": 2,
+      "dispatch_location": "DISPATCH-1"
+     },
+     "3015": {
+      "status": "pending",
+      "priority": 2,
+      "dispatch_location": "DISPATCH-1"
+     },
+     "3019": {
+      "status": "pending",
+      "priority": 2,
+      "dispatch_location": "DISPATCH-1"
+     },
+     "3020": {
+      "status": "pending",
+      "priority": 2,
+      "dispatch_location": "DISPATCH-1"
+     },
+     "3021": {
+      "status": "pending",
+      "priority": 2,
+      "dispatch_location": "DISPATCH-2"
+     },
+     "3004": {
+      "status": "pending",
+      "priority": 3,
+      "dispatch_location": "DISPATCH-1"
+     },
+     "3013": {
+      "status": "pending",
+      "priority": 3,
+      "dispatch_location": "DISPATCH-1"
+     },
+     "3016": {
+      "status": "pending",
+      "priority": 3,
+      "dispatch_location": "DISPATCH-1"
+     },
+     "3018": {
+      "status": "pending",
+      "priority": 3,
+      "dispatch_location": "DISPATCH-1"
+     },
+     "3022": {
+      "status": "pending",
+      "priority": 3,
+      "dispatch_location": "DISPATCH-2"
+     }
+    },
+    "lines": {
+     "3001": [
+      {
+       "sku": "SKU-2005",
+       "name": "Potted Meat Can",
+       "quantity": 1,
+       "picked_qty": 0
+      },
+      {
+       "sku": "SKU-1002",
+       "name": "Tomato Soup Can",
+       "quantity": 1,
+       "picked_qty": 0
+      }
+     ],
+     "3002": [
+      {
+       "sku": "SKU-1001",
+       "name": "Mustard Bottle",
+       "quantity": 2,
+       "picked_qty": 0
+      },
+      {
+       "sku": "SKU-1002",
+       "name": "Tomato Soup Can",
+       "quantity": 1,
+       "picked_qty": 0
+      }
+     ],
+     "3003": [
+      {
+       "sku": "SKU-2006",
+       "name": "Coffee Can",
+       "quantity": 3,
+       "picked_qty": 0
+      },
+      {
+       "sku": "SKU-2001",
+       "name": "Cracker Box",
+       "quantity": 1,
+       "picked_qty": 0
+      }
+     ],
+     "3005": [
+      {
+       "sku": "SKU-1001",
+       "name": "Mustard Bottle",
+       "quantity": 1,
+       "picked_qty": 0
+      }
+     ],
+     "3009": [
+      {
+       "sku": "SKU-2005",
+       "name": "Potted Meat Can",
+       "quantity": 3,
+       "picked_qty": 0
+      },
+      {
+       "sku": "SKU-3001",
+       "name": "Bleach Cleanser",
+       "quantity": 1,
+       "picked_qty": 0
+      }
+     ],
+     "3011": [
+      {
+       "sku": "SKU-2005",
+       "name": "Potted Meat Can",
+       "quantity": 3,
+       "picked_qty": 0
+      }
+     ],
+     "3017": [
+      {
+       "sku": "SKU-2006",
+       "name": "Coffee Can",
+       "quantity": 3,
+       "picked_qty": 0
+      },
+      {
+       "sku": "SKU-1002",
+       "name": "Tomato Soup Can",
+       "quantity": 1,
+       "picked_qty": 0
+      }
+     ],
+     "3023": [
+      {
+       "sku": "SKU-2006",
+       "name": "Coffee Can",
+       "quantity": 2,
+       "picked_qty": 0
+      }
+     ],
+     "3006": [
+      {
+       "sku": "SKU-2006",
+       "name": "Coffee Can",
+       "quantity": 3,
+       "picked_qty": 0
+      }
+     ],
+     "3007": [
+      {
+       "sku": "SKU-1001",
+       "name": "Mustard Bottle",
+       "quantity": 1,
+       "picked_qty": 0
+      },
+      {
+       "sku": "SKU-1002",
+       "name": "Tomato Soup Can",
+       "quantity": 3,
+       "picked_qty": 0
+      },
+      {
+       "sku": "SKU-2001",
+       "name": "Cracker Box",
+       "quantity": 1,
+       "picked_qty": 0
+      }
+     ],
+     "3008": [
+      {
+       "sku": "SKU-1001",
+       "name": "Mustard Bottle",
+       "quantity": 1,
+       "picked_qty": 0
+      }
+     ],
+     "3010": [
+      {
+       "sku": "SKU-2006",
+       "name": "Coffee Can",
+       "quantity": 1,
+       "picked_qty": 0
+      }
+     ],
+     "3012": [
+      {
+       "sku": "SKU-1001",
+       "name": "Mustard Bottle",
+       "quantity": 2,
+       "picked_qty": 0
+      },
+      {
+       "sku": "SKU-2005",
+       "name": "Potted Meat Can",
+       "quantity": 2,
+       "picked_qty": 0
+      }
+     ],
+     "3014": [
+      {
+       "sku": "SKU-1001",
+       "name": "Mustard Bottle",
+       "quantity": 1,
+       "picked_qty": 0
+      },
+      {
+       "sku": "SKU-1002",
+       "name": "Tomato Soup Can",
+       "quantity": 1,
+       "picked_qty": 0
+      }
+     ],
+     "3015": [
+      {
+       "sku": "SKU-2005",
+       "name": "Potted Meat Can",
+       "quantity": 1,
+       "picked_qty": 0
+      },
+      {
+       "sku": "SKU-1002",
+       "name": "Tomato Soup Can",
+       "quantity": 2,
+       "picked_qty": 0
+      }
+     ],
+     "3019": [
+      {
+       "sku": "SKU-1002",
+       "name": "Tomato Soup Can",
+       "quantity": 2,
+       "picked_qty": 0
+      },
+      {
+       "sku": "SKU-2005",
+       "name": "Potted Meat Can",
+       "quantity": 1,
+       "picked_qty": 0
+      }
+     ],
+     "3020": [
+      {
+       "sku": "SKU-1001",
+       "name": "Mustard Bottle",
+       "quantity": 1,
+       "picked_qty": 0
+      }
+     ],
+     "3021": [
+      {
+       "sku": "SKU-1001",
+       "name": "Mustard Bottle",
+       "quantity": 3,
+       "picked_qty": 0
+      }
+     ],
+     "3004": [
+      {
+       "sku": "SKU-1002",
+       "name": "Tomato Soup Can",
+       "quantity": 1,
+       "picked_qty": 0
+      }
+     ],
+     "3013": [
+      {
+       "sku": "SKU-1002",
+       "name": "Tomato Soup Can",
+       "quantity": 3,
+       "picked_qty": 0
+      },
+      {
+       "sku": "SKU-2005",
+       "name": "Potted Meat Can",
+       "quantity": 1,
+       "picked_qty": 0
+      }
+     ],
+     "3016": [
+      {
+       "sku": "SKU-1001",
+       "name": "Mustard Bottle",
+       "quantity": 1,
+       "picked_qty": 0
+      }
+     ],
+     "3018": [
+      {
+       "sku": "SKU-1002",
+       "name": "Tomato Soup Can",
+       "quantity": 2,
+       "picked_qty": 0
+      },
+      {
+       "sku": "SKU-1001",
+       "name": "Mustard Bottle",
+       "quantity": 3,
+       "picked_qty": 0
+      }
+     ],
+     "3022": [
+      {
+       "sku": "SKU-1001",
+       "name": "Mustard Bottle",
+       "quantity": 1,
+       "picked_qty": 0
+      }
+     ]
+    },
+    "exceptions": [
+     {
+      "id": 8,
+      "task_id": null,
+      "order_id": 3001,
+      "type": "stock_shortage",
+      "severity": "warning",
+      "message": "Order 3001: SKU-2005 phantom at B-03-1 (corrected to 0); remaining units held by tasks 4 and 9",
+      "status": "open",
+      "resolution": null,
+      "created_at": "2026-11-27T17:00:01.291818+00:00",
+      "resolved_at": null
+     },
+     {
+      "id": 7,
+      "task_id": 1,
+      "order_id": 3001,
+      "type": "inventory_discrepancy",
+      "severity": "warning",
+      "message": "SKU-2005 recorded at B-03-1 but not found; inventory corrected, task 1 paused for a decision",
+      "status": "open",
+      "resolution": null,
+      "created_at": "2026-11-27T16:59:15.617254+00:00",
+      "resolved_at": null
+     },
+     {
+      "id": 6,
+      "task_id": null,
+      "order_id": 3013,
+      "type": "stock_shortage",
+      "severity": "warning",
+      "message": "Order 3013 short 1 unit of SKU-2005; no receiving stock",
+      "status": "open",
+      "resolution": null,
+      "created_at": "2026-11-27T16:58:56.870539+00:00",
+      "resolved_at": null
+     },
+     {
+      "id": 5,
+      "task_id": null,
+      "order_id": 3019,
+      "type": "stock_shortage",
+      "severity": "warning",
+      "message": "Order 3019 short 1 unit of SKU-2005; no receiving stock",
+      "status": "open",
+      "resolution": null,
+      "created_at": "2026-11-27T16:58:47.479449+00:00",
+      "resolved_at": null
+     },
+     {
+      "id": 4,
+      "task_id": null,
+      "order_id": 3015,
+      "type": "stock_shortage",
+      "severity": "warning",
+      "message": "Order 3015 short 1 unit of SKU-2005; no receiving stock",
+      "status": "open",
+      "resolution": null,
+      "created_at": "2026-11-27T16:58:47.475383+00:00",
+      "resolved_at": null
+     },
+     {
+      "id": 3,
+      "task_id": null,
+      "order_id": 3007,
+      "type": "not_robot_pickable",
+      "severity": "warning",
+      "message": "Order 3007 contains SKU-2001 (Cracker Box), not robot-pickable; needs manual handling",
+      "status": "open",
+      "resolution": null,
+      "created_at": "2026-11-27T16:58:47.470966+00:00",
+      "resolved_at": null
+     },
+     {
+      "id": 2,
+      "task_id": null,
+      "order_id": 3009,
+      "type": "not_robot_pickable",
+      "severity": "warning",
+      "message": "Order 3009 contains SKU-3001 (Bleach Cleanser), not robot-pickable; needs manual handling",
+      "status": "open",
+      "resolution": null,
+      "created_at": "2026-11-27T16:58:20.725041+00:00",
+      "resolved_at": null
+     },
+     {
+      "id": 1,
+      "task_id": null,
+      "order_id": 3003,
+      "type": "not_robot_pickable",
+      "severity": "warning",
+      "message": "Order 3003 contains SKU-2001 (Cracker Box), not robot-pickable; needs manual handling",
+      "status": "open",
+      "resolution": null,
+      "created_at": "2026-11-27T16:58:20.723179+00:00",
+      "resolved_at": null
+     }
+    ],
+    "tasks": [
+     {
+      "id": 14,
+      "kind": "fulfillment",
+      "status": "queued",
+      "order_id": 3018
+     },
+     {
+      "id": 13,
+      "kind": "fulfillment",
+      "status": "queued",
+      "order_id": 3016
+     },
+     {
+      "id": 12,
+      "kind": "fulfillment",
+      "status": "queued",
+      "order_id": 3004
+     },
+     {
+      "id": 11,
+      "kind": "fulfillment",
+      "status": "queued",
+      "order_id": 3020
+     },
+     {
+      "id": 10,
+      "kind": "fulfillment",
+      "status": "queued",
+      "order_id": 3014
+     },
+     {
+      "id": 9,
+      "kind": "fulfillment",
+      "status": "queued",
+      "order_id": 3012
+     },
+     {
+      "id": 8,
+      "kind": "fulfillment",
+      "status": "queued",
+      "order_id": 3010
+     },
+     {
+      "id": 7,
+      "kind": "fulfillment",
+      "status": "queued",
+      "order_id": 3008
+     },
+     {
+      "id": 6,
+      "kind": "fulfillment",
+      "status": "queued",
+      "order_id": 3006
+     },
+     {
+      "id": 5,
+      "kind": "fulfillment",
+      "status": "queued",
+      "order_id": 3017
+     },
+     {
+      "id": 4,
+      "kind": "fulfillment",
+      "status": "queued",
+      "order_id": 3011
+     },
+     {
+      "id": 3,
+      "kind": "fulfillment",
+      "status": "queued",
+      "order_id": 3005
+     },
+     {
+      "id": 2,
+      "kind": "fulfillment",
+      "status": "queued",
+      "order_id": 3002
+     },
+     {
+      "id": 1,
+      "kind": "fulfillment",
+      "status": "planned",
+      "order_id": 3001
+     }
+    ],
+    "stock": [
+     [
+      "A-01-1",
+      "SKU-1001",
+      0
+     ],
+     [
+      "A-01-1",
+      "SKU-2005",
+      0
+     ],
+     [
+      "A-01-2",
+      "SKU-2001",
+      4
+     ],
+     [
+      "A-02-1",
+      "SKU-1002",
+      4
+     ],
+     [
+      "A-02-2",
+      "SKU-3001",
+      48
+     ],
+     [
+      "A-03-1",
+      "SKU-1002",
+      0
+     ],
+     [
+      "A-03-1",
+      "SKU-2006",
+      2
+     ],
+     [
+      "A-03-1",
+      "SKU-1001",
+      3
+     ],
+     [
+      "A-03-2",
+      "SKU-2002",
+      4
+     ],
+     [
+      "A-04-1",
+      "SKU-5002",
+      5
+     ],
+     [
+      "A-04-1",
+      "SKU-2006",
+      0
+     ],
+     [
+      "A-04-2",
+      "SKU-4001",
+      27
+     ],
+     [
+      "B-01-1",
+      "SKU-2002",
+      2
+     ],
+     [
+      "B-01-1",
+      "SKU-1002",
+      0
+     ],
+     [
+      "B-01-1",
+      "SKU-1001",
+      2
+     ],
+     [
+      "B-01-2",
+      "SKU-5001",
+      36
+     ],
+     [
+      "B-02-1",
+      "SKU-2003",
+      4
+     ],
+     [
+      "B-02-1",
+      "SKU-1002",
+      2
+     ],
+     [
+      "B-02-1",
+      "SKU-1001",
+      4
+     ],
+     [
+      "B-02-2",
+      "SKU-2001",
+      3
+     ],
+     [
+      "B-02-2",
+      "SKU-2004",
+      3
+     ],
+     [
+      "B-03-1",
+      "SKU-1002",
+      0
+     ],
+     [
+      "B-03-1",
+      "SKU-2005",
+      0
+     ],
+     [
+      "B-04-1",
+      "SKU-2006",
+      0
+     ],
+     [
+      "B-04-1",
+      "SKU-2005",
+      2
+     ],
+     [
+      "B-04-2",
+      "SKU-3001",
+      2
+     ],
+     [
+      "C-01-1",
+      "SKU-2004",
+      4
+     ],
+     [
+      "C-01-1",
+      "SKU-2006",
+      4
+     ],
+     [
+      "C-01-1",
+      "SKU-1002",
+      4
+     ],
+     [
+      "C-01-2",
+      "SKU-2002",
+      3
+     ],
+     [
+      "C-01-2",
+      "SKU-5002",
+      4
+     ],
+     [
+      "C-02-1",
+      "SKU-2006",
+      3
+     ],
+     [
+      "C-02-1",
+      "SKU-1002",
+      4
+     ],
+     [
+      "C-02-1",
+      "SKU-1001",
+      2
+     ],
+     [
+      "C-02-2",
+      "SKU-2003",
+      54
+     ],
+     [
+      "C-03-1",
+      "SKU-4001",
+      4
+     ],
+     [
+      "C-03-2",
+      "SKU-1001",
+      0
+     ],
+     [
+      "C-04-1",
+      "SKU-1001",
+      0
+     ],
+     [
+      "C-04-1",
+      "SKU-1002",
+      0
+     ],
+     [
+      "C-04-1",
+      "SKU-2006",
+      0
+     ],
+     [
+      "C-04-1",
+      "SKU-2005",
+      2
+     ],
+     [
+      "C-04-2",
+      "SKU-5001",
+      2
+     ],
+     [
+      "STAGING-1",
+      "SKU-1002",
+      3
+     ],
+     [
+      "STAGING-1",
+      "SKU-2005",
+      0
+     ],
+     [
+      "STAGING-1",
+      "SKU-2006",
+      0
+     ],
+     [
+      "STAGING-1",
+      "SKU-1001",
+      4
+     ]
+    ]
+   }
+  },
+  "missing": [
+   {
+    "location_id": "C-02-1",
+    "sku": "SKU-1002"
+   },
+   {
+    "location_id": "A-03-1",
+    "sku": "SKU-1001"
+   },
+   {
+    "location_id": "B-03-1",
+    "sku": "SKU-2005"
+   },
+   {
+    "location_id": "C-01-1",
+    "sku": "SKU-2006"
+   },
+   {
+    "location_id": "B-02-1",
+    "sku": "SKU-1002"
+   }
+  ]
+ },
+ "messages": [
+  {
+   "id": 1,
+   "created_at": "2026-11-27T16:57:05.531503+00:00",
+   "role": "user",
+   "content": "Get all pending DISPATCH-1 orders out before the truck leaves."
+  },
+  {
+   "id": 2,
+   "created_at": "2026-11-27T16:57:07.925894+00:00",
+   "role": "assistant",
+   "content": "",
+   "tool_calls": [
+    {
+     "id": "chatcmpl-tool-b9b8ddfaf5fb2f3d",
+     "type": "function",
+     "function": {
+      "name": "list_orders",
+      "arguments": "{\"status\": \"pending\"}"
+     }
+    }
+   ]
+  },
+  {
+   "id": 3,
+   "created_at": "2026-11-27T16:57:07.937811+00:00",
+   "name": "list_orders",
+   "role": "tool",
+   "content": "{\"result\": [{\"id\": 3001, \"customer\": \"Customer 3001\", \"status\": \"pending\", \"priority\": 1, \"dispatch_location\": \"DISPATCH-1\"}, {\"id\": 3002, \"customer\": \"Customer 3002\", \"status\": \"pending\", \"priority\": 1, \"dispatch_location\": \"DISPATCH-1\"}, {\"id\": 3003, \"customer\": \"Customer 3003\", \"status\": \"pending\", \"priority\": 1, \"dispatch_location\": \"DISPATCH-1\"}, {\"id\": 3005, \"customer\": \"Customer 3005\", \"status\": \"pending\", \"priority\": 1, \"dispatch_location\": \"DISPATCH-1\"}, {\"id\": 3009, \"customer\": \"Customer 3009\", \"status\": \"pending\", \"priority\": 1, \"dispatch_location\": \"DISPATCH-1\"}, {\"id\": 3011, \"customer\": \"Customer 3011\", \"status\": \"pending\", \"priority\": 1, \"dispatch_location\": \"DISPATCH-1\"}, {\"id\": 3017, \"customer\": \"Customer 3017\", \"status\": \"pending\", \"priority\": 1, \"dispatch_location\": \"DISPATCH-1\"}, {\"id\": 3023, \"customer\": \"Customer 3023\", \"status\": \"pending\", \"priority\": 1, \"dispatch_location\": \"DISPATCH-2\"}, {\"id\": 3006, \"customer\": \"Customer 3006\", \"status\": \"pending\", \"priority\": 2, \"dispatch_location\": \"DISPATCH-1\"}, {\"id\": 3007, \"customer\": \"Customer 3007\", \"status\": \"pending\", \"priority\": 2, \"dispatch_location\": \"DISPATCH-1\"}, {\"id\": 3008, \"customer\": \"Customer 3008\", \"status\": \"pending\", \"priority\": 2, \"dispatch_location\": \"DISPATCH-1\"}, {\"id\": 3010, \"customer\": \"Customer 3010\", \"status\": \"pending\", \"priority\": 2, \"dispatch_location\": \"DISPATCH-1\"}, {\"id\": 3012, \"customer\": \"Customer 3012\", \"status\": \"pending\", \"priority\": 2, \"dispatch_location\": \"DISPATCH-1\"}, {\"id\": 3014, \"customer\": \"Customer 3014\", \"status\": \"pending\", \"priority\": 2, \"dispatch_location\": \"DISPATCH-1\"}, {\"id\": 3015, \"customer\": \"Customer 3015\", \"status\": \"pending\", \"priority\": 2, \"dispatch_location\": \"DISPATCH-1\"}, {\"id\": 3019, \"customer\": \"Customer 3019\", \"status\": \"pending\", \"priority\": 2, \"dispatch_location\": \"DISPATCH-1\"}, {\"id\": 3020, \"customer\": \"Customer 3020\", \"status\": \"pending\", \"priority\": 2, \"dispatch_location\": \"DISPATCH-1\"}, {\"id\": 3021, \"customer\": \"Customer 3021\", \"status\": \"pending\", \"priority\": 2, \"dispatch_location\": \"DISPATCH-2\"}, {\"id\": 3004, \"customer\": \"Customer 3004\", \"status\": \"pending\", \"priority\": 3, \"dispatch_location\": \"DISPATCH-1\"}, {\"id\": 3013, \"customer\": \"Customer 3013\", \"status\": \"pending\", \"priority\": 3, \"dispatch_location\": \"DISPATCH-1\"}, {\"id\": 3016, \"customer\": \"Customer 3016\", \"status\": \"pending\", \"priority\": 3, \"dispatch_location\": \"DISPATCH-1\"}, {\"id\": 3018, \"customer\": \"Customer 3018\", \"status\": \"pending\", \"priority\": 3, \"dispatch_location\": \"DISPATCH-1\"}, {\"id\": 3022, \"customer\": \"Customer 3022\", \"status\": \"pending\", \"priority\": 3, \"dispatch_location\": \"DISPATCH-2\"}]}",
+   "tool_call_id": "chatcmpl-tool-b9b8ddfaf5fb2f3d"
+  },
+  {
+   "id": 4,
+   "created_at": "2026-11-27T16:57:42.213395+00:00",
+   "role": "assistant",
+   "content": "",
+   "tool_calls": [
+    {
+     "id": "chatcmpl-tool-acc28770e62dd346",
+     "type": "function",
+     "function": {
+      "name": "create_plan",
+      "arguments": "{\"objective\": \"Fulfill all pending DISPATCH-1 orders before truck leaves\", \"subgoals\": [{\"id\": \"o3001\", \"title\": \"Dispatch order 3001\", \"check\": \"order_dispatched\", \"order_id\": 3001}, {\"id\": \"o3002\", \"title\": \"Dispatch order 3002\", \"check\": \"order_dispatched\", \"order_id\": 3002}, {\"id\": \"o3003\", \"title\": \"Dispatch order 3003\", \"check\": \"order_dispatched\", \"order_id\": 3003}, {\"id\": \"o3005\", \"title\": \"Dispatch order 3005\", \"check\": \"order_dispatched\", \"order_id\": 3005}, {\"id\": \"o3009\", \"title\": \"Dispatch order 3009\", \"check\": \"order_dispatched\", \"order_id\": 3009}, {\"id\": \"o3011\", \"title\": \"Dispatch order 3011\", \"check\": \"order_dispatched\", \"order_id\": 3011}, {\"id\": \"o3017\", \"title\": \"Dispatch order 3017\", \"check\": \"order_dispatched\", \"order_id\": 3017}, {\"id\": \"o3006\", \"title\": \"Dispatch order 3006\", \"check\": \"order_dispatched\", \"order_id\": 3006}, {\"id\": \"o3007\", \"title\": \"Dispatch order 3007\", \"check\": \"order_dispatched\", \"order_id\": 3007}, {\"id\": \"o3008\", \"title\": \"Dispatch order 3008\", \"check\": \"order_dispatched\", \"order_id\": 3008}, {\"id\": \"o3010\", \"title\": \"Dispatch order 3010\", \"check\": \"order_dispatched\", \"order_id\": 3010}, {\"id\": \"o3012\", \"title\": \"Dispatch order 3012\", \"check\": \"order_dispatched\", \"order_id\": 3012}, {\"id\": \"o3014\", \"title\": \"Dispatch order 3014\", \"check\": \"order_dispatched\", \"order_id\": 3014}, {\"id\": \"o3015\", \"title\": \"Dispatch order 3015\", \"check\": \"order_dispatched\", \"order_id\": 3015}, {\"id\": \"o3019\", \"title\": \"Dispatch order 3019\", \"check\": \"order_dispatched\", \"order_id\": 3019}, {\"id\": \"o3020\", \"title\": \"Dispatch order 3020\", \"check\": \"order_dispatched\", \"order_id\": 3020}, {\"id\": \"o3004\", \"title\": \"Dispatch order 3004\", \"check\": \"order_dispatched\", \"order_id\": 3004}, {\"id\": \"o3013\", \"title\": \"Dispatch order 3013\", \"check\": \"order_dispatched\", \"order_id\": 3013}, {\"id\": \"o3016\", \"title\": \"Dispatch order 3016\", \"check\": \"order_dispatched\", \"order_id\": 3016}, {\"id\": \"o3018\", \"title\": \"Dispatch order 3018\", \"check\": \"order_dispatched\", \"order_id\": 3018}]}"
+     }
+    }
+   ]
+  },
+  {
+   "id": 5,
+   "created_at": "2026-11-27T16:57:42.237722+00:00",
+   "name": "create_plan",
+   "role": "tool",
+   "content": "{\"result\": {\"plan_id\": 1, \"subgoals\": 20}}",
+   "tool_call_id": "chatcmpl-tool-acc28770e62dd346"
+  },
+  {
+   "id": 6,
+   "created_at": "2026-11-27T16:57:53.187058+00:00",
+   "role": "assistant",
+   "content": "",
+   "tool_calls": [
+    {
+     "id": "chatcmpl-tool-bbc534aca2b8b3ea",
+     "type": "function",
+     "function": {
+      "name": "plan_fulfillment",
+      "arguments": "{\"order_id\": 3001}"
+     }
+    },
+    {
+     "id": "chatcmpl-tool-8b63fb1e1b62393f",
+     "type": "function",
+     "function": {
+      "name": "plan_fulfillment",
+      "arguments": "{\"order_id\": 3002}"
+     }
+    },
+    {
+     "id": "chatcmpl-tool-9b6b053b29e5c271",
+     "type": "function",
+     "function": {
+      "name": "plan_fulfillment",
+      "arguments": "{\"order_id\": 3003}"
+     }
+    },
+    {
+     "id": "chatcmpl-tool-8e90eccaab37f15b",
+     "type": "function",
+     "function": {
+      "name": "plan_fulfillment",
+      "arguments": "{\"order_id\": 3005}"
+     }
+    },
+    {
+     "id": "chatcmpl-tool-acd1c55aa09a901d",
+     "type": "function",
+     "function": {
+      "name": "plan_fulfillment",
+      "arguments": "{\"order_id\": 3009}"
+     }
+    },
+    {
+     "id": "chatcmpl-tool-946960523c6eb4da",
+     "type": "function",
+     "function": {
+      "name": "plan_fulfillment",
+      "arguments": "{\"order_id\": 3011}"
+     }
+    },
+    {
+     "id": "chatcmpl-tool-88b4ae385c103c34",
+     "type": "function",
+     "function": {
+      "name": "plan_fulfillment",
+      "arguments": "{\"order_id\": 3017}"
+     }
+    }
+   ]
+  },
+  {
+   "id": 7,
+   "created_at": "2026-11-27T16:57:53.203454+00:00",
+   "name": "plan_fulfillment",
+   "role": "tool",
+   "content": "{\"result\": {\"task_id\": 1, \"order_id\": 3001, \"robot_id\": \"amr-01\", \"dispatch_location\": \"DISPATCH-1\", \"picks\": [{\"sku\": \"SKU-2005\", \"location_id\": \"B-03-1\", \"quantity\": 1}, {\"sku\": \"SKU-1002\", \"location_id\": \"C-01-1\", \"quantity\": 1}], \"steps\": [\"navigate B-03-1\", \"inspect B-03-1 SKU-2005\", \"pick B-03-1 SKU-2005 1\", \"navigate C-01-1\", \"inspect C-01-1 SKU-1002\", \"pick C-01-1 SKU-1002 1\", \"navigate DISPATCH-1\", \"place DISPATCH-1\", \"verify 3001\"]}}",
+   "tool_call_id": "chatcmpl-tool-bbc534aca2b8b3ea"
+  },
+  {
+   "id": 8,
+   "created_at": "2026-11-27T16:57:53.207875+00:00",
+   "name": "plan_fulfillment",
+   "role": "tool",
+   "content": "{\"result\": {\"task_id\": 2, \"order_id\": 3002, \"robot_id\": \"amr-01\", \"dispatch_location\": \"DISPATCH-1\", \"picks\": [{\"sku\": \"SKU-1002\", \"location_id\": \"A-02-1\", \"quantity\": 1}, {\"sku\": \"SKU-1001\", \"location_id\": \"B-02-1\", \"quantity\": 2}], \"steps\": [\"navigate A-02-1\", \"inspect A-02-1 SKU-1002\", \"pick A-02-1 SKU-1002 1\", \"navigate B-02-1\", \"inspect B-02-1 SKU-1001\", \"pick B-02-1 SKU-1001 2\", \"navigate DISPATCH-1\", \"place DISPATCH-1\", \"verify 3002\"]}}",
+   "tool_call_id": "chatcmpl-tool-8b63fb1e1b62393f"
+  },
+  {
+   "id": 9,
+   "created_at": "2026-11-27T16:57:53.210103+00:00",
+   "name": "plan_fulfillment",
+   "role": "tool",
+   "content": "{\"error\": \"SKU-2001 (Cracker Box) is not robot-pickable; it must be handled manually\"}",
+   "tool_call_id": "chatcmpl-tool-9b6b053b29e5c271"
+  },
+  {
+   "id": 10,
+   "created_at": "2026-11-27T16:57:53.213642+00:00",
+   "name": "plan_fulfillment",
+   "role": "tool",
+   "content": "{\"result\": {\"task_id\": 3, \"order_id\": 3005, \"robot_id\": \"amr-01\", \"dispatch_location\": \"DISPATCH-1\", \"picks\": [{\"sku\": \"SKU-1001\", \"location_id\": \"A-03-1\", \"quantity\": 1}], \"steps\": [\"navigate A-03-1\", \"inspect A-03-1 SKU-1001\", \"pick A-03-1 SKU-1001 1\", \"navigate DISPATCH-1\", \"place DISPATCH-1\", \"verify 3005\"]}}",
+   "tool_call_id": "chatcmpl-tool-8e90eccaab37f15b"
+  },
+  {
+   "id": 11,
+   "created_at": "2026-11-27T16:57:53.215670+00:00",
+   "name": "plan_fulfillment",
+   "role": "tool",
+   "content": "{\"error\": \"SKU-3001 (Bleach Cleanser) is not robot-pickable; it must be handled manually\"}",
+   "tool_call_id": "chatcmpl-tool-acd1c55aa09a901d"
+  },
+  {
+   "id": 12,
+   "created_at": "2026-11-27T16:57:53.219713+00:00",
+   "name": "plan_fulfillment",
+   "role": "tool",
+   "content": "{\"result\": {\"task_id\": 4, \"order_id\": 3011, \"robot_id\": \"amr-01\", \"dispatch_location\": \"DISPATCH-1\", \"picks\": [{\"sku\": \"SKU-2005\", \"location_id\": \"B-04-1\", \"quantity\": 2}, {\"sku\": \"SKU-2005\", \"location_id\": \"C-04-1\", \"quantity\": 1}], \"steps\": [\"navigate B-04-1\", \"inspect B-04-1 SKU-2005\", \"pick B-04-1 SKU-2005 2\", \"navigate C-04-1\", \"inspect C-04-1 SKU-2005\", \"pick C-04-1 SKU-2005 1\", \"navigate DISPATCH-1\", \"place DISPATCH-1\", \"verify 3011\"]}}",
+   "tool_call_id": "chatcmpl-tool-946960523c6eb4da"
+  },
+  {
+   "id": 13,
+   "created_at": "2026-11-27T16:57:53.223917+00:00",
+   "name": "plan_fulfillment",
+   "role": "tool",
+   "content": "{\"result\": {\"task_id\": 5, \"order_id\": 3017, \"robot_id\": \"amr-01\", \"dispatch_location\": \"DISPATCH-1\", \"picks\": [{\"sku\": \"SKU-2006\", \"location_id\": \"C-01-1\", \"quantity\": 3}, {\"sku\": \"SKU-1002\", \"location_id\": \"C-02-1\", \"quantity\": 1}], \"steps\": [\"navigate C-01-1\", \"inspect C-01-1 SKU-2006\", \"pick C-01-1 SKU-2006 3\", \"navigate C-02-1\", \"inspect C-02-1 SKU-1002\", \"pick C-02-1 SKU-1002 1\", \"navigate DISPATCH-1\", \"place DISPATCH-1\", \"verify 3017\"]}}",
+   "tool_call_id": "chatcmpl-tool-88b4ae385c103c34"
+  },
+  {
+   "id": 14,
+   "created_at": "2026-11-27T16:58:20.706385+00:00",
+   "role": "assistant",
+   "content": "",
+   "tool_calls": [
+    {
+     "id": "chatcmpl-tool-a98622a53f8a5b22",
+     "type": "function",
+     "function": {
+      "name": "update_subgoal",
+      "arguments": "{\"id\": \"o3003\", \"status\": \"failed\", \"check\": \"order_flagged\", \"note\": \"SKU-2001 not robot-pickable\"}"
+     }
+    },
+    {
+     "id": "chatcmpl-tool-9fa3678364376d11",
+     "type": "function",
+     "function": {
+      "name": "update_subgoal",
+      "arguments": "{\"id\": \"o3009\", \"status\": \"failed\", \"check\": \"order_flagged\", \"note\": \"SKU-3001 not robot-pickable\"}"
+     }
+    },
+    {
+     "id": "chatcmpl-tool-92a57b4cc1556c29",
+     "type": "function",
+     "function": {
+      "name": "report_exception",
+      "arguments": "{\"type\": \"not_robot_pickable\", \"message\": \"Order 3003 contains SKU-2001 (Cracker Box), not robot-pickable; needs manual handling\", \"order_id\": 3003}"
+     }
+    },
+    {
+     "id": "chatcmpl-tool-8f38a5cfbb0cd21d",
+     "type": "function",
+     "function": {
+      "name": "report_exception",
+      "arguments": "{\"type\": \"not_robot_pickable\", \"message\": \"Order 3009 contains SKU-3001 (Bleach Cleanser), not robot-pickable; needs manual handling\", \"order_id\": 3009}"
+     }
+    },
+    {
+     "id": "chatcmpl-tool-a7e6950db223efaa",
+     "type": "function",
+     "function": {
+      "name": "plan_fulfillment",
+      "arguments": "{\"order_id\": 3006}"
+     }
+    },
+    {
+     "id": "chatcmpl-tool-9b8ff91bf157c3f7",
+     "type": "function",
+     "function": {
+      "name": "plan_fulfillment",
+      "arguments": "{\"order_id\": 3007}"
+     }
+    },
+    {
+     "id": "chatcmpl-tool-94de6e484c74612b",
+     "type": "function",
+     "function": {
+      "name": "plan_fulfillment",
+      "arguments": "{\"order_id\": 3008}"
+     }
+    },
+    {
+     "id": "chatcmpl-tool-b90733af7e4c446c",
+     "type": "function",
+     "function": {
+      "name": "plan_fulfillment",
+      "arguments": "{\"order_id\": 3010}"
+     }
+    },
+    {
+     "id": "chatcmpl-tool-9f9c63310720798a",
+     "type": "function",
+     "function": {
+      "name": "plan_fulfillment",
+      "arguments": "{\"order_id\": 3012}"
+     }
+    },
+    {
+     "id": "chatcmpl-tool-a14182e66f97d280",
+     "type": "function",
+     "function": {
+      "name": "plan_fulfillment",
+      "arguments": "{\"order_id\": 3014}"
+     }
+    },
+    {
+     "id": "chatcmpl-tool-82c40943ee0b3c3e",
+     "type": "function",
+     "function": {
+      "name": "plan_fulfillment",
+      "arguments": "{\"order_id\": 3015}"
+     }
+    },
+    {
+     "id": "chatcmpl-tool-ac3c85863b6054c3",
+     "type": "function",
+     "function": {
+      "name": "plan_fulfillment",
+      "arguments": "{\"order_id\": 3019}"
+     }
+    },
+    {
+     "id": "chatcmpl-tool-bf8dc47097e72ede",
+     "type": "function",
+     "function": {
+      "name": "plan_fulfillment",
+      "arguments": "{\"order_id\": 3020}"
+     }
+    }
+   ]
+  },
+  {
+   "id": 15,
+   "created_at": "2026-11-27T16:58:20.719925+00:00",
+   "name": "update_subgoal",
+   "role": "tool",
+   "content": "{\"result\": {\"id\": \"o3003\", \"status\": \"failed\"}}",
+   "tool_call_id": "chatcmpl-tool-a98622a53f8a5b22"
+  },
+  {
+   "id": 16,
+   "created_at": "2026-11-27T16:58:20.722626+00:00",
+   "name": "update_subgoal",
+   "role": "tool",
+   "content": "{\"result\": {\"id\": \"o3009\", \"status\": \"failed\"}}",
+   "tool_call_id": "chatcmpl-tool-9fa3678364376d11"
+  },
+  {
+   "id": 17,
+   "created_at": "2026-11-27T16:58:20.724342+00:00",
+   "name": "report_exception",
+   "role": "tool",
+   "content": "{\"result\": {\"id\": 1, \"task_id\": null, \"order_id\": 3003, \"type\": \"not_robot_pickable\", \"severity\": \"warning\", \"message\": \"Order 3003 contains SKU-2001 (Cracker Box), not robot-pickable; needs manual handling\", \"status\": \"open\", \"resolution\": null, \"created_at\": \"2026-11-27 16:58:20.723179+00:00\", \"resolved_at\": null}}",
+   "tool_call_id": "chatcmpl-tool-92a57b4cc1556c29"
+  },
+  {
+   "id": 18,
+   "created_at": "2026-11-27T16:58:20.726032+00:00",
+   "name": "report_exception",
+   "role": "tool",
+   "content": "{\"result\": {\"id\": 2, \"task_id\": null, \"order_id\": 3009, \"type\": \"not_robot_pickable\", \"severity\": \"warning\", \"message\": \"Order 3009 contains SKU-3001 (Bleach Cleanser), not robot-pickable; needs manual handling\", \"status\": \"open\", \"resolution\": null, \"created_at\": \"2026-11-27 16:58:20.725041+00:00\", \"resolved_at\": null}}",
+   "tool_call_id": "chatcmpl-tool-8f38a5cfbb0cd21d"
+  },
+  {
+   "id": 19,
+   "created_at": "2026-11-27T16:58:20.729631+00:00",
+   "name": "plan_fulfillment",
+   "role": "tool",
+   "content": "{\"result\": {\"task_id\": 6, \"order_id\": 3006, \"robot_id\": \"amr-01\", \"dispatch_location\": \"DISPATCH-1\", \"picks\": [{\"sku\": \"SKU-2006\", \"location_id\": \"C-02-1\", \"quantity\": 3}], \"steps\": [\"navigate C-02-1\", \"inspect C-02-1 SKU-2006\", \"pick C-02-1 SKU-2006 3\", \"navigate DISPATCH-1\", \"place DISPATCH-1\", \"verify 3006\"]}}",
+   "tool_call_id": "chatcmpl-tool-a7e6950db223efaa"
+  },
+  {
+   "id": 20,
+   "created_at": "2026-11-27T16:58:20.732124+00:00",
+   "name": "plan_fulfillment",
+   "role": "tool",
+   "content": "{\"error\": \"SKU-2001 (Cracker Box) is not robot-pickable; it must be handled manually\"}",
+   "tool_call_id": "chatcmpl-tool-9b8ff91bf157c3f7"
+  },
+  {
+   "id": 21,
+   "created_at": "2026-11-27T16:58:20.736971+00:00",
+   "name": "plan_fulfillment",
+   "role": "tool",
+   "content": "{\"result\": {\"task_id\": 7, \"order_id\": 3008, \"robot_id\": \"amr-01\", \"dispatch_location\": \"DISPATCH-1\", \"picks\": [{\"sku\": \"SKU-1001\", \"location_id\": \"B-01-1\", \"quantity\": 1}], \"steps\": [\"navigate B-01-1\", \"inspect B-01-1 SKU-1001\", \"pick B-01-1 SKU-1001 1\", \"navigate DISPATCH-1\", \"place DISPATCH-1\", \"verify 3008\"]}}",
+   "tool_call_id": "chatcmpl-tool-94de6e484c74612b"
+  },
+  {
+   "id": 22,
+   "created_at": "2026-11-27T16:58:20.740354+00:00",
+   "name": "plan_fulfillment",
+   "role": "tool",
+   "content": "{\"result\": {\"task_id\": 8, \"order_id\": 3010, \"robot_id\": \"amr-01\", \"dispatch_location\": \"DISPATCH-1\", \"picks\": [{\"sku\": \"SKU-2006\", \"location_id\": \"A-03-1\", \"quantity\": 1}], \"steps\": [\"navigate A-03-1\", \"inspect A-03-1 SKU-2006\", \"pick A-03-1 SKU-2006 1\", \"navigate DISPATCH-1\", \"place DISPATCH-1\", \"verify 3010\"]}}",
+   "tool_call_id": "chatcmpl-tool-b90733af7e4c446c"
+  },
+  {
+   "id": 23,
+   "created_at": "2026-11-27T16:58:20.745171+00:00",
+   "name": "plan_fulfillment",
+   "role": "tool",
+   "content": "{\"result\": {\"task_id\": 9, \"order_id\": 3012, \"robot_id\": \"amr-01\", \"dispatch_location\": \"DISPATCH-1\", \"picks\": [{\"sku\": \"SKU-1001\", \"location_id\": \"B-02-1\", \"quantity\": 2}, {\"sku\": \"SKU-2005\", \"location_id\": \"B-03-1\", \"quantity\": 1}, {\"sku\": \"SKU-2005\", \"location_id\": \"C-04-1\", \"quantity\": 1}], \"steps\": [\"navigate B-02-1\", \"inspect B-02-1 SKU-1001\", \"pick B-02-1 SKU-1001 2\", \"navigate B-03-1\", \"inspect B-03-1 SKU-2005\", \"pick B-03-1 SKU-2005 1\", \"navigate C-04-1\", \"inspect C-04-1 SKU-2005\", \"pick C-04-1 SKU-2005 1\", \"navigate DISPATCH-1\", \"place DISPATCH-1\", \"verify 3012\"]}}",
+   "tool_call_id": "chatcmpl-tool-9f9c63310720798a"
+  },
+  {
+   "id": 24,
+   "created_at": "2026-11-27T16:58:20.749461+00:00",
+   "name": "plan_fulfillment",
+   "role": "tool",
+   "content": "{\"result\": {\"task_id\": 10, \"order_id\": 3014, \"robot_id\": \"amr-01\", \"dispatch_location\": \"DISPATCH-1\", \"picks\": [{\"sku\": \"SKU-1002\", \"location_id\": \"C-01-1\", \"quantity\": 1}, {\"sku\": \"SKU-1001\", \"location_id\": \"C-02-1\", \"quantity\": 1}], \"steps\": [\"navigate C-01-1\", \"inspect C-01-1 SKU-1002\", \"pick C-01-1 SKU-1002 1\", \"navigate C-02-1\", \"inspect C-02-1 SKU-1001\", \"pick C-02-1 SKU-1001 1\", \"navigate DISPATCH-1\", \"place DISPATCH-1\", \"verify 3014\"]}}",
+   "tool_call_id": "chatcmpl-tool-a14182e66f97d280"
+  },
+  {
+   "id": 25,
+   "created_at": "2026-11-27T16:58:20.751846+00:00",
+   "name": "plan_fulfillment",
+   "role": "tool",
+   "content": "{\"error\": \"insufficient stock for order 3015: [{'sku': 'SKU-2005', 'requested': 1, 'short_by': 1, 'in_receiving': 0}]\"}",
+   "tool_call_id": "chatcmpl-tool-82c40943ee0b3c3e"
+  },
+  {
+   "id": 26,
+   "created_at": "2026-11-27T16:58:20.754253+00:00",
+   "name": "plan_fulfillment",
+   "role": "tool",
+   "content": "{\"error\": \"insufficient stock for order 3019: [{'sku': 'SKU-2005', 'requested': 1, 'short_by': 1, 'in_receiving': 0}]\"}",
+   "tool_call_id": "chatcmpl-tool-ac3c85863b6054c3"
+  },
+  {
+   "id": 27,
+   "created_at": "2026-11-27T16:58:20.757756+00:00",
+   "name": "plan_fulfillment",
+   "role": "tool",
+   "content": "{\"result\": {\"task_id\": 11, \"order_id\": 3020, \"robot_id\": \"amr-01\", \"dispatch_location\": \"DISPATCH-1\", \"picks\": [{\"sku\": \"SKU-1001\", \"location_id\": \"A-03-1\", \"quantity\": 1}], \"steps\": [\"navigate A-03-1\", \"inspect A-03-1 SKU-1001\", \"pick A-03-1 SKU-1001 1\", \"navigate DISPATCH-1\", \"place DISPATCH-1\", \"verify 3020\"]}}",
+   "tool_call_id": "chatcmpl-tool-bf8dc47097e72ede"
+  },
+  {
+   "id": 28,
+   "created_at": "2026-11-27T16:58:47.457351+00:00",
+   "role": "assistant",
+   "content": "",
+   "tool_calls": [
+    {
+     "id": "chatcmpl-tool-a3d52889f1aa4b9c",
+     "type": "function",
+     "function": {
+      "name": "update_subgoal",
+      "arguments": "{\"id\": \"o3007\", \"status\": \"failed\", \"check\": \"order_flagged\", \"note\": \"SKU-2001 not robot-pickable\"}"
+     }
+    },
+    {
+     "id": "chatcmpl-tool-91a6d8744735966f",
+     "type": "function",
+     "function": {
+      "name": "report_exception",
+      "arguments": "{\"order_id\": 3007, \"message\": \"Order 3007 contains SKU-2001 (Cracker Box), not robot-pickable; needs manual handling\", \"type\": \"not_robot_pickable\"}"
+     }
+    },
+    {
+     "id": "chatcmpl-tool-9fb919a8cc1365d3",
+     "type": "function",
+     "function": {
+      "name": "update_subgoal",
+      "arguments": "{\"id\": \"o3015\", \"status\": \"failed\", \"check\": \"order_flagged\", \"note\": \"SKU-2005 short by 1\"}"
+     }
+    },
+    {
+     "id": "chatcmpl-tool-9f233002d86899dd",
+     "type": "function",
+     "function": {
+      "name": "report_exception",
+      "arguments": "{\"message\": \"Order 3015 short 1 unit of SKU-2005; no receiving stock\", \"order_id\": 3015, \"type\": \"stock_shortage\"}"
+     }
+    },
+    {
+     "id": "chatcmpl-tool-ad363bb95ff570c8",
+     "type": "function",
+     "function": {
+      "name": "update_subgoal",
+      "arguments": "{\"id\": \"o3019\", \"status\": \"failed\", \"check\": \"order_flagged\", \"note\": \"SKU-2005 short by 1\"}"
+     }
+    },
+    {
+     "id": "chatcmpl-tool-a6d800e5d2ea580f",
+     "type": "function",
+     "function": {
+      "name": "report_exception",
+      "arguments": "{\"message\": \"Order 3019 short 1 unit of SKU-2005; no receiving stock\", \"order_id\": 3019, \"type\": \"stock_shortage\"}"
+     }
+    },
+    {
+     "id": "chatcmpl-tool-afc4398aed7a32fc",
+     "type": "function",
+     "function": {
+      "name": "plan_fulfillment",
+      "arguments": "{\"order_id\": 3004}"
+     }
+    },
+    {
+     "id": "chatcmpl-tool-954ea9945e3cb891",
+     "type": "function",
+     "function": {
+      "name": "plan_fulfillment",
+      "arguments": "{\"order_id\": 3013}"
+     }
+    },
+    {
+     "id": "chatcmpl-tool-a956138a2c1c4d6f",
+     "type": "function",
+     "function": {
+      "name": "plan_fulfillment",
+      "arguments": "{\"order_id\": 3016}"
+     }
+    },
+    {
+     "id": "chatcmpl-tool-bebcc7e33a81f6ba",
+     "type": "function",
+     "function": {
+      "name": "plan_fulfillment",
+      "arguments": "{\"order_id\": 3018}"
+     }
+    }
+   ]
+  },
+  {
+   "id": 29,
+   "created_at": "2026-11-27T16:58:47.470184+00:00",
+   "name": "update_subgoal",
+   "role": "tool",
+   "content": "{\"result\": {\"id\": \"o3007\", \"status\": \"failed\"}}",
+   "tool_call_id": "chatcmpl-tool-a3d52889f1aa4b9c"
+  },
+  {
+   "id": 30,
+   "created_at": "2026-11-27T16:58:47.471988+00:00",
+   "name": "report_exception",
+   "role": "tool",
+   "content": "{\"result\": {\"id\": 3, \"task_id\": null, \"order_id\": 3007, \"type\": \"not_robot_pickable\", \"severity\": \"warning\", \"message\": \"Order 3007 contains SKU-2001 (Cracker Box), not robot-pickable; needs manual handling\", \"status\": \"open\", \"resolution\": null, \"created_at\": \"2026-11-27 16:58:47.470966+00:00\", \"resolved_at\": null}}",
+   "tool_call_id": "chatcmpl-tool-91a6d8744735966f"
+  },
+  {
+   "id": 31,
+   "created_at": "2026-11-27T16:58:47.474763+00:00",
+   "name": "update_subgoal",
+   "role": "tool",
+   "content": "{\"result\": {\"id\": \"o3015\", \"status\": \"failed\"}}",
+   "tool_call_id": "chatcmpl-tool-9fb919a8cc1365d3"
+  },
+  {
+   "id": 32,
+   "created_at": "2026-11-27T16:58:47.476449+00:00",
+   "name": "report_exception",
+   "role": "tool",
+   "content": "{\"result\": {\"id\": 4, \"task_id\": null, \"order_id\": 3015, \"type\": \"stock_shortage\", \"severity\": \"warning\", \"message\": \"Order 3015 short 1 unit of SKU-2005; no receiving stock\", \"status\": \"open\", \"resolution\": null, \"created_at\": \"2026-11-27 16:58:47.475383+00:00\", \"resolved_at\": null}}",
+   "tool_call_id": "chatcmpl-tool-9f233002d86899dd"
+  },
+  {
+   "id": 33,
+   "created_at": "2026-11-27T16:58:47.478922+00:00",
+   "name": "update_subgoal",
+   "role": "tool",
+   "content": "{\"result\": {\"id\": \"o3019\", \"status\": \"failed\"}}",
+   "tool_call_id": "chatcmpl-tool-ad363bb95ff570c8"
+  },
+  {
+   "id": 34,
+   "created_at": "2026-11-27T16:58:47.480463+00:00",
+   "name": "report_exception",
+   "role": "tool",
+   "content": "{\"result\": {\"id\": 5, \"task_id\": null, \"order_id\": 3019, \"type\": \"stock_shortage\", \"severity\": \"warning\", \"message\": \"Order 3019 short 1 unit of SKU-2005; no receiving stock\", \"status\": \"open\", \"resolution\": null, \"created_at\": \"2026-11-27 16:58:47.479449+00:00\", \"resolved_at\": null}}",
+   "tool_call_id": "chatcmpl-tool-a6d800e5d2ea580f"
+  },
+  {
+   "id": 35,
+   "created_at": "2026-11-27T16:58:47.485931+00:00",
+   "name": "plan_fulfillment",
+   "role": "tool",
+   "content": "{\"result\": {\"task_id\": 12, \"order_id\": 3004, \"robot_id\": \"amr-01\", \"dispatch_location\": \"DISPATCH-1\", \"picks\": [{\"sku\": \"SKU-1002\", \"location_id\": \"A-02-1\", \"quantity\": 1}], \"steps\": [\"navigate A-02-1\", \"inspect A-02-1 SKU-1002\", \"pick A-02-1 SKU-1002 1\", \"navigate DISPATCH-1\", \"place DISPATCH-1\", \"verify 3004\"]}}",
+   "tool_call_id": "chatcmpl-tool-afc4398aed7a32fc"
+  },
+  {
+   "id": 36,
+   "created_at": "2026-11-27T16:58:47.488703+00:00",
+   "name": "plan_fulfillment",
+   "role": "tool",
+   "content": "{\"error\": \"insufficient stock for order 3013: [{'sku': 'SKU-2005', 'requested': 1, 'short_by': 1, 'in_receiving': 0}]\"}",
+   "tool_call_id": "chatcmpl-tool-954ea9945e3cb891"
+  },
+  {
+   "id": 37,
+   "created_at": "2026-11-27T16:58:47.492369+00:00",
+   "name": "plan_fulfillment",
+   "role": "tool",
+   "content": "{\"result\": {\"task_id\": 13, \"order_id\": 3016, \"robot_id\": \"amr-01\", \"dispatch_location\": \"DISPATCH-1\", \"picks\": [{\"sku\": \"SKU-1001\", \"location_id\": \"B-01-1\", \"quantity\": 1}], \"steps\": [\"navigate B-01-1\", \"inspect B-01-1 SKU-1001\", \"pick B-01-1 SKU-1001 1\", \"navigate DISPATCH-1\", \"place DISPATCH-1\", \"verify 3016\"]}}",
+   "tool_call_id": "chatcmpl-tool-a956138a2c1c4d6f"
+  },
+  {
+   "id": 38,
+   "created_at": "2026-11-27T16:58:47.494953+00:00",
+   "name": "plan_fulfillment",
+   "role": "tool",
+   "content": "{\"error\": \"insufficient stock for order 3018: [{'sku': 'SKU-1001', 'requested': 3, 'short_by': 1, 'in_receiving': 4}]\"}",
+   "tool_call_id": "chatcmpl-tool-bebcc7e33a81f6ba"
+  },
+  {
+   "id": 39,
+   "created_at": "2026-11-27T16:58:56.856555+00:00",
+   "role": "assistant",
+   "content": "",
+   "tool_calls": [
+    {
+     "id": "chatcmpl-tool-84d09bdd480e1cfc",
+     "type": "function",
+     "function": {
+      "name": "update_subgoal",
+      "arguments": "{\"id\": \"o3013\", \"status\": \"failed\", \"check\": \"order_flagged\", \"note\": \"SKU-2005 short by 1\"}"
+     }
+    },
+    {
+     "id": "chatcmpl-tool-b704d712311791dc",
+     "type": "function",
+     "function": {
+      "name": "report_exception",
+      "arguments": "{\"message\": \"Order 3013 short 1 unit of SKU-2005; no receiving stock\", \"order_id\": 3013, \"type\": \"stock_shortage\"}"
+     }
+    },
+    {
+     "id": "chatcmpl-tool-bce04af04e1fd6cc",
+     "type": "function",
+     "function": {
+      "name": "plan_fulfillment",
+      "arguments": "{\"include_receiving\": true, \"order_id\": 3018}"
+     }
+    }
+   ]
+  },
+  {
+   "id": 40,
+   "created_at": "2026-11-27T16:58:56.869957+00:00",
+   "name": "update_subgoal",
+   "role": "tool",
+   "content": "{\"result\": {\"id\": \"o3013\", \"status\": \"failed\"}}",
+   "tool_call_id": "chatcmpl-tool-84d09bdd480e1cfc"
+  },
+  {
+   "id": 41,
+   "created_at": "2026-11-27T16:58:56.871468+00:00",
+   "name": "report_exception",
+   "role": "tool",
+   "content": "{\"result\": {\"id\": 6, \"task_id\": null, \"order_id\": 3013, \"type\": \"stock_shortage\", \"severity\": \"warning\", \"message\": \"Order 3013 short 1 unit of SKU-2005; no receiving stock\", \"status\": \"open\", \"resolution\": null, \"created_at\": \"2026-11-27 16:58:56.870539+00:00\", \"resolved_at\": null}}",
+   "tool_call_id": "chatcmpl-tool-b704d712311791dc"
+  },
+  {
+   "id": 42,
+   "created_at": "2026-11-27T16:58:56.877970+00:00",
+   "name": "plan_fulfillment",
+   "role": "tool",
+   "content": "{\"result\": {\"task_id\": 14, \"order_id\": 3018, \"robot_id\": \"amr-01\", \"dispatch_location\": \"DISPATCH-1\", \"picks\": [{\"sku\": \"SKU-1001\", \"location_id\": \"A-03-1\", \"quantity\": 1}, {\"sku\": \"SKU-1002\", \"location_id\": \"C-02-1\", \"quantity\": 2}, {\"sku\": \"SKU-1001\", \"location_id\": \"C-02-1\", \"quantity\": 1}, {\"sku\": \"SKU-1001\", \"location_id\": \"STAGING-1\", \"quantity\": 1}], \"steps\": [\"navigate A-03-1\", \"inspect A-03-1 SKU-1001\", \"pick A-03-1 SKU-1001 1\", \"navigate C-02-1\", \"inspect C-02-1 SKU-1002\", \"pick C-02-1 SKU-1002 2\", \"navigate C-02-1\", \"inspect C-02-1 SKU-1001\", \"pick C-02-1 SKU-1001 1\", \"navigate STAGING-1\", \"inspect STAGING-1 SKU-1001\", \"pick STAGING-1 SKU-1001 1\", \"navigate DISPATCH-1\", \"place DISPATCH-1\", \"verify 3018\"]}}",
+   "tool_call_id": "chatcmpl-tool-bce04af04e1fd6cc"
+  },
+  {
+   "id": 43,
+   "created_at": "2026-11-27T16:59:14.804594+00:00",
+   "role": "assistant",
+   "content": "",
+   "tool_calls": [
+    {
+     "id": "chatcmpl-tool-9e7fc23aa8c35ba1",
+     "type": "function",
+     "function": {
+      "name": "dispatch_task",
+      "arguments": "{\"task_id\": 1}"
+     }
+    },
+    {
+     "id": "chatcmpl-tool-8e0f60d716167ad6",
+     "type": "function",
+     "function": {
+      "name": "dispatch_task",
+      "arguments": "{\"task_id\": 2}"
+     }
+    },
+    {
+     "id": "chatcmpl-tool-a69a8b16c7344144",
+     "type": "function",
+     "function": {
+      "name": "dispatch_task",
+      "arguments": "{\"task_id\": 3}"
+     }
+    },
+    {
+     "id": "chatcmpl-tool-87dec966593e7208",
+     "type": "function",
+     "function": {
+      "name": "dispatch_task",
+      "arguments": "{\"task_id\": 4}"
+     }
+    },
+    {
+     "id": "chatcmpl-tool-a0b89e2db08ce6fd",
+     "type": "function",
+     "function": {
+      "name": "dispatch_task",
+      "arguments": "{\"task_id\": 5}"
+     }
+    },
+    {
+     "id": "chatcmpl-tool-a3a543732455374f",
+     "type": "function",
+     "function": {
+      "name": "dispatch_task",
+      "arguments": "{\"task_id\": 6}"
+     }
+    },
+    {
+     "id": "chatcmpl-tool-99738f9ca5566516",
+     "type": "function",
+     "function": {
+      "name": "dispatch_task",
+      "arguments": "{\"task_id\": 7}"
+     }
+    },
+    {
+     "id": "chatcmpl-tool-bb925d57bd0b2b4f",
+     "type": "function",
+     "function": {
+      "name": "dispatch_task",
+      "arguments": "{\"task_id\": 8}"
+     }
+    },
+    {
+     "id": "chatcmpl-tool-bdd0df6e3240c8e0",
+     "type": "function",
+     "function": {
+      "name": "dispatch_task",
+      "arguments": "{\"task_id\": 9}"
+     }
+    },
+    {
+     "id": "chatcmpl-tool-ac5d385830a0e49a",
+     "type": "function",
+     "function": {
+      "name": "dispatch_task",
+      "arguments": "{\"task_id\": 10}"
+     }
+    },
+    {
+     "id": "chatcmpl-tool-8b20db67a13089cb",
+     "type": "function",
+     "function": {
+      "name": "dispatch_task",
+      "arguments": "{\"task_id\": 11}"
+     }
+    },
+    {
+     "id": "chatcmpl-tool-a4d2ae04654ebb7d",
+     "type": "function",
+     "function": {
+      "name": "dispatch_task",
+      "arguments": "{\"task_id\": 12}"
+     }
+    },
+    {
+     "id": "chatcmpl-tool-b89aeeb72bed2b46",
+     "type": "function",
+     "function": {
+      "name": "dispatch_task",
+      "arguments": "{\"task_id\": 13}"
+     }
+    },
+    {
+     "id": "chatcmpl-tool-888434399f10b9ee",
+     "type": "function",
+     "function": {
+      "name": "dispatch_task",
+      "arguments": "{\"task_id\": 14}"
+     }
+    }
+   ]
+  },
+  {
+   "id": 44,
+   "created_at": "2026-11-27T16:59:14.818069+00:00",
+   "name": "dispatch_task",
+   "role": "tool",
+   "content": "{\"result\": {\"id\": 1, \"robot_id\": \"amr-01\", \"status\": \"queued\"}}",
+   "tool_call_id": "chatcmpl-tool-9e7fc23aa8c35ba1"
+  },
+  {
+   "id": 45,
+   "created_at": "2026-11-27T16:59:14.820013+00:00",
+   "name": "dispatch_task",
+   "role": "tool",
+   "content": "{\"result\": {\"id\": 2, \"robot_id\": \"amr-01\", \"status\": \"queued\"}}",
+   "tool_call_id": "chatcmpl-tool-8e0f60d716167ad6"
+  },
+  {
+   "id": 46,
+   "created_at": "2026-11-27T16:59:14.821598+00:00",
+   "name": "dispatch_task",
+   "role": "tool",
+   "content": "{\"result\": {\"id\": 3, \"robot_id\": \"amr-01\", \"status\": \"queued\"}}",
+   "tool_call_id": "chatcmpl-tool-a69a8b16c7344144"
+  },
+  {
+   "id": 47,
+   "created_at": "2026-11-27T16:59:14.823083+00:00",
+   "name": "dispatch_task",
+   "role": "tool",
+   "content": "{\"result\": {\"id\": 4, \"robot_id\": \"amr-01\", \"status\": \"queued\"}}",
+   "tool_call_id": "chatcmpl-tool-87dec966593e7208"
+  },
+  {
+   "id": 48,
+   "created_at": "2026-11-27T16:59:14.824592+00:00",
+   "name": "dispatch_task",
+   "role": "tool",
+   "content": "{\"result\": {\"id\": 5, \"robot_id\": \"amr-01\", \"status\": \"queued\"}}",
+   "tool_call_id": "chatcmpl-tool-a0b89e2db08ce6fd"
+  },
+  {
+   "id": 49,
+   "created_at": "2026-11-27T16:59:14.826061+00:00",
+   "name": "dispatch_task",
+   "role": "tool",
+   "content": "{\"result\": {\"id\": 6, \"robot_id\": \"amr-01\", \"status\": \"queued\"}}",
+   "tool_call_id": "chatcmpl-tool-a3a543732455374f"
+  },
+  {
+   "id": 50,
+   "created_at": "2026-11-27T16:59:14.827508+00:00",
+   "name": "dispatch_task",
+   "role": "tool",
+   "content": "{\"result\": {\"id\": 7, \"robot_id\": \"amr-01\", \"status\": \"queued\"}}",
+   "tool_call_id": "chatcmpl-tool-99738f9ca5566516"
+  },
+  {
+   "id": 51,
+   "created_at": "2026-11-27T16:59:14.828956+00:00",
+   "name": "dispatch_task",
+   "role": "tool",
+   "content": "{\"result\": {\"id\": 8, \"robot_id\": \"amr-01\", \"status\": \"queued\"}}",
+   "tool_call_id": "chatcmpl-tool-bb925d57bd0b2b4f"
+  },
+  {
+   "id": 52,
+   "created_at": "2026-11-27T16:59:14.830364+00:00",
+   "name": "dispatch_task",
+   "role": "tool",
+   "content": "{\"result\": {\"id\": 9, \"robot_id\": \"amr-01\", \"status\": \"queued\"}}",
+   "tool_call_id": "chatcmpl-tool-bdd0df6e3240c8e0"
+  },
+  {
+   "id": 53,
+   "created_at": "2026-11-27T16:59:14.831772+00:00",
+   "name": "dispatch_task",
+   "role": "tool",
+   "content": "{\"result\": {\"id\": 10, \"robot_id\": \"amr-01\", \"status\": \"queued\"}}",
+   "tool_call_id": "chatcmpl-tool-ac5d385830a0e49a"
+  },
+  {
+   "id": 54,
+   "created_at": "2026-11-27T16:59:14.833199+00:00",
+   "name": "dispatch_task",
+   "role": "tool",
+   "content": "{\"result\": {\"id\": 11, \"robot_id\": \"amr-01\", \"status\": \"queued\"}}",
+   "tool_call_id": "chatcmpl-tool-8b20db67a13089cb"
+  },
+  {
+   "id": 55,
+   "created_at": "2026-11-27T16:59:14.834631+00:00",
+   "name": "dispatch_task",
+   "role": "tool",
+   "content": "{\"result\": {\"id\": 12, \"robot_id\": \"amr-01\", \"status\": \"queued\"}}",
+   "tool_call_id": "chatcmpl-tool-a4d2ae04654ebb7d"
+  },
+  {
+   "id": 56,
+   "created_at": "2026-11-27T16:59:14.836039+00:00",
+   "name": "dispatch_task",
+   "role": "tool",
+   "content": "{\"result\": {\"id\": 13, \"robot_id\": \"amr-01\", \"status\": \"queued\"}}",
+   "tool_call_id": "chatcmpl-tool-b89aeeb72bed2b46"
+  },
+  {
+   "id": 57,
+   "created_at": "2026-11-27T16:59:14.837440+00:00",
+   "name": "dispatch_task",
+   "role": "tool",
+   "content": "{\"result\": {\"id\": 14, \"robot_id\": \"amr-01\", \"status\": \"queued\"}}",
+   "tool_call_id": "chatcmpl-tool-888434399f10b9ee"
+  },
+  {
+   "id": 58,
+   "created_at": "2026-11-27T16:59:42.065777+00:00",
+   "role": "assistant",
+   "content": "",
+   "tool_calls": [
+    {
+     "id": "chatcmpl-tool-b4916ba8b0c0a3c9",
+     "type": "function",
+     "function": {
+      "name": "update_subgoal",
+      "arguments": "{\"id\": \"o3001\", \"status\": \"in_progress\"}"
+     }
+    },
+    {
+     "id": "chatcmpl-tool-9c621fb133bc4bd6",
+     "type": "function",
+     "function": {
+      "name": "update_subgoal",
+      "arguments": "{\"id\": \"o3002\", \"status\": \"in_progress\"}"
+     }
+    },
+    {
+     "id": "chatcmpl-tool-8218fb8ac59b7c86",
+     "type": "function",
+     "function": {
+      "name": "update_subgoal",
+      "arguments": "{\"id\": \"o3005\", \"status\": \"in_progress\"}"
+     }
+    },
+    {
+     "id": "chatcmpl-tool-92ace24823cd7dd4",
+     "type": "function",
+     "function": {
+      "name": "update_subgoal",
+      "arguments": "{\"id\": \"o3011\", \"status\": \"in_progress\"}"
+     }
+    },
+    {
+     "id": "chatcmpl-tool-b0d0815cf556dbf7",
+     "type": "function",
+     "function": {
+      "name": "update_subgoal",
+      "arguments": "{\"id\": \"o3017\", \"status\": \"in_progress\"}"
+     }
+    },
+    {
+     "id": "chatcmpl-tool-b72baecc492453a2",
+     "type": "function",
+     "function": {
+      "name": "update_subgoal",
+      "arguments": "{\"id\": \"o3006\", \"status\": \"in_progress\"}"
+     }
+    },
+    {
+     "id": "chatcmpl-tool-a123ffab3f67743a",
+     "type": "function",
+     "function": {
+      "name": "update_subgoal",
+      "arguments": "{\"id\": \"o3008\", \"status\": \"in_progress\"}"
+     }
+    },
+    {
+     "id": "chatcmpl-tool-a1f523b9a64223ec",
+     "type": "function",
+     "function": {
+      "name": "update_subgoal",
+      "arguments": "{\"id\": \"o3010\", \"status\": \"in_progress\"}"
+     }
+    },
+    {
+     "id": "chatcmpl-tool-bb9a99b927b96958",
+     "type": "function",
+     "function": {
+      "name": "update_subgoal",
+      "arguments": "{\"id\": \"o3012\", \"status\": \"in_progress\"}"
+     }
+    },
+    {
+     "id": "chatcmpl-tool-a38e1992c9d1929c",
+     "type": "function",
+     "function": {
+      "name": "update_subgoal",
+      "arguments": "{\"id\": \"o3014\", \"status\": \"in_progress\"}"
+     }
+    },
+    {
+     "id": "chatcmpl-tool-92480e21a53834a2",
+     "type": "function",
+     "function": {
+      "name": "update_subgoal",
+      "arguments": "{\"id\": \"o3020\", \"status\": \"in_progress\"}"
+     }
+    },
+    {
+     "id": "chatcmpl-tool-81ba8e75e93d5703",
+     "type": "function",
+     "function": {
+      "name": "update_subgoal",
+      "arguments": "{\"id\": \"o3004\", \"status\": \"in_progress\"}"
+     }
+    },
+    {
+     "id": "chatcmpl-tool-866feebe6e55905b",
+     "type": "function",
+     "function": {
+      "name": "update_subgoal",
+      "arguments": "{\"id\": \"o3016\", \"status\": \"in_progress\"}"
+     }
+    },
+    {
+     "id": "chatcmpl-tool-9ca7a69aef35e95a",
+     "type": "function",
+     "function": {
+      "name": "update_subgoal",
+      "arguments": "{\"id\": \"o3018\", \"status\": \"in_progress\"}"
+     }
+    }
+   ]
+  },
+  {
+   "id": 59,
+   "created_at": "2026-11-27T16:59:42.078462+00:00",
+   "name": "update_subgoal",
+   "role": "tool",
+   "content": "{\"result\": {\"id\": \"o3001\", \"status\": \"in_progress\"}}",
+   "tool_call_id": "chatcmpl-tool-b4916ba8b0c0a3c9"
+  },
+  {
+   "id": 60,
+   "created_at": "2026-11-27T16:59:42.080685+00:00",
+   "name": "update_subgoal",
+   "role": "tool",
+   "content": "{\"result\": {\"id\": \"o3002\", \"status\": \"in_progress\"}}",
+   "tool_call_id": "chatcmpl-tool-9c621fb133bc4bd6"
+  },
+  {
+   "id": 61,
+   "created_at": "2026-11-27T16:59:42.082678+00:00",
+   "name": "update_subgoal",
+   "role": "tool",
+   "content": "{\"result\": {\"id\": \"o3005\", \"status\": \"in_progress\"}}",
+   "tool_call_id": "chatcmpl-tool-8218fb8ac59b7c86"
+  },
+  {
+   "id": 62,
+   "created_at": "2026-11-27T16:59:42.084679+00:00",
+   "name": "update_subgoal",
+   "role": "tool",
+   "content": "{\"result\": {\"id\": \"o3011\", \"status\": \"in_progress\"}}",
+   "tool_call_id": "chatcmpl-tool-92ace24823cd7dd4"
+  },
+  {
+   "id": 63,
+   "created_at": "2026-11-27T16:59:42.086547+00:00",
+   "name": "update_subgoal",
+   "role": "tool",
+   "content": "{\"result\": {\"id\": \"o3017\", \"status\": \"in_progress\"}}",
+   "tool_call_id": "chatcmpl-tool-b0d0815cf556dbf7"
+  },
+  {
+   "id": 64,
+   "created_at": "2026-11-27T16:59:42.088479+00:00",
+   "name": "update_subgoal",
+   "role": "tool",
+   "content": "{\"result\": {\"id\": \"o3006\", \"status\": \"in_progress\"}}",
+   "tool_call_id": "chatcmpl-tool-b72baecc492453a2"
+  },
+  {
+   "id": 65,
+   "created_at": "2026-11-27T16:59:42.090358+00:00",
+   "name": "update_subgoal",
+   "role": "tool",
+   "content": "{\"result\": {\"id\": \"o3008\", \"status\": \"in_progress\"}}",
+   "tool_call_id": "chatcmpl-tool-a123ffab3f67743a"
+  },
+  {
+   "id": 66,
+   "created_at": "2026-11-27T16:59:42.092282+00:00",
+   "name": "update_subgoal",
+   "role": "tool",
+   "content": "{\"result\": {\"id\": \"o3010\", \"status\": \"in_progress\"}}",
+   "tool_call_id": "chatcmpl-tool-a1f523b9a64223ec"
+  },
+  {
+   "id": 67,
+   "created_at": "2026-11-27T16:59:42.094180+00:00",
+   "name": "update_subgoal",
+   "role": "tool",
+   "content": "{\"result\": {\"id\": \"o3012\", \"status\": \"in_progress\"}}",
+   "tool_call_id": "chatcmpl-tool-bb9a99b927b96958"
+  },
+  {
+   "id": 68,
+   "created_at": "2026-11-27T16:59:42.096056+00:00",
+   "name": "update_subgoal",
+   "role": "tool",
+   "content": "{\"result\": {\"id\": \"o3014\", \"status\": \"in_progress\"}}",
+   "tool_call_id": "chatcmpl-tool-a38e1992c9d1929c"
+  },
+  {
+   "id": 69,
+   "created_at": "2026-11-27T16:59:42.097942+00:00",
+   "name": "update_subgoal",
+   "role": "tool",
+   "content": "{\"result\": {\"id\": \"o3020\", \"status\": \"in_progress\"}}",
+   "tool_call_id": "chatcmpl-tool-92480e21a53834a2"
+  },
+  {
+   "id": 70,
+   "created_at": "2026-11-27T16:59:42.099824+00:00",
+   "name": "update_subgoal",
+   "role": "tool",
+   "content": "{\"result\": {\"id\": \"o3004\", \"status\": \"in_progress\"}}",
+   "tool_call_id": "chatcmpl-tool-81ba8e75e93d5703"
+  },
+  {
+   "id": 71,
+   "created_at": "2026-11-27T16:59:42.101684+00:00",
+   "name": "update_subgoal",
+   "role": "tool",
+   "content": "{\"result\": {\"id\": \"o3016\", \"status\": \"in_progress\"}}",
+   "tool_call_id": "chatcmpl-tool-866feebe6e55905b"
+  },
+  {
+   "id": 72,
+   "created_at": "2026-11-27T16:59:42.103642+00:00",
+   "name": "update_subgoal",
+   "role": "tool",
+   "content": "{\"result\": {\"id\": \"o3018\", \"status\": \"in_progress\"}}",
+   "tool_call_id": "chatcmpl-tool-9ca7a69aef35e95a"
+  },
+  {
+   "id": 73,
+   "created_at": "2026-11-27T16:59:49.385663+00:00",
+   "role": "assistant",
+   "content": "- 14 robot tasks queued (3001,3002,3005,3011,3017,3006,3008,3010,3012,3014,3020,3004,3016,3018)\n- 6 flagged: 3003,3009,3007 (manual), 3015,3019,3013 (SKU-2005 short)\n- Will report back as tasks finish."
+  },
+  {
+   "id": 74,
+   "created_at": "2026-11-27T16:59:49.397346+00:00",
+   "role": "user",
+   "content": "[SYSTEM EVENT] Fulfillment task 1 for order 3001 paused: item_not_found: SKU-2005 not found at B-03-1; counted to 0. Findings:\n- SKU-2005 recorded at B-03-1 but not found; inventory corrected, task 1 paused for a decision"
+  },
+  {
+   "id": 75,
+   "created_at": "2026-11-27T16:59:51.105216+00:00",
+   "role": "assistant",
+   "content": "",
+   "tool_calls": [
+    {
+     "id": "chatcmpl-tool-bf3b98778135fc17",
+     "type": "function",
+     "function": {
+      "name": "reallocate_pick",
+      "arguments": "{\"task_id\": 1}"
+     }
+    }
+   ]
+  },
+  {
+   "id": 76,
+   "created_at": "2026-11-27T16:59:51.119703+00:00",
+   "name": "reallocate_pick",
+   "role": "tool",
+   "content": "{\"error\": \"no unreserved stock covers the missing units for task 1; receiving was not included; held by queued work: 1 at C-04-1 reserved by fulfillment task 4; 2 at B-04-1 reserved by fulfillment task 4; 1 at C-04-1 reserved by fulfillment task 9; 1 at B-03-1 reserved by fulfillment task 9\"}",
+   "tool_call_id": "chatcmpl-tool-bf3b98778135fc17"
+  },
+  {
+   "id": 77,
+   "created_at": "2026-11-27T16:59:53.014987+00:00",
+   "role": "assistant",
+   "content": "",
+   "tool_calls": [
+    {
+     "id": "chatcmpl-tool-86b9f6de7b654028",
+     "type": "function",
+     "function": {
+      "name": "find_stock",
+      "arguments": "{\"sku\": \"SKU-2005\"}"
+     }
+    }
+   ]
+  },
+  {
+   "id": 78,
+   "created_at": "2026-11-27T16:59:53.027073+00:00",
+   "name": "find_stock",
+   "role": "tool",
+   "content": "{\"result\": {\"sku\": \"SKU-2005\", \"name\": \"Potted Meat Can\", \"locations\": [{\"location_id\": \"A-01-1\", \"quantity\": 0, \"reserved\": 0, \"available\": 0}, {\"location_id\": \"STAGING-1\", \"quantity\": 0, \"reserved\": 0, \"available\": 0}, {\"location_id\": \"B-04-1\", \"quantity\": 2, \"reserved\": 2, \"available\": 0}, {\"location_id\": \"C-04-1\", \"quantity\": 2, \"reserved\": 2, \"available\": 0}, {\"location_id\": \"B-03-1\", \"quantity\": 0, \"reserved\": 0, \"available\": 0}]}}",
+   "tool_call_id": "chatcmpl-tool-86b9f6de7b654028"
+  },
+  {
+   "id": 79,
+   "created_at": "2026-11-27T17:00:01.279031+00:00",
+   "role": "assistant",
+   "content": "",
+   "tool_calls": [
+    {
+     "id": "chatcmpl-tool-bdd48151fd6db738",
+     "type": "function",
+     "function": {
+      "name": "update_subgoal",
+      "arguments": "{\"id\": \"o3001\", \"status\": \"failed\", \"check\": \"order_flagged\", \"note\": \"SKU-2005 phantom at B-03-1; all stock held by tasks 4/9\"}"
+     }
+    },
+    {
+     "id": "chatcmpl-tool-9868591e4d3de2ef",
+     "type": "function",
+     "function": {
+      "name": "report_exception",
+      "arguments": "{\"message\": \"Order 3001: SKU-2005 phantom at B-03-1 (corrected to 0); remaining units held by tasks 4 and 9\", \"order_id\": 3001, \"type\": \"stock_shortage\"}"
+     }
+    }
+   ]
+  },
+  {
+   "id": 80,
+   "created_at": "2026-11-27T17:00:01.291221+00:00",
+   "name": "update_subgoal",
+   "role": "tool",
+   "content": "{\"result\": {\"id\": \"o3001\", \"status\": \"failed\"}}",
+   "tool_call_id": "chatcmpl-tool-bdd48151fd6db738"
+  },
+  {
+   "id": 81,
+   "created_at": "2026-11-27T17:00:01.292795+00:00",
+   "name": "report_exception",
+   "role": "tool",
+   "content": "{\"result\": {\"id\": 8, \"task_id\": null, \"order_id\": 3001, \"type\": \"stock_shortage\", \"severity\": \"warning\", \"message\": \"Order 3001: SKU-2005 phantom at B-03-1 (corrected to 0); remaining units held by tasks 4 and 9\", \"status\": \"open\", \"resolution\": null, \"created_at\": \"2026-11-27 17:00:01.291818+00:00\", \"resolved_at\": null}}",
+   "tool_call_id": "chatcmpl-tool-9868591e4d3de2ef"
+  },
+  {
+   "id": 82,
+   "created_at": "2026-11-27T17:00:06.287100+00:00",
+   "role": "assistant",
+   "content": "- Order 3001 flagged: SKU-2005 phantom at B-03-1, rest held by tasks 4/9\n- 13 tasks still queued for DISPATCH-1; will report as they finish\n- 6 orders need manual action (3003,3007,3009,3013,3015,3019)"
+  }
+ ]
+}

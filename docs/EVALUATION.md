@@ -45,7 +45,7 @@ A held-out test of the agent alone: randomized shifts it was never tuned on, moc
 
 ## Long-horizon harness ablation
 
-Same stress test as above, **all runs without recipes**, with the harness components (`docs/ACTION_ITEMS.md`) switched on one by one. *Pending.*
+Same stress test as above, **all runs without recipes**, with the harness components (`docs/ACTION_ITEMS.md`) switched on one by one (`eval/agent_eval.py --configs ...`).
 
 | Component | What it adds |
 |---|---|
@@ -54,17 +54,27 @@ Same stress test as above, **all runs without recipes**, with the harness compon
 | H3 Checks + final review | DB-only post-condition checks; one review of open subgoals when the agent tries to finish |
 | H4 Replanning | A failed check, a stock change, or 3 tool calls without progress injects a diff; the agent must revise the plan |
 
-| Config (all without recipes) | `stress` pass | `stress_xl` pass | Priority check (`stress` · `stress_xl`) | Tool calls, mean (`stress` · `stress_xl`) | Peak context (tokens) | Plan revisions |
-|---|---|---|---|---|---|---|
-| B0 baseline | 0/10 | 0/10 | 5/10 · 0/10 | 41 · 55 | — | — |
-| + H1 | | | | | | |
-| + H1 H2 | | | | | | |
-| + H1 H2 H3 | | | | | | |
-| + H1–H4 (full) | | | | | | |
-| Full − H1 | | | | | | |
-| Full − H2 | | | | | | |
-| Full − H3 | | | | | | |
-| Full − H4 | | | | | | |
+Result (2026-11-28): **no config passes** (1 of 180 trials). The harness fixes follow-through but not allocation.
+
+| Config (all without recipes) | `stress` pass | `stress_xl` pass | Priority check (S · XL) | No task left paused (S · XL) | Every unfilled order flagged (S · XL) | Tool calls, mean (S · XL) | Peak context, mean (S · XL) | Plan revisions / trial | Replan triggers / trial |
+|---|---|---|---|---|---|---|---|---|---|
+| B0 baseline (rerun) | 0/10 | 0/10 | 5 · 1 | 7 · 4 | 7 · 3 | 39 · 54 | 9k · 12k | — | — |
+| + H1 | 0/10 | 0/10 | 6 · 1 | 9 · 5 | 9 · 5 | 70 · 110 | 15k · 20k | 9.0 | — |
+| + H1 H2 | 0/10 | 0/10 | 3 · 0 | 9 · 8 | 9 · 8 | 60 · 96 | 13k · 21k | 9.0 | — |
+| + H1 H2 H3 | 0/10 | 0/10 | 5 · 2 | 9 · 8 | 9 · 8 | 61 · 105 | 14k · 22k | 9.3 | — |
+| **+ H1–H4 (full)** | 0/10 | 0/10 | 4 · 1 | **10 · 10** | **10 · 10** | 76 · 140 | 19k · 32k | 9.8 | 19.0 |
+| Full − H1 | 0/10 | 0/10 | 4 · 0 | 8 · 6 | 6 · 2 | 35 · 51 | 9k · 13k | — | 13.2 |
+| Full − H2 | 0/10 | 0/10 | 3 · 0 | 10 · 6 | 10 · 6 | 94 · 107 | 20k · 28k | 9.2 | 16.9 |
+| Full − H3 | 0/10 | 0/10 | 2 · 1 | 8 · 10 | 8 · 9 | 69 · 126 | 18k · 29k | 9.7 | 18.2 |
+| Full − H4 | 1/10 | 0/10 | 8 · 0 | 8 · 8 | 8 · 8 | 61 · 94 | 14k · 20k | 8.9 | — |
+
+- **Follow-through fixed:** with the full harness, no task is left paused and every unfilled order is flagged in 20/20 trials (baseline 11/20 and 10/20). The plan registry (H1) gives most of it; dropping H1 loses it
+- **Allocation not fixed:** the priority check stays at the baseline level (0–8 of 10, within noise) in every config. Being told about a conflict is not enough; the agent still fills lower-priority orders first. This is the case for the deterministic allocator (next row of work)
+- **H2 never fired:** peak context stayed under 39k, below the 85% (56k) threshold, so H1 vs H1+H2 differences are run-to-run noise. They show the noise band at 10 seeds: about ±3 per check
+- **Cost:** the full harness roughly doubles tool calls (39 → 76, 54 → 140); most of the extra calls are plan updates
+- Cross-dock leftover put-away stays low (2–6 of 10) in every config; no harness component targets it
+- 3 of 180 trials did not settle within 900 s and count as failures
+- Traces: [`eval/results/agent_harness/traces/`](../eval/results/agent_harness/traces/)
 
 | Parameter | Value |
 |---|---|

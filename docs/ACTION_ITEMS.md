@@ -275,4 +275,10 @@ Goal: lift the stress baseline by moving plan and state out of the raw chat cont
 - [x] `agent_eval.py --configs b0 h1 h12 h123 full full-h1 ...` flag; record pass rate, the 6 dimension checks, mean tool calls, peak context tokens, plan revisions and whether the final review fired
 - [x] Implementation notes: components are flags `plan`/`anchor`/`check`/`replan` in `backend/app/agent/harness.py`; the plan table is appended as a non-persisted last message (keeps the prompt prefix cacheable); with `plan` on, robot actions are refused until a plan exists; without a plan, the final review falls back to paused or undispatched tasks; the scorer ignores harness-filed `unresolved_subgoal` exceptions when checking that orders were flagged
 - [x] Smoke (`stress`, full, seed 0): fails on priority and flagging; 78 tool calls, 23k peak context, 18 replan triggers; non-pickable errors and manual-only orders were triggering noise replans and are now excluded
-- [ ] Run the cumulative and leave-one-out configs (B0 rerun too, to get peak context), 180 trials, results in `eval/results/agent_harness/`; fill in the table in `docs/EVALUATION.md`
+- [x] Fix: the final review never fired when a paused task blocked the robot queue (queued tasks behind it counted as in flight); all H3 trials rerun after the fix
+- [x] Ran all 9 configs × 2 tiers × 10 seeds (180 trials, `eval/results/agent_harness/`; the eval client segfaulted 3 times on the host and was resumed). Pass rate stays at 0 (1/180)
+- [x] Finding: full harness gives 20/20 on "no task left paused" and "every unfilled order flagged" (baseline 11/20, 10/20), mostly from H1; priority allocation is unchanged in every config; tool calls roughly double
+- [x] Finding: compaction (H2) never triggered (peak 39k < 56k threshold), so this ablation doesn't test it
+- [ ] Next: deterministic `plan_shift` allocator on top of the full harness, as its own ablation row; it targets the remaining priority failure
+- [ ] Next: test H2 with a smaller context window (e.g. 32k) or a longer scenario, so compaction actually triggers
+- [ ] Consider: cut plan-update overhead (e.g. auto-close subgoals whose check passes) to bring tool calls back toward the baseline
