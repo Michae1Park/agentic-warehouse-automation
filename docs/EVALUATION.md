@@ -10,81 +10,98 @@ Full results. Everything runs in simulation; scripts are in `eval/`, raw results
 
 ## Longer-horizon stress test
 
-A held-out test of the agent alone: randomized shifts it was never tuned on, mock robot, scored from the physical truth and the final database state (`eval/agent_eval.py --scenarios stress stress_xl`).
+**Question:** can the agent run a whole shift on its own — a dozen or more orders, with surprises along the way — without losing track?
 
-**Baseline (2026-11-27):** the agent as-is, before any long-horizon improvements. Later versions are compared against these numbers.
+### Setup
 
-| Tier | Orders | Baseline pass, with recipes | Baseline pass, without | Tool calls (mean, range) |
-|---|---|---|---|---|
-| `stress` | 12 + 2 other-dock | **2 / 10** | 0 / 10 | 43 (34–59) |
-| `stress_xl` | 20 + 3 other-dock | 0 / 10 | 0 / 10 | 61 (21–89) |
+One request per trial: *"Get all pending DISPATCH-1 orders out before the truck leaves."*. The robot is mocked, so only the agent's decisions are tested. Each trial is a randomized shift the agent was never tuned on (held-out). Command: `eval/agent_eval.py --scenarios stress stress_xl`.
 
-| Parameter | `stress` | `stress_xl` |
+| What the shift contains | `stress` | `stress_xl` |
 |---|---|---|
-| Orders to dispatch | 12, priority 1–3, 1–2 lines of 1–3 units | 20 |
-| Orders for another dock (must be left alone) | 2 | 3 |
-| Orders needing a non-pickable SKU (manual only) | 2 | 3 |
-| Stock records pointing at an empty bin (found mid-run) | 3 | 5 |
-| Shelf stock per SKU | 2–3 bins × 1–3 units | 3–4 bins × 2–4 units |
-| Receiving stock per SKU | 0–4 units | 0–4 units |
-| Seeds × trials | 10 random seeds, temperature 0.7, one request: *"dispatch everything you can before end of shift"* | same |
+| Orders to dispatch (priority 1–3, 1–2 lines of 1–3 units) | 12 | 20 |
+| Orders for another dock — must be left alone | 2 | 3 |
+| Orders needing a non-pickable item — must be flagged for manual handling, not dispatched | 2 | 3 |
+| Stock records that turn out to point at an empty bin (the surprise) | 3 | 5 |
+| Shelf stock per item | 2–3 bins × 1–3 units | 3–4 bins × 2–4 units |
+| Trials | 10 seeds, temperature 0.7 | same |
 
-| Dimension | Check | `stress` with · without | `stress_xl` with · without |
-|---|---|---|---|
-| Dependent decisions | Priority respected, no fillable order left behind | 3/10 · 5/10 | **0/10 · 0/10** |
-| Dependent decisions | Manual orders not dispatched, and flagged | 7/10 · 8/10 | 10/10 · 9/10 |
-| Dependent decisions | Other dock untouched | 10/10 · 10/10 | 10/10 · 10/10 |
-| Surprises / replanning | No task left paused | 10/10 · 10/10 | 9/10 · 4/10 |
-| Step count / follow-through | Every unfilled order flagged | 10/10 · 8/10 | 7/10 · 3/10 |
-| Step count / follow-through | Cross-dock leftovers put away | 6/10 · 1/10 | 5/10 · 7/10 |
+### How a trial is scored
 
-- The agent follows simple rules and sustains 50–90 tool calls, but cannot keep a 12–20-order allocation consistent after a surprise: it fills lower-priority orders with stock a higher-priority one needed
-- Without recipes it often stops after a few turns, leaving tasks paused and orders unflagged
-- The multi-step scenarios in the table below are the dev set the recipes were written against; this stress test is the held-out number
-- Traces for every trial: [`eval/results/agent_stress/traces/`](../eval/results/agent_stress/traces/)
+A trial **passes only if all six checks pass**, judged from the final database and the true physical state:
+
+| # | Check | What it tests |
+|---|---|---|
+| 1 | **Priority** | Higher-priority orders got stock first; no order that could have been filled was left behind |
+| 2 | **Unfilled flagged** | Every order that could not be filled was flagged |
+| 3 | **Manual flagged** | Non-pickable orders were flagged, not dispatched |
+| 4 | **Other dock** | The other dock's orders were not touched |
+| 5 | **No paused task** | No task was left paused at the end |
+| 6 | **Put-away** | Stock left over at the cross-dock was put back |
+
+### Baseline (2026-11-27)
+
+The agent as-is, before any long-horizon work. "Recipes" are hand-written step-by-step hints in the prompt.
+
+| | `stress` with recipes | `stress` without | `stress_xl` with recipes | `stress_xl` without |
+|---|---|---|---|---|
+| **Pass (all 6 checks)** | **2 / 10** | 0 / 10 | 0 / 10 | 0 / 10 |
+| 1 Priority | 3 | 5 | 0 | 0 |
+| 2 Unfilled flagged | 10 | 8 | 7 | 3 |
+| 3 Manual flagged | 7 | 8 | 10 | 9 |
+| 4 Other dock | 10 | 10 | 10 | 10 |
+| 5 No paused task | 10 | 10 | 9 | 4 |
+| 6 Put-away | 6 | 1 | 5 | 7 |
+| Tool calls, mean (range) | 43 (34–59) | | 61 (21–89) | |
+
+**What this shows**
+- The simple rules (3, 4) hold. The agent keeps going for 50–90 tool calls
+- **Priority (1) is the main failure.** After an empty bin is found, the agent fills a lower-priority order with stock a higher-priority one needed
+- Without recipes, it often stops early: tasks left paused, orders not flagged (2, 5)
+- The multi-step scenarios under [All tests](#all-tests) are the dev set the recipes were written for; this stress test is the held-out number
+- Traces: [`eval/results/agent_stress/traces/`](../eval/results/agent_stress/traces/)
 
 ## Long-horizon harness ablation
 
-Same stress test as above, **all runs without recipes**, with the harness components (`docs/ACTION_ITEMS.md`) switched on one by one (`eval/agent_eval.py --configs ...`).
+**Question:** does wrapping the agent in a harness that tracks a plan, checks progress and forces replanning fix the stress-test failures, without recipes?
 
-| Component | What it adds |
-|---|---|
-| H1 Plan registry | Agent-authored subgoal plan in the DB with typed post-conditions, shown every turn |
-| H2 Re-anchoring | When the context is nearly full, compact the history and re-inject the goal and plan; resume from the plan |
-| H3 Checks + final review | DB-only post-condition checks; one review of open subgoals when the agent tries to finish |
-| H4 Replanning | A failed check, a stock change, or 3 tool calls without progress injects a diff; the agent must revise the plan |
+### The four harness components
 
-Result (2026-11-28): **no config passes** (1 of 180 trials). The harness fixes follow-through but not allocation.
+Each one can be switched on or off (`backend/app/agent/harness.py`; run with `eval/agent_eval.py --configs ...`).
 
-| Config (all without recipes) | `stress` pass | `stress_xl` pass | Priority check (S · XL) | No task left paused (S · XL) | Every unfilled order flagged (S · XL) | Tool calls, mean (S · XL) | Peak context, mean (S · XL) | Plan revisions / trial | Replan triggers / trial |
-|---|---|---|---|---|---|---|---|---|---|
-| B0 baseline (rerun) | 0/10 | 0/10 | 5 · 1 | 7 · 4 | 7 · 3 | 39 · 54 | 9k · 12k | — | — |
-| + H1 | 0/10 | 0/10 | 6 · 1 | 9 · 5 | 9 · 5 | 70 · 110 | 15k · 20k | 9.0 | — |
-| + H1 H2 | 0/10 | 0/10 | 3 · 0 | 9 · 8 | 9 · 8 | 60 · 96 | 13k · 21k | 9.0 | — |
-| + H1 H2 H3 | 0/10 | 0/10 | 5 · 2 | 9 · 8 | 9 · 8 | 61 · 105 | 14k · 22k | 9.3 | — |
-| **+ H1–H4 (full)** | 0/10 | 0/10 | 4 · 1 | **10 · 10** | **10 · 10** | 76 · 140 | 19k · 32k | 9.8 | 19.0 |
-| Full − H1 | 0/10 | 0/10 | 4 · 0 | 8 · 6 | 6 · 2 | 35 · 51 | 9k · 13k | — | 13.2 |
-| Full − H2 | 0/10 | 0/10 | 3 · 0 | 10 · 6 | 10 · 6 | 94 · 107 | 20k · 28k | 9.2 | 16.9 |
-| Full − H3 | 0/10 | 0/10 | 2 · 1 | 8 · 10 | 8 · 9 | 69 · 126 | 18k · 29k | 9.7 | 18.2 |
-| Full − H4 | 1/10 | 0/10 | 8 · 0 | 8 · 8 | 8 · 8 | 61 · 94 | 14k · 20k | 8.9 | — |
+| | Component | What it does |
+|---|---|---|
+| H1 | **Plan registry** | The agent writes a plan (one subgoal per order or chore, each with a checkable end state) into the DB; it is shown every turn |
+| H2 | **Re-anchoring** | When the context hits 85% of 64k (56k), old history is compacted and the request + plan are re-injected |
+| H3 | **Checks + final review** | Marking a subgoal done runs a DB check; when the agent tries to finish, it gets one turn to close anything still open |
+| H4 | **Replanning** | A failed check, a stock change, or 3 tool calls without progress forces the agent to revise the plan |
 
-- **Follow-through fixed:** with the full harness, no task is left paused and every unfilled order is flagged in 20/20 trials (baseline 11/20 and 10/20). The plan registry (H1) gives most of it; dropping H1 loses it
-- **Allocation not fixed:** the priority check stays at the baseline level (0–8 of 10, within noise) in every config. Being told about a conflict is not enough; the agent still fills lower-priority orders first. This is the case for the deterministic allocator (next row of work)
-- **H2 never fired:** peak context stayed under 39k, below the 85% (56k) threshold, so H1 vs H1+H2 differences are run-to-run noise. They show the noise band at 10 seeds: about ±3 per check
-- **Cost:** the full harness roughly doubles tool calls (39 → 76, 54 → 140); most of the extra calls are plan updates
-- Cross-dock leftover put-away stays low (2–6 of 10) in every config; no harness component targets it
+Two kinds of runs: **add one at a time** (B0 → +H1 → … → full), and **remove one at a time** from the full harness. Everything else as in the stress test: no recipes, 10 seeds, T=0.7.
+
+### Results (2026-11-28)
+
+Cells are trials out of 10, shown as `stress` · `stress_xl`. Checks 3 (manual) and 4 (other dock) pass in nearly every config and are left out.
+
+| Config | **Pass** | 1 Priority | 2 Unfilled flagged | 5 No paused task | 6 Put-away | Tool calls, mean | Peak context, mean |
+|---|---|---|---|---|---|---|---|
+| B0 no harness (rerun) | **0 · 0** | 5 · 1 | 7 · 3 | 7 · 4 | 3 · 5 | 39 · 54 | 9k · 12k |
+| + H1 | **0 · 0** | 6 · 1 | 9 · 5 | 9 · 5 | 1 · 4 | 70 · 110 | 15k · 20k |
+| + H1 H2 | **0 · 0** | 3 · 0 | 9 · 8 | 9 · 8 | 2 · 4 | 60 · 96 | 13k · 21k |
+| + H1 H2 H3 | **0 · 0** | 5 · 2 | 9 · 8 | 9 · 8 | 2 · 5 | 61 · 105 | 14k · 22k |
+| **Full (H1–H4)** | **0 · 0** | 4 · 1 | **10 · 10** | **10 · 10** | 2 · 4 | 76 · 140 | 19k · 32k |
+| Full − H1 | **0 · 0** | 4 · 0 | 6 · 2 | 8 · 6 | 3 · 5 | 35 · 51 | 9k · 13k |
+| Full − H2 | **0 · 0** | 3 · 0 | 10 · 6 | 10 · 6 | 2 · 3 | 94 · 107 | 20k · 28k |
+| Full − H3 | **0 · 0** | 2 · 1 | 8 · 9 | 8 · 10 | 2 · 1 | 69 · 126 | 18k · 29k |
+| Full − H4 | **1** · 0 | **8** · 0 | 8 · 8 | 8 · 8 | 2 · 6 | 61 · 94 | 14k · 20k |
+
+**What this shows**
+- **No config fixes the stress test.** One pass in 180 trials (Full − H4 on `stress`)
+- **The harness fixes follow-through.** Full harness: every unfilled order flagged and no task left paused in 20/20 trials (baseline 10/20 and 11/20). H1 (the plan) gives most of this; removing it drops back to baseline
+- **It does not fix priority or put-away**, the two checks that need a correct allocation across orders. Being told about a conflict is not enough: the agent still fills lower-priority orders first
+- **H2 never fired:** peak context stayed under 39k, below the 56k trigger, so H2 differences are run-to-run noise (about ±3 per check at 10 seeds)
+- **Cost:** the harness roughly doubles tool calls (39 → 76, 54 → 140), mostly plan updates
 - 3 of 180 trials did not settle within 900 s and count as failures
+- **Next:** a deterministic allocator tool for priority (`docs/ACTION_ITEMS.md`)
 - Traces: [`eval/results/agent_harness/traces/`](../eval/results/agent_harness/traces/)
-
-| Parameter | Value |
-|---|---|
-| Scenarios | `stress`, `stress_xl` (parameters above) |
-| Recipes | None, for every config including the baseline |
-| Seeds × temperature | 10 seeds, T=0.7 |
-| Context | 64k |
-| Compaction trigger | 85% of the 64k context |
-| Final review | Once, when the agent tries to finish; anything still open is reported as an exception (counts as a failure) |
-| Stall trigger | 3 tool calls without subgoal progress |
 
 ## All tests
 
